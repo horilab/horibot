@@ -3,7 +3,8 @@
     uv run python -m horilab_design.bom
 
 부품표에는 아직 손에 없는 것만 둔다. 맨 위에서 지금 주문할 것과 배송 중인 것을 바로 보게 한다.
-받은 것은 데이터에서 지우고 docs/hardware.md의 "가진 것"에 넣는다.
+받은 것은 데이터에 남겨 예산과 맨 아래 받은 것에 보이고, docs/hardware.md의 "가진 것"에도 넣는다.
+이름이 같은 품목은 같은 물건이다. 같은 것을 또 사면 이름을 똑같이 적는다 (받은 것에서 한 줄로 모인다).
 설계 부품표(볼트·너트·베어링 개수)는 부품 코드가 생기면 여기에 합친다.
 """
 
@@ -126,6 +127,24 @@ def _total(items: list[Item]) -> str:
     return text or "0원"
 
 
+def _received_rows(received: list[Item]) -> list[str]:
+    """받은 것 표의 줄. 이름이 같은 품목은 같은 물건이라(섞어 써도 된다) 한 줄로 모으고, 받은 날마다 개수를 적는다."""
+    groups: dict[str, list[Item]] = {}
+    for i in received:
+        groups.setdefault(i.name, []).append(i)
+    rows = []
+    for name, group in groups.items():
+        days = []
+        for i in group:
+            assert i.received is not None
+            days.append(i.received.isoformat() + (f" {i.qty}개" if len(group) > 1 else ""))
+        places = " / ".join(dict.fromkeys(_where(i) for i in group))
+        price = group[0].price() if len(group) == 1 else _total(group)
+        qty = sum(i.qty for i in group)
+        rows.append(f"| {_cell(name)} | {qty} | {', '.join(days)} | {places} | {price} |")
+    return rows
+
+
 def _budget(rows: list[tuple[str, list[Item]]]) -> list[str]:
     """묶음마다 합을 보이고, 모두 더한 값을 예산 기준과 견준다."""
     out = ["| | 값 |", "|---|---|"]
@@ -246,14 +265,13 @@ def render(purchases: Purchases) -> str:
             "",
             "## 받은 것",
             "",
+            "같은 물건은 나눠 받았어도 한 줄로 모으고, 받은 날마다 받은 개수를 적는다. "
+            "한 줄에 모인 것은 서로 섞어 써도 된다.",
+            "",
             "| 품목 | 수량 | 받은 날 | 사는 곳 | 값 |",
             "|---|---|---|---|---|",
         ]
-        for i in received:
-            assert i.received is not None
-            lines.append(
-                f"| {_cell(i.name)} | {i.qty} | {i.received.isoformat()} | {_where(i)} | {i.price()} |"
-            )
+        lines += _received_rows(received)
     return "\n".join(lines) + "\n"
 
 

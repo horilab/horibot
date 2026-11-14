@@ -50,6 +50,26 @@ def test_received_items_stay_in_the_budget() -> None:
     assert "| 서보 | 1 | 2026-11-14 |" in text
 
 
+def test_the_same_item_received_twice_is_one_row() -> None:
+    first = bom.Item(
+        name="베어링",
+        qty=2,
+        stage=3,
+        why="J1",
+        ordered=dt.date(2026, 11, 8),
+        received=dt.date(2026, 11, 10),
+        vendor="미스미",
+        unit_price_krw=10340,
+    )
+    second = first.model_copy(
+        update={"qty": 4, "ordered": dt.date(2026, 11, 12), "received": dt.date(2026, 11, 14)}
+    )
+    text = bom.render(bom.Purchases(item=[second, first]))
+    assert "| 베어링 | 6 | 2026-11-10 2개, 2026-11-14 4개 | 미스미 | 62,040원 |" in text
+    assert text.count("| 베어링 |") == 1
+    assert "| 받은 것 | 62,040원 |" in text
+
+
 def test_an_empty_buy_now_list_says_so() -> None:
     sent = bom.Item(name="서보", qty=1, stage=2, why="어깨", ordered=dt.date(2026, 11, 7))
     head = bom.render(bom.Purchases(item=[sent])).partition("## 배송 중")[0]
