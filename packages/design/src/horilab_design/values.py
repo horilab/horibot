@@ -170,6 +170,22 @@ class ThinCable(_Values):
 
     length_mm: float = Field(gt=0)  # 플러그 끝에서 끝까지
     diameter_mm: float | None = Field(default=None, gt=0)
+    mass_g: float | None = Field(default=None, gt=0)  # 선 전체 (양쪽 플러그 포함)
+
+
+class AnglePlug(_Values):
+    """카메라에 꽂은 ㄱ자 플러그 [mm]."""
+
+    protrusion_mm: float = Field(gt=0)  # 꽂은 채 카메라 옆면 ~ 플러그 가장 바깥
+    body_length_mm: float = Field(gt=0)  # 선 방향: 꺾인 몸통 끝 ~ 고무 끝
+    body_out_mm: float = Field(gt=0)  # 꽂는 방향(옆면에서 바깥쪽)의 몸통 두께
+    body_across_mm: float = Field(gt=0)  # 위 두 방향과 직각인 몸통 폭
+
+
+class BackScrew(_Values):
+    """STS3215 뒷면 고정 나사 (예전 SO-101에서 뺀 십자 둥근머리 자가탭) [mm]."""
+
+    total_length_mm: float = Field(gt=0)  # 머리 윗면 ~ 끝
 
 
 class ServoPlug(_Values):
@@ -191,7 +207,10 @@ class Measured(_Values):
     servo_wire: ServoWire | None = None
     d405_cable: Cable | None = None  # D405 기본 선 (USB 3, 1 m)
     d405_usb2_cable: ThinCable | None = None  # D405에 쓸 얇은 USB 2 선 (0031)
+    d405_usb2_plug: AnglePlug | None = None  # 그 선의 카메라 쪽 ㄱ자 플러그
     servo_plug: ServoPlug | None = None
+    servo_back_screw: BackScrew | None = None
+    bearing_mass_g: dict[str, float] = {}  # 베어링 하나의 무게 (호칭 번호마다, 예: "6806")
     fit: dict[Filament, PrintFit] = {}
 
 
