@@ -88,6 +88,10 @@ class PrintConfig:
     presets_sha: dict[str, str]
     settings_sha: dict[str, str]
     sha_ignore: tuple[str, ...]
+    # 가정 B에서 화면 결과와 견줄 때 빼는 기록 칸: 두 길 모두, 화면 프로젝트를 다시 자를 때, STL을 판을 낼 때처럼
+    reference_ignore: tuple[str, ...]
+    reference_same_ignore: tuple[str, ...]
+    reference_stl_ignore: tuple[str, ...]
     key_settings: dict[str, dict[str, str]]
     harmless: frozenset[tuple[str, str]]
 
@@ -113,6 +117,9 @@ def load_config(path: Path = PRINT_FILE) -> PrintConfig:
         presets_sha={str(k): str(v) for k, v in d["presets_sha"].items()},
         settings_sha={str(k): str(v) for k, v in sha.items()},
         sha_ignore=ignore,
+        reference_ignore=tuple(str(k) for k in d["reference"]["ignore"]),
+        reference_same_ignore=tuple(str(k) for k in d["reference"]["same_input_ignore"]),
+        reference_stl_ignore=tuple(str(k) for k in d["reference"]["stl_ignore"]),
         key_settings={
             str(group): {str(k): str(v) for k, v in values.items()}
             for group, values in d["key_settings"].items()
@@ -783,57 +790,166 @@ def describe(plan: Plan, cfg: PrintConfig) -> str:
 # ---- 기준 견주기 (가정 B) ---------------------------------------------------------------------------------
 
 
-def _moves(gcode: str) -> list[str]:
-    """G-code에서 주석과 빈 줄을 뺀 명령 줄."""
-    out: list[str] = []
+LAYER_MARK = "; CHANGE_LAYER"
+FEATURE_MARK = "; FEATURE:"
+EXTRUDE = re.compile(r"\bE(-?\d*\.?\d+)")
+TEMPERATURE = re.compile(r"^M(104|109|140|190)\b")
+# 화면과 명령 모드는 한 층의 섬(떨어진 덩어리)을 뽑는 순서와 둘레를 시작하는 점이 다를 수 있다. 그래서 G-code 줄이
+# 아니라 층마다 뽑는 양을 견주고, 이동이 달라 생기는 예상 시간 차이는 이만큼까지 둔다 (가정 B에서 0.04~0.15%)
+TIME_TOLERANCE = 0.01
+
+
+def _layers(gcode: str) -> list[dict[str, float]]:
+    """층마다 기능(벽, 채움 등)별 압출 길이 [mm]. 섬을 뽑는 순서나 이동과 상관없이 같은 것을 뽑는지 본다."""
+    out: list[dict[str, float]] = []
+    feature = ""
     for line in gcode.splitlines():
-        code = line.split(";", 1)[0].strip()
-        if code:
-            out.append(code)
+        if line.startswith(LAYER_MARK):
+            out.append({})
+        elif line.startswith(FEATURE_MARK):
+            feature = line[len(FEATURE_MARK) :].strip()
+        elif out and line.startswith(("G1 ", "G2 ", "G3 ")):
+            found = EXTRUDE.search(line.split(";", 1)[0])
+            if found and (e := float(found.group(1))) > 0:
+                out[-1][feature] = out[-1].get(feature, 0.0) + e
     return out
 
 
+def _temperatures(gcode: str) -> set[str]:
+    """노즐과 바닥 온도 명령 (M104, M109, M140, M190)."""
+    lines = (line.split(";", 1)[0].strip() for line in gcode.splitlines())
+    return {code for code in lines if TEMPERATURE.match(code)}
+
+
 def compare_reference(gui: Sliced, cli: Sliced, ignore: Sequence[str]) -> list[str]:
-    """화면에서 자른 것과 명령 모드로 자른 것의 차이 (설정 칸, 시간과 무게, G-code 명령 줄)."""
+    """화면에서 자른 것과 명령 모드로 자른 것의 차이: 설정 칸, 무게와 예상 시간, 층마다 뽑는 양, 기능 종류, 온도."""
+    return compare_settings(gui, cli, ignore) + compare_output(gui, cli)
+
+
+def compare_settings(gui: Sliced, cli: Sliced, ignore: Sequence[str]) -> list[str]:
+    """설정 칸의 차이. 화면 3MF는 필라멘트 값을 노즐 종류(일반, 하이플로)마다 적고, 명령 모드는 쓰는 종류의 값만
+    적는다. 그런 칸은 명령 모드가 적은 종류의 값끼리 견준다."""
     out: list[str] = []
+    gv = gui.settings.get("filament_extruder_variant")
+    cv = cli.settings.get("filament_extruder_variant")
+    pick: list[int] = []
+    n_gui = n_cli = 0
+    if isinstance(gv, list) and isinstance(cv, list) and gv != cv and all(v in gv for v in cv):
+        pick = [gv.index(v) for v in cv]
+        n_gui, n_cli = len(gv), len(cv)
+
+    def same_variant(a: Any, b: Any) -> Any:
+        if (
+            pick
+            and isinstance(a, list)
+            and isinstance(b, list)
+            and (len(a), len(b)) == (n_gui, n_cli)
+        ):
+            return [a[i] for i in pick]
+        return a
+
     keys = sorted(set(gui.settings) | set(cli.settings))
     for key in keys:
         if key in ignore:
             continue
-        a, b = gui.settings.get(key), cli.settings.get(key)
+        b = cli.settings.get(key)
+        a = same_variant(gui.settings.get(key), b)
         if a != b:
             out.append(f"설정 {key}: 화면 {a}, 명령 모드 {b}")
+    return out
+
+
+def compare_output(gui: Sliced, cli: Sliced) -> list[str]:
+    """잘린 결과의 차이: 무게와 예상 시간, 층마다 뽑는 양, 기능 종류, 온도 명령."""
+    out: list[str] = []
     if not gui.plates or not cli.plates:
-        out.append("잘린 결과(slice_info)가 없다")
+        out.append("잘린 결과(예상 시간·무게)가 없다")
     else:
         g, c = gui.plates[0], cli.plates[0]
-        if (g.seconds, g.grams) != (c.seconds, c.grams):
+        if g.grams != c.grams or abs(g.seconds - c.seconds) > TIME_TOLERANCE * max(g.seconds, 1.0):
             out.append(
                 f"예상 시간·무게: 화면 {g.seconds:.0f} s, {g.grams} g / 명령 모드 {c.seconds:.0f} s, {c.grams} g"
             )
     if not gui.gcode:
-        out.append("화면 3MF에 G-code가 없다 (자른 뒤 저장했는지 본다)")
+        out.append(
+            "화면 결과에 G-code가 없다: 프로젝트 저장에는 들어가지 않으니, 화면에서 자른 뒤 "
+            "파일 → 내보내기 → 플레이트 슬라이스 파일 내보내기로 프로젝트 옆에 <이름>.gcode.3mf를 저장한다"
+        )
+        return out
+    a, b = _layers(gui.gcode), _layers(cli.gcode)
+    if len(a) != len(b):
+        out.append(f"층 수가 다르다: 화면 {len(a)}, 명령 모드 {len(b)}")
     else:
-        a, b = _moves(gui.gcode), _moves(cli.gcode)
-        if a != b:
-            diff = next(
-                (k for k, (x, y) in enumerate(zip(a, b, strict=False)) if x != y),
-                min(len(a), len(b)),
-            )
-            out.append(
-                f"G-code 명령 줄이 다르다: 화면 {len(a)}줄, 명령 모드 {len(b)}줄, 처음 다른 줄 {diff + 1}: "
-                f"{a[diff] if diff < len(a) else '-'} / {b[diff] if diff < len(b) else '-'}"
-            )
+        bad = [
+            k + 1
+            for k, (x, y) in enumerate(zip(a, b, strict=True))
+            if not math.isclose(sum(x.values()), sum(y.values()), rel_tol=1e-4, abs_tol=1e-3)
+        ]
+        if bad:
+            out.append(f"층마다 뽑는 양이 다르다: {len(bad)}개 층 (처음 {bad[0]}층)")
+    fa, fb = {f for x in a for f in x}, {f for y in b for f in y}
+    if fa != fb:
+        out.append(
+            f"뽑는 기능이 다르다: 화면에만 {sorted(fa - fb)}, 명령 모드에만 {sorted(fb - fa)}"
+        )
+    ta, tb = _temperatures(gui.gcode), _temperatures(cli.gcode)
+    if ta != tb:
+        out.append(
+            f"온도 명령이 다르다: 화면에만 {sorted(ta - tb)}, 명령 모드에만 {sorted(tb - ta)}"
+        )
     return out
 
 
-def reference(gui_path: Path, out: Path = OUT_DIR, exe: Path = STUDIO) -> int:
+def gui_slices(project: Path, sliced: Path | None = None) -> Sliced:
+    """화면 결과. 프로젝트 저장에는 잘린 결과가 들어가지 않아서, 화면의 "플레이트 슬라이스 파일 내보내기"로 낸
+    파일(없으면 프로젝트 옆의 <이름>.gcode.3mf)에서 설정, 결과, G-code를 읽는다. 놓인 모양은 프로젝트에서 읽는다."""
+    base = read_3mf(project)
+    sliced = sliced or project.with_name(project.stem + ".gcode.3mf")
+    if not sliced.exists():
+        return base
+    s = read_3mf(sliced)
+    return Sliced(s.plates, s.settings, s.gcode, s.png, base.transforms)
+
+
+def source_stl(project: Path) -> Path | None:
+    """화면 프로젝트에 적힌 원래 STL(이름만 적힌다)을 프로젝트 폴더와 build/coupons에서 찾는다."""
+    with zipfile.ZipFile(project) as z:
+        text = z.read("Metadata/model_settings.config").decode("utf-8", "replace")
+    found = re.search(r'key="source_file" value="([^"]+)"', text)
+    if not found:
+        return None
+    name = Path(found.group(1)).name
+    for folder in (project.parent, REPO_ROOT / "build" / "coupons"):
+        if (folder / name).exists():
+            return folder / name
+    return None
+
+
+def reference(
+    gui_path: Path,
+    out: Path = OUT_DIR,
+    exe: Path = STUDIO,
+    sliced: Path | None = None,
+    stl: Path | None = None,
+) -> int:
+    """가정 B: 명령 모드가 화면과 같은 것을 뽑는지 두 길로 본다.
+
+    1. 같은 입력이면 같은 결과인가: 화면 프로젝트(같은 메시, 같은 자리)를 배치 없이 다시 잘라 설정과 층마다 뽑는
+       양을 견준다. STL로 자르면 메시 좌표의 아주 작은 반올림과 놓인 자리(채움 무늬는 판 기준)에 따라 틈 채움과
+       속 채움이 조금씩 달라져서, 층마다 견주는 것은 입력이 같을 때만 뜻이 있다.
+    2. 판을 낼 때의 길: 원래 STL을 판을 낼 때와 같은 옵션(자동 배치)으로 잘라 설정을 견준다. 이 길의 설정 지문을
+       값 파일에 적고, 판을 낼 때마다 이 지문과 견준다.
+    """
     cfg = load_config()
     flat, problems = check_studio(cfg, exe)
     if problems:
         print("\n".join(problems))
         return 1
-    gui = read_3mf(gui_path)
+    gui = gui_slices(gui_path, sliced)
+    stl = stl or source_stl(gui_path)
+    if stl is None or not stl.exists():
+        print("화면 프로젝트의 원래 STL을 찾지 못했다 (--stl로 준다)")
+        return 1
     preset = next(
         (k for k, v in cfg.process.items() if v == gui.settings.get("print_settings_id")), None
     )
@@ -846,23 +962,43 @@ def reference(gui_path: Path, out: Path = OUT_DIR, exe: Path = STUDIO) -> int:
     if work.exists():
         shutil.rmtree(work)
     presets = write_presets(cfg, flat, work / "presets")
-    made, code, log = run_studio(
-        cfg, presets, preset, color, [gui_path], work, "cli", arrange=False, exe=exe
-    )
-    problems = log_problems(cfg, code, log)
-    if not made.exists():
-        print("\n".join([*problems, "명령 모드 3MF가 나오지 않았다"]))
-        return 1
-    cli = read_3mf(made)
-    problems += compare_reference(gui, cli, cfg.sha_ignore)
-    if problems:
-        print(f"가정 B 실패 ({preset}): 차이 {len(problems)}개")
-        print("\n".join(f"- {p}" for p in problems[:80]))
-        return 1
-    print(
-        f'가정 B 통과 ({preset}). 값 파일에 적는다: settings_sha.{preset} = "{settings_sha(cli.settings, cfg.sha_ignore)}"'
-    )
-    return 0
+    runs = {
+        "같은 입력": run_studio(
+            cfg, presets, preset, color, [gui_path], work / "same", "cli", arrange=False, exe=exe
+        ),
+        "판을 낼 때의 길": run_studio(
+            cfg, presets, preset, color, [stl], work / "real", "cli", exe=exe
+        ),
+    }
+    # 화면과 같은 것을 뽑는지 본다. 로그 줄은 참고로 보이고(판을 낼 때는 그대로 막는다), 끝난 값만 따진다
+    problems, notes = [], []
+    for label, (made, code, log) in runs.items():
+        for p in log_problems(cfg, code, log):
+            (problems if p.startswith("스튜디오가 ") else notes).append(f"{label}: {p}")
+        if not made.exists():
+            problems.append(f"{label}: 명령 모드 3MF가 나오지 않았다")
+    if notes:
+        print("참고 (결과가 화면과 같으면 이 판에서는 결과를 바꾸지 않은 줄이다):")
+        print("\n".join(f"- {n}" for n in notes))
+    if not problems:
+        same, real = (read_3mf(made) for made, _, _ in runs.values())
+        common = (*cfg.sha_ignore, *cfg.reference_ignore)
+        problems += [
+            f"같은 입력: {p}"
+            for p in compare_settings(gui, same, (*common, *cfg.reference_same_ignore))
+            + compare_output(gui, same)
+        ]
+        problems += [
+            f"판을 낼 때의 길: {p}"
+            for p in compare_settings(gui, real, (*common, *cfg.reference_stl_ignore))
+        ]
+        if not problems:
+            sha = settings_sha(real.settings, cfg.sha_ignore)
+            print(f'가정 B 통과 ({preset}). 값 파일에 적는다: settings_sha.{preset} = "{sha}"')
+            return 0
+    print(f"가정 B 실패 ({preset}): 차이 {len(problems)}개")
+    print("\n".join(f"- {p}" for p in problems[:80]))
+    return 1
 
 
 def main(argv: Sequence[str] | None = None) -> None:
@@ -882,10 +1018,18 @@ def main(argv: Sequence[str] | None = None) -> None:
     p_ref = sub.add_parser(
         "reference", help="화면에서 잘라 저장한 3MF와 명령 모드 결과를 견준다 (가정 B)"
     )
-    p_ref.add_argument("gui_3mf", type=Path)
+    p_ref.add_argument("gui_3mf", type=Path, help="화면에서 저장한 프로젝트 3MF")
+    p_ref.add_argument(
+        "--sliced",
+        type=Path,
+        help="화면에서 낸 플레이트 슬라이스 파일 (없으면 프로젝트 옆의 <이름>.gcode.3mf)",
+    )
+    p_ref.add_argument(
+        "--stl", type=Path, help="화면에서 불러온 STL (없으면 프로젝트에 적힌 이름으로 찾는다)"
+    )
     args = parser.parse_args(argv)
     if args.command == "reference":
-        sys.exit(reference(args.gui_3mf))
+        sys.exit(reference(args.gui_3mf, sliced=args.sliced, stl=args.stl))
     plan = make_plan(args.items, args.name)
     where = publish(plan)
     print(describe(plan, load_config()))

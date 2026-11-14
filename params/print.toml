@@ -29,10 +29,40 @@ standard = "6e844f899929"
 filament = "5d2da95b0e1b"
 
 # 3MF에 들어간 설정 전체의 지문. 화면에서 자른 기준과 견준 뒤(가정 B) 적는다. 비어 있으면 뽑을 파일을 내지 않는다.
+# 2026-11-15: 시험편 fit3_6806_bores를 화면과 명령 모드로 잘라 견주고 둘 다 통과해 적었다 (판을 낼 때의 길의 지문)
 [settings_sha]
-strength = ""
-standard = ""
+strength = "0ec81cd673a018e5"
+standard = "c65da40f7e212c4e"
 ignore = ["filament_colour"] # 지문에서 빼는 칸: 색은 묶음마다 일부러 바꾼다
+
+# 가정 B에서 화면 결과와 견줄 때 빼는 칸 (2026-11-15에 화면 결과와 견주며 하나씩 확인했다). 출력 설정이 아닌
+# 기록 칸이다. 노즐 종류마다 적힌 필라멘트 값은 도구가 쓰는 종류(일반)끼리 견준다.
+[reference]
+# 두 길 모두: 명령 모드만 적는 기록
+ignore = [
+  "compatible_printers_condition", # 프리셋이 맞는 프린터의 조건 (빈 칸)
+  "inherits_group",                # 프리셋 이어받기 기록
+  "different_settings_to_system",  # 시스템 프리셋과 다른 칸의 목록
+  "filament_map_2",                # 노즐이 둘인 프린터의 필라멘트 배정. P1S는 노즐이 하나다
+]
+# 1) 화면 프로젝트를 그대로 다시 자를 때. 이때 층마다 뽑는 양, 무게, 기능 종류, 온도가 화면과 같았다
+same_input_ignore = [
+  "enable_prime_tower", # 프로젝트를 다시 자르면 명령 모드가 0으로 바꾼다. 필라멘트 하나라 결과가 같았다
+]
+# 2) STL을 판을 낼 때처럼 자를 때: 화면 프로젝트에만 딸린 기록
+stl_ignore = [
+  "extruder_ams_count",          # AMS 칸 수 (AMS는 쓰지 않는다)
+  "extruder_nozzle_stats",       # 노즐 통계
+  "filament_colour_type",        # 필라멘트 색 종류
+  "filament_multi_colour",       # 여러 색 필라멘트의 색
+  "filament_nozzle_map",         # 노즐이 둘인 프린터의 노즐 배정
+  "flush_volumes_vector",        # 색을 바꿀 때 씻어 낼 양 (판마다 한 색이다)
+  "host_type",                   # 프린터 연결 방식
+  "printhost_authorization_type",
+  "printhost_ssl_ignore_revoke",
+  "wipe_tower_x",                # 프라임 타워 자리. 필라멘트가 하나면 타워를 만들지 않는다
+  "wipe_tower_y",
+]
 
 # 공차에 닿는 핵심 설정. 3MF에 들어간 값이 이와 다르면 뽑지 않는다. 값이 여럿인 칸은 첫 값(일반 노즐)을 본다.
 [key_settings.common]

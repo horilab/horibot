@@ -238,14 +238,66 @@ def test_groups_keep_colours_together_in_listed_order() -> None:
     ]
 
 
-def test_reference_compare_ignores_comments_only() -> None:
+def test_reference_compare_looks_at_what_is_printed_not_the_order() -> None:
     s = _settings("strength")
-    a = _sliced(s, "; made 10:00\nG1 X1 Y2\n")
-    assert (
-        sl.compare_reference(a, _sliced(s, "; made 11:00\nG1 X1 Y2 ; move\n"), CFG.sha_ignore) == []
+    layer = "; CHANGE_LAYER\n; FEATURE: Outer wall\n"
+    a = _sliced(s, f"; made 10:00\nM104 S220\n{layer}G1 X1 Y2 E1\nG1 X5 Y5\nG1 X6 Y5 E2 ; b\n")
+    # 섬을 뽑는 순서와 이동만 다르다
+    b = _sliced(s, f"; made 11:00\nM104 S220\n{layer}G1 X6 Y5\nG1 X7 Y5 E2\nG1 X1 Y2 E1\n")
+    assert sl.compare_reference(a, b, CFG.sha_ignore) == []
+    more = _sliced(s | {"wall_loops": "5"}, f"M104 S230\n{layer}G1 X1 Y2 E1.5\nG1 X6 Y5 E2\n")
+    diff = sl.compare_reference(a, more, CFG.sha_ignore)
+    assert any("wall_loops" in d for d in diff)
+    assert any("뽑는 양" in d for d in diff) and any("온도" in d for d in diff)
+    slow = _sliced(s, a.gcode, plates=(sl.PlateInfo(1, 700.0, 5.0, False, False, ("a.stl",)),))
+    assert any("예상 시간" in d for d in sl.compare_reference(a, slow, CFG.sha_ignore))
+
+
+def test_reference_compares_the_nozzle_variant_in_use() -> None:
+    # 화면은 일반·하이플로 노즐 값을 둘 다 적고, 명령 모드는 쓰는 종류(일반)만 적는다
+    s = _settings("strength")
+    gui = s | {
+        "filament_extruder_variant": ["Direct Drive Standard", "Direct Drive High Flow"],
+        "filament_max_volumetric_speed": ["21", "29"],
+    }
+    cli = s | {
+        "filament_extruder_variant": ["Direct Drive Standard"],
+        "filament_max_volumetric_speed": ["21"],
+    }
+    assert sl.compare_reference(_sliced(gui), _sliced(cli), CFG.sha_ignore) == []
+    diff = sl.compare_reference(
+        _sliced(gui), _sliced(cli | {"filament_max_volumetric_speed": ["29"]}), CFG.sha_ignore
     )
-    diff = sl.compare_reference(a, _sliced(s | {"wall_loops": "5"}, "G1 X1 Y3\n"), CFG.sha_ignore)
-    assert any("wall_loops" in d for d in diff) and any("G-code" in d for d in diff)
+    assert any("filament_max_volumetric_speed" in d for d in diff)
+
+
+def test_reference_skips_only_named_bookkeeping_fields() -> None:
+    s = _settings("strength")
+    ignore = (*CFG.sha_ignore, *CFG.reference_ignore, *CFG.reference_same_ignore)
+    gui = _sliced(s | {"enable_prime_tower": "1"})
+    assert (
+        sl.compare_reference(
+            gui, _sliced(s | {"enable_prime_tower": "0", "inherits_group": [""]}), ignore
+        )
+        == []
+    )
+    assert sl.compare_reference(gui, _sliced(s | {"enable_prime_tower": "0"}), CFG.sha_ignore) != []
+
+
+def test_gui_result_reads_the_exported_sliced_file(tmp_path: Path) -> None:
+    project, sliced = tmp_path / "ref.3mf", tmp_path / "ref.gcode.3mf"
+    info = '<config><plate><metadata key="index" value="1"/><metadata key="prediction" value="600"/></plate></config>'
+    with zipfile.ZipFile(project, "w") as z:  # 프로젝트 저장: 설정과 놓인 모양만 있다
+        z.writestr("Metadata/project_settings.config", json.dumps({"wall_loops": "6"}))
+        z.writestr("3D/3dmodel.model", '<item transform="1 0 0 0 1 0 0 0 1 5 6 0"/>')
+    assert sl.gui_slices(project).gcode == ""
+    with zipfile.ZipFile(sliced, "w") as z:  # 플레이트 슬라이스 파일: 결과와 G-code가 있다
+        z.writestr("Metadata/project_settings.config", json.dumps({"wall_loops": "6"}))
+        z.writestr("Metadata/slice_info.config", info)
+        z.writestr("Metadata/plate_1.gcode", "G1 X1\n")
+    got = sl.gui_slices(project)
+    assert got.gcode == "G1 X1\n" and got.plates[0].seconds == 600
+    assert got.transforms == ((1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 5.0, 6.0, 0.0),)
 
 
 def test_failed_plan_removes_old_files(tmp_path: Path) -> None:
