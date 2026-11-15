@@ -77,7 +77,7 @@ horilab/
 - 경로 계획(IK, 궤적)은 컨트롤러 크레이트 안에 Rust로 둔다 ([0033](0033-planning-and-simulation.md)).
 - 응용은 컨트롤러 API가 자리 잡을 때까지 이 레포에 둔다. 무거운 의존성(AI 모델 등)이 들어오면 다른 레포로 빼거나 별도 환경으로 둔다 ([0023](0023-robot-controller.md)).
 - 응용에 딸린 값(박스 규격, 팔레트 자리)은 `params/<응용>/`에 둔다. 그 출력물(박스, 팔레트 틀)은 design이 같은 값으로 만든다.
-- 파이 카메라 프로그램의 Python 버전과 pyrealsense2 설치 방법은 파이 준비 단계에서 실제로 시험해 정한다. 후보는 이전 소스 빌드 재사용, conda-forge의 librealsense, 서드파티 휠(dreamscale-pyrealsense2), 공식 ARM 휠이다. camera 패키지는 그 Python 버전에서도 돌아야 한다.
+- 파이 카메라 프로그램의 Python 버전과 pyrealsense2 설치 방법은 hori3에 26.04를 깔 때 실제로 시험해 정한다 (보는 순서는 [0026](0026-pi-runtime-deploy-records.md)의 1). 그 밖의 후보는 conda-forge의 librealsense와 서드파티 휠(dreamscale-pyrealsense2)이다. camera 패키지는 그 Python 버전에서도 돌아야 한다.
 - 테스트 폴더 위치와 실행 방법은 기반 결정 7번에서 정한다.
 
 ## 근거

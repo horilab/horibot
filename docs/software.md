@@ -111,7 +111,7 @@
 | 궤적 (컨트롤러) | rsruckig (순수 Rust). 직선 이동의 시간 매기기는 직접 짠다 (0033) |
 | 서보 | 컨트롤러는 Rust로 직접 짠 서보 버스(`crates/servo`, [0024](decisions/0024-servo-bus.md)), 시리얼은 serialport. Feetech ftservo-python-sdk는 Python 기준 구현에만 |
 | 영상 전송 | pyzmq |
-| 카메라 (파이) | pyrealsense2. 설치 방법은 파이 준비 때 정한다 |
+| 카메라 (파이) | pyrealsense2 (PyPI 공식 휠, uv의 Python 3.12, [0026](decisions/0026-pi-runtime-deploy-records.md)) |
 
 - 버전과 고른 이유는 [0008](decisions/0008-environment-and-packages.md)에 있다.
 - EAIK 1.2.2는 Windows에서 동작을 확인했다 (2026-11-07, Python 3.12, 예제 6축 모델): 축 배치만 넣으면 구조를 알아서 판별했다 (구형 손목 예제, UR5e 치수의 UR형). 목표 50개를 모두 풀고, 목표마다 가능한 해를 전부(2~8개) 줬다. 한 번에 약 10 µs.
