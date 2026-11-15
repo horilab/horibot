@@ -57,4 +57,4 @@ def test_page_shows_files_parts_and_checks(tmp_path: Path) -> None:
     assert "01-black-a3f9c2.3mf" in page and "검정" in page and "5시간 13분" in page
     assert "출력 원판" in page and "out_disc.stl" in page and "넘어질 수 있음" in page
     assert "밤에 돌리기 좋음" in page and "부품 3개" in page
-    assert "AMS를 끄고" in page and "data:image/png;base64," in page
+    assert "플레이트 슬라이스" in page and "data:image/png;base64," in page

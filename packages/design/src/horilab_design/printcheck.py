@@ -1,4 +1,5 @@
-"""출력 검사에 쓰는 계산: 출력 무게 어림과, 바닥에 닿지 않고 아래를 보는 면 찾기 (docs/design.md의 "출력 전 확인").
+"""출력 검사에 쓰는 계산: 출력 무게 어림, 바닥에 닿지 않고 아래를 보는 면 찾기, 층 가운데에 걸친 수평면 찾기
+(docs/design.md의 "출력 전 확인").
 
 형상은 부품 좌표 그대로 주고, 뽑을 때 위를 보는 방향(up)을 같이 준다.
 """
@@ -9,7 +10,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 
 import numpy as np
-from build123d import Compound
+from build123d import Compound, GeomType
 
 Vec = tuple[float, float, float]
 
@@ -22,6 +23,7 @@ SOLID = 1.008e-3  # [g/mm³]
 INFILL = 0.32
 # 0.20mm Standard로 뽑는 얇은 덮개: 잰 것이 고리 하나뿐이라 그 값(무게 / 부피)을 쓴다
 STANDARD_THIN = 1.125e-3  # [g/mm³]
+LAYER = 0.2  # 층 높이 [mm] (params/print.toml의 두 프리셋 모두. 첫 층도 같다)
 
 
 def _mesh(
@@ -88,3 +90,39 @@ def overhangs(shape: Compound, up: Vec, grid: float = 6.0) -> Overhangs:
         largest=spots[0][0] if spots else 0.0,
         spots=tuple(spots[:20]),
     )
+
+
+def layer_snap(height: float, layer: float = LAYER) -> float:
+    """바닥에서 잰 높이를 가장 가까운 층 경계로 맞춘다."""
+    return round(height / layer) * layer
+
+
+def mid_layer_levels(
+    shape: Compound, up: Vec, layer: float = LAYER, tol: float = 0.02, min_area: float = 0.5
+) -> list[float]:
+    """수평인 평면 가운데 층의 한가운데에 걸친 것의 높이 [mm] (바닥에서, 낮은 것부터).
+
+    슬라이서는 층마다 그 층의 가운데 높이에서 형상을 자른다. 수평면이 그 높이에 있으면 그 층이 뽑힐지가 계산
+    오차로 갈려서, 뽑힌 높이가 그린 값과 한 층(0.2 mm) 다를 수 있다. 그런 면은 층 경계로 옮긴다. 층 가운데에서
+    tol 안에 있는 평면을 찾고, 넓이가 min_area보다 작은 조각은 뺀다. 가로 구멍의 위아래 같은 곡면은 보지 않는다.
+    """
+    axis = np.asarray(up, float)
+    axis = axis / np.linalg.norm(axis)
+    tri, _, _ = _mesh(shape)
+    bed = float((tri.reshape(-1, 3) @ axis).min())
+    levels: dict[float, float] = defaultdict(float)
+    for face in shape.faces():
+        if face.geom_type != GeomType.PLANE:
+            continue
+        n = face.normal_at()
+        if abs(n.X * axis[0] + n.Y * axis[1] + n.Z * axis[2]) < 0.9999:
+            continue
+        c = face.center()
+        height = c.X * axis[0] + c.Y * axis[1] + c.Z * axis[2] - bed
+        levels[round(float(height), 3)] += float(face.area)
+    out: list[float] = []
+    for z, area in sorted(levels.items()):
+        off = abs((z / layer - 0.5) - round(z / layer - 0.5)) * layer  # 층 가운데에서 떨어진 거리
+        if area >= min_area and off < tol - 1e-9:
+            out.append(z)
+    return out

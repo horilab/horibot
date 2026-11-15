@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import math
+import subprocess
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -121,6 +122,11 @@ def test_log_lets_only_exact_harmless_lines_through() -> None:
     near = NOZZLE_LINE.replace("extruder_count 1", "extruder_count 2")
     assert sl.log_problems(CFG, 0, near)[0].startswith("스튜디오 오류")
     assert sl.log_problems(CFG, 0, "[warning] floating regions found")[0].startswith("검토 필요")
+    floating = (
+        "[2026] [0x1] [warning] plate 1: found NON_CRITICAL slicing warnings: It seems object "
+        "carrier.stl has floating regions. Please re-orient the object or enable support generation."
+    )
+    assert "floating regions" in sl.log_problems(CFG, 0, floating)[0]
     assert sl.log_problems(CFG, 0, "[error] ZFiller: encounter idx from clip: 85") == [
         "스튜디오 오류: ZFiller: encounter idx from clip: 85"
     ]
@@ -209,6 +215,36 @@ def test_oriented_puts_up_along_z(up: sl.Vec, height: float) -> None:
 
 def _item(name: str, shape: Compound, color: str = "white", preset: str = "strength") -> sl.Item:
     return sl.Item("t", name, name, shape, (0.0, 0.0, 1.0), color, preset, 1)
+
+
+def test_faces_in_the_middle_of_a_layer_block_the_plan() -> None:
+    # 높이 2.5 mm의 윗면은 13번째 층(2.4 ~ 2.6)의 한가운데라 뽑힐지가 정해지지 않는다
+    step = Compound([Pos(0, 0, 1.25) * Box(20, 20, 2.5) + Pos(0, 0, 4.0) * Box(6, 6, 8.0)])
+    assert "2.5" in sl.shape_problems(_item("step", step))[0]
+    flat = Compound([Pos(0, 0, 1.2) * Box(20, 20, 2.4) + Pos(0, 0, 4.0) * Box(6, 6, 8.0)])
+    assert sl.shape_problems(_item("flat", flat)) == []
+
+
+def test_studio_is_asked_for_warning_level_logs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 기본 로그 수준(오류만)에서는 화면에 뜨는 슬라이스 경고(떠 있는 영역 등)가 나오지 않는다
+    seen: list[list[str]] = []
+
+    class Done:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    def fake(args: list[str], **_kw: Any) -> Done:
+        seen.append(args)
+        return Done()
+
+    monkeypatch.setattr(subprocess, "run", fake)
+    presets = {k: tmp_path / f"{k}.json" for k in ("machine", "strength", "filament_white")}
+    sl.run_studio(CFG, presets, "strength", "white", [tmp_path / "a.stl"], tmp_path / "w", "plate")
+    args = seen[0]
+    assert args[args.index("--debug") + 1] == "2"
 
 
 def test_geometry_reports_base_area_and_slender_parts() -> None:

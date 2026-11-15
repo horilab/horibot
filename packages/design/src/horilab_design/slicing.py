@@ -48,7 +48,7 @@ from typing import Any
 
 from build123d import Axis, Compound, GeomType, Pos, export_stl
 
-from horilab_design.printcheck import overhangs
+from horilab_design.printcheck import mid_layer_levels, overhangs
 from horilab_design.values import REPO_ROOT
 
 PRINT_FILE = REPO_ROOT / "params" / "print.toml"
@@ -273,6 +273,8 @@ def run_studio(
         "0",
         "--slice",
         "0",
+        "--debug",
+        "2",  # 경고까지 적게 한다. 기본값(오류만)이면 화면에 뜨는 슬라이스 경고가 로그에 나오지 않는다
         "--outputdir",
         str(work),
         "--export-3mf",
@@ -558,6 +560,17 @@ def geometry(item: Item) -> tuple[Compound, Geometry]:
     return placed, Geometry(height, base, over.total - over.flat, over.largest, slender)
 
 
+def shape_problems(item: Item) -> list[str]:
+    """자르기 전에 형상에서 보는 것: 수평면이 층의 한가운데에 있으면 뽑힌 높이가 그린 값과 한 층 다를 수 있다."""
+    levels = mid_layer_levels(item.shape, item.up)
+    if not levels:
+        return []
+    where = ", ".join(f"{z:g}" for z in levels)
+    return [
+        f"{item.name}: 수평면이 층의 한가운데에 있다 (바닥에서 {where} mm). 한 층이 더 뽑힐지가 정해지지 않는다"
+    ]
+
+
 # ---- 판 나누기와 판마다 자르기 ------------------------------------------------------------------------------
 
 
@@ -640,6 +653,7 @@ def make_plan(specs: Sequence[str], name: str, out: Path = OUT_DIR, exe: Path = 
     for item in plan.items:
         placed, geo = geometry(item)
         plan.geometry[item.name] = geo
+        problems += shape_problems(item)
         if geo.height > cfg.max_height_mm:
             problems.append(
                 f"{item.name}: 높이 {geo.height:.1f} mm가 출력 범위({cfg.max_height_mm:.0f} mm)를 넘는다"
