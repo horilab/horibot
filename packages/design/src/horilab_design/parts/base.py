@@ -187,7 +187,7 @@ ACC_NUT = 2.6  # 그 밑면의 너트 자리 깊이
 PROVISIONAL = (
     "SLOT_W, SLOT_H (검정 너트 홈 시험편)",
     "선 누르개의 모양 (쓸 선의 굵기가 정해진 뒤에 그린다. 나사 자리는 냈다)",
-    *j.PROVISIONAL[:2],
+    "검정 부품의 구멍과 너트 홈 (흰색 값을 씀), 너트가 서는 홈 (옛 방식의 임시 값)",
 )
 
 
@@ -341,8 +341,10 @@ def desk_parts() -> list[j.Part]:
 
 
 def bearings() -> tuple[Compound, Compound]:
-    lower = j.ring(j.BRG_OD / 2, j.BRG_D / 2, B0, B0 + j.BRG_B)
-    upper = j.ring(j.BRG_OD / 2, j.BRG_D / 2, B1, B1 + j.BRG_B)
+    # 저널은 시험편으로 고른 지름이라 그린 값이 안지름 30보다 크다. 그린 값끼리 겹치지 않게 안쪽을 저널에 맞춘다
+    r_in = max(j.BRG_D / 2, j.R_JOURNAL)
+    lower = j.ring(j.BRG_OD / 2, r_in, B0, B0 + j.BRG_B)
+    upper = j.ring(j.BRG_OD / 2, r_in, B1, B1 + j.BRG_B)
     return lower, upper
 
 
@@ -582,8 +584,8 @@ def hardware(model: ServoModel) -> list[j.Part]:
     out.append(j.Part("너트 (누름 틀)", nut_x, j.STEEL * 0.72, False, "metal"))
     for k, (x, z) in enumerate(j.BACK_HOLES):
         y = j.L1 - j.PLATE_T + j.M2_SINK + dy  # 머리 밑면 (받침 판 속 자리의 바닥)
-        shape = cyl_y(1.0, y, y + j.M2_SCREW, x, z) + cyl_y(1.9, y - 2.0, y, x, z)
-        out.append(j.Part(f"M2x4 {k + 1}", solid(shape), j.STEEL, False, "metal"))
+        shape = cyl_y(1.0, y, y + j.M2_SCREW, x, z) + cyl_y(2.0, y - 1.6, y, x, z)
+        out.append(j.Part(f"서보 뒷면 나사 {k + 1}", solid(shape), j.STEEL, False, "metal"))
     return out
 
 

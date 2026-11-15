@@ -152,7 +152,7 @@ SLOT_NUT = (5.6, 2.8)  # 옆에서 밀어 넣는 너트 홈 (임시: 검정 시�
 PROVISIONAL = (
     "SLOT_NUT (검정 fit1 너트 홈)",
     "가진 M3 × 12 (손가락, 귀)와 M3 × 8 수량",
-    *j.PROVISIONAL[3:],
+    "검정 부품의 구멍과 너트 홈 (흰색 값을 씀)",
 )
 
 
@@ -280,7 +280,10 @@ def frame() -> Compound:
     for x, z in flange.TOOL_SCREWS:
         s = 1.0 if z > 0 else -1.0
         za, zb = sorted((s * (CRADLE_Z - 0.5), s * (zo + 0.5)))
-        f = solid(f - box(x - 4.6, x + 4.6, yd, yd + flange.KNOB[1] + 1.4, za, zb))
+        # 창의 반폭: 손잡이(반지름 KNOB[0])가 옆벽 바깥 면을 지나는 폭에 0.6을 띄운다
+        half = math.sqrt((flange.KNOB[0] + 0.6) ** 2 - (abs(z) - zo) ** 2)
+        half = math.ceil(half * 10) / 10
+        f = solid(f - box(x - half, x + half, yd, yd + flange.KNOB[1] + 1.4, za, zb))
     for wx0, wx1 in ((-31.0, -20.5), (-18.0, -7.5), (-5.0, 5.5)):
         h0, h1, c = 16.5, 35.0, 3.0
         win = [(wx0, _y(h0)), (wx1, _y(h0)), (wx1, _y(h1 - c)), (wx1 - c, _y(h1))]

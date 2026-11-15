@@ -115,6 +115,21 @@ SHOULDER_D = 33.0  # 안쪽 링이 얹히는 턱 지름. 안쪽 링 면에만 �
 SHOULDER_H = 0.8
 STUB_BASE = 2.0  # 축 받침판 두께
 STUB_HEIGHT = 8.0  # 베어링 폭보다 1 mm 길게
+# 3차 (어깨): 6808 (40 × 52 × 7). 6806은 흰색과 검정 구멍이 42.2, 검정 축이 30.1이었다 (베어링 지름에 0.2, 0.1).
+# 같은 여유의 칸과 그 양옆 칸만 둔다. 고리 벽은 어깨 집의 벽(2.5 mm)에 가깝게 3 mm다
+BEARING_BORES_6808 = (52.1, 52.2, 52.3)
+BEARING_SHAFTS_6808 = (40.0, 40.1, 40.2)
+LIP_BORE_6808 = 47.0  # 턱 안지름. 안쪽 링(바깥지름 약 44)은 비킨다
+RING_WALL_6808 = 3.0
+SHOULDER_D_6808 = 43.0  # 안쪽 링이 얹히는 턱 지름. 바깥 링(안지름 약 48)은 비킨다
+STUB_SIZE_6808 = 46.0  # 축 하나의 받침판 한 변
+STUB_BORE_6808 = (
+    30.0  # 축 속을 비운 지름 (필라멘트를 아낀다. 벽 5 mm는 어깨 출력 원판의 저널만큼 단단하다)
+)
+# 3차: 플랜지의 도구 핀을 눌러 박는 세로 구멍 (검정). 세로 핀 시험편의 가장 작은 칸(3.30)이 손끝으로 들어가서
+# 더 작은 칸을 둔다. 깊이는 플랜지에 박는 깊이다 (parts/flange.py의 TOOL_PIN_DEPTH)
+PIN_PRESS_HOLES = (3.15, 3.20, 3.25, 3.30)
+PIN_PRESS_DEPTH = 14.0
 
 PITCH = 11.0  # 칸 간격
 MARGIN = 2.0
@@ -297,12 +312,12 @@ def horn_recesses(spec: ServoSpec) -> Compound:
     return plate
 
 
-def pin_holes_vertical() -> Compound:
-    """영점 핀이 세로로 지나가는 구멍판. 핀을 손으로 꽂았다 빼 본다."""
-    plate: Compound = Box(_length(len(PIN_HOLES)), 16.0, PIN_DEPTH, align=CORNER)
-    for i, d in enumerate(PIN_HOLES):
-        plate -= _vertical_hole(d, _x(i), 5.5, PIN_DEPTH)
-        plate -= _label(f"{d:.2f}", _x(i), 12.0, PIN_DEPTH)
+def pin_holes_vertical(holes: tuple[float, ...] = PIN_HOLES, depth: float = PIN_DEPTH) -> Compound:
+    """핀이 세로로 지나가는 구멍판. 핀을 손으로 꽂았다 빼 본다 (눌러 박는 구멍은 엄지로 눌러 본다)."""
+    plate: Compound = Box(_length(len(holes)), 16.0, depth, align=CORNER)
+    for i, d in enumerate(holes):
+        plate -= _vertical_hole(d, _x(i), 5.5, depth)
+        plate -= _label(f"{d:.2f}", _x(i), 12.0, depth)
     return plate
 
 
@@ -316,15 +331,17 @@ def pin_holes_horizontal() -> Compound:
     return block
 
 
-def bearing_bores() -> Compound:
-    """6806 바깥 링이 들어갈 고리. 고리 하나에 지름 하나이고, 바닥 턱에 바깥 링이 얹힌다.
+def bearing_bores(
+    bores: tuple[float, ...] = BEARING_BORES, lip_bore: float = LIP_BORE, wall: float = RING_WALL
+) -> Compound:
+    """베어링 바깥 링이 들어갈 고리 (기본은 6806). 고리 하나에 지름 하나이고, 바닥 턱에 바깥 링이 얹힌다.
 
     베어링을 위에서 손으로 밀어 넣어 본다. 고리 옆 혀에 지름을 새긴다.
     """
     columns, height = 3, LIP_HEIGHT + SEAT_DEPTH
     rings: list[Compound] = []
-    for i, d in enumerate(BEARING_BORES):
-        outer = BEARING_BORES[-1] + 2 * RING_WALL
+    for i, d in enumerate(bores):
+        outer = bores[-1] + 2 * wall
         x = (i % columns) * (outer + 4.0) + outer / 2
         y = (i // columns) * (outer + LABEL_TAB + 4.0) + outer / 2
         up = (Align.CENTER, Align.CENTER, Align.MIN)
@@ -333,25 +350,35 @@ def bearing_bores() -> Compound:
             14.0, LABEL_TAB + 2.0, height, align=CORNER
         )
         ring -= Pos(x, y, LIP_HEIGHT) * Cylinder(d / 2, SEAT_DEPTH + 1.0, align=up)
-        ring -= _vertical_hole(LIP_BORE, x, y, height)
+        ring -= _vertical_hole(lip_bore, x, y, height)
         ring -= _label(f"{d:.1f}", x, y + outer / 2 + LABEL_TAB / 2 - 1.0, height)
         rings.append(ring)
     return Compound(rings)
 
 
-def bearing_shafts() -> Compound:
-    """6806 안쪽 링이 끼워질 축. 받침판 위 턱에 안쪽 링이 얹힌다. 베어링을 위에서 끼워 본다."""
-    columns, size = 3, 40.0
+def bearing_shafts(
+    shafts: tuple[float, ...] = BEARING_SHAFTS,
+    shoulder_d: float = SHOULDER_D,
+    size: float = 40.0,
+    hollow: float = 0.0,
+) -> Compound:
+    """베어링 안쪽 링이 끼워질 축 (기본은 6806). 받침판 위 턱에 안쪽 링이 얹힌다. 베어링을 위에서 끼워 본다.
+
+    hollow를 주면 축과 받침판의 가운데를 그 지름으로 뚫는다.
+    """
+    columns = 3
     stubs: list[Compound] = []
     up = (Align.CENTER, Align.CENTER, Align.MIN)
-    for i, d in enumerate(BEARING_SHAFTS):
+    for i, d in enumerate(shafts):
         x0 = (i % columns) * (size + 4.0)
         y0 = (i // columns) * (size + LABEL_TAB + 4.0)
         cx, cy = x0 + size / 2, y0 + size / 2
         stub: Compound = Pos(x0, y0, 0) * Box(size, size + LABEL_TAB, STUB_BASE, align=CORNER)
-        stub += Pos(cx, cy, STUB_BASE) * Cylinder(SHOULDER_D / 2, SHOULDER_H, align=up)
+        stub += Pos(cx, cy, STUB_BASE) * Cylinder(shoulder_d / 2, SHOULDER_H, align=up)
         stub += Pos(cx, cy, STUB_BASE + SHOULDER_H) * Cylinder(d / 2, STUB_HEIGHT, align=up)
         stub -= _label(f"{d:.1f}", cx, y0 + size + LABEL_TAB / 2, STUB_BASE)
+        if hollow > 0:
+            stub -= _vertical_hole(hollow, cx, cy, STUB_BASE + SHOULDER_H + STUB_HEIGHT)
         stubs.append(stub)
     return Compound(stubs)
 
@@ -373,6 +400,13 @@ COUPONS: dict[str, Callable[[], Compound]] = {
     "fit3_pin_horizontal": pin_holes_horizontal,
     "fit3_6806_bores": bearing_bores,
     "fit3_6806_shafts": bearing_shafts,
+    # 어깨의 6808 자리: 구멍은 흰색(J1 몸통의 어깨 집), 축은 검정(어깨 출력 원판)으로 뽑는다
+    "fit3_6808_bores": lambda: bearing_bores(BEARING_BORES_6808, LIP_BORE_6808, RING_WALL_6808),
+    "fit3_6808_shafts": lambda: bearing_shafts(
+        BEARING_SHAFTS_6808, SHOULDER_D_6808, STUB_SIZE_6808, STUB_BORE_6808
+    ),
+    # 플랜지의 도구 핀을 눌러 박는 구멍 (검정)
+    "fit3_pin_press": lambda: pin_holes_vertical(PIN_PRESS_HOLES, PIN_PRESS_DEPTH),
 }
 
 

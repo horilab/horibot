@@ -80,11 +80,7 @@ FILLET = 1.5  # 발과 판이 만나는 안쪽 모서리를 메운 길이
 HEAD_RELIEF_R = (
     3.3  # 발 나사 머리(반지름 2.85)가 앉는 자리의 반지름: 판의 뿌리와 메운 자리를 이만큼 판다
 )
-PROVISIONAL = (
-    "PLUG_TOP (플러그 몸통이 옆면에 붙는 자리, 사진 어림)",
-    "wrist.MOUNT_NUT (흰색 fit1_nut_drops)",
-    *j.PROVISIONAL[:1],
-)
+PROVISIONAL = ("PLUG_TOP (플러그 몸통이 옆면에 붙는 자리, 사진 어림)",)
 
 
 def _yz(p: tuple[float, float, float]) -> tuple[float, float]:
@@ -200,10 +196,10 @@ def mount() -> Compound:
     z_in, z_out = -wrist.MOUNT_Z, -(wrist.MOUNT_Z + FOOT_T)
     m = j.prism_x(profile(), -MOUNT_W / 2, MOUNT_W / 2)
     for x, y in wrist.mount_xy():  # 발 나사
-        m = solid(m - cyl_z(j.M3_FREE_H / 2, z_out - 1, z_in + 1, x, y))
+        m = solid(m - cyl_z(j.K_M3_FREE_H / 2, z_out - 1, z_in + 1, x, y))
         # 머리 자리: 카메라를 플러그만큼 밖으로 옮겨 판의 뿌리가 나사 쪽으로 왔다. 머리 둘레만 판과 메운 자리를 판다
         m = solid(m - cyl_z(HEAD_RELIEF_R, z_out - 2.5, z_out, x, y))
-    r = j.M3_FREE_H / 2
+    r = j.K_M3_FREE_H / 2
     for sy in (1, -1):  # 카메라 나사와 머리 자리 (카메라 좌표: 원통에서 멀어지는 쪽으로 나란하다)
         hole = cyl_z(r, -CAM_D - PLATE_T - 1, -CAM_D + 1, 0.0, sy * CAM_HOLE_X)
         hole += cyl_z(3.1, -CAM_D - PLATE_T - 1, -CAM_D - PLATE_T + HEAD_REC, 0.0, sy * CAM_HOLE_X)

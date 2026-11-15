@@ -56,7 +56,7 @@ horilab: 3D 프린터로 출력한 부품과 Feetech 서보로 만드는 6축 �
   - `cargo clippy --workspace --all-targets -- -D warnings`
   - `cargo test --workspace`
 - 팔 설계 검토와 3D 페이지 ([0029](docs/decisions/0029-joint-parts.md)):
-  - `uv run python -m horilab_design.parts.wrist` (첫 관절: 겹침, 틈, 무게, 걸침), `... parts.shoulder` (어깨), `... parts.base` (J1), `... parts.flange` (J6 플랜지), `... parts.camera_mount` (D405 받침), `... parts.gripper` (평행 그리퍼, [0030](docs/decisions/0030-parallel-gripper.md)), `... parts.links` (링크)
+  - `uv run python -m horilab_design.parts.wrist` (첫 관절: 겹침, 틈, 무게, 걸침, 층 가운데에 걸친 수평면, 옆 홈에 너트가 들어가는 길), `... parts.shoulder` (어깨), `... parts.base` (J1), `... parts.flange` (J6 플랜지), `... parts.camera_mount` (D405 받침), `... parts.gripper` (평행 그리퍼, [0030](docs/decisions/0030-parallel-gripper.md)), `... parts.links` (링크)
   - `uv run python -m horilab_design.studies.clamp_plate` (허브 판이 베어링 안쪽 링을 누르는 힘), `... studies.error_budget` (오차 예산)
   - `uv run python -m horilab_design.studies.ur_arm [compare|zone|lengths|view|calib|accel 60]` (팔 전체: 쌓임과 무게, UR3e와 같은 자세 시험, 주 작업 영역, 링크 길이 후보, D405 화면, 손목 카메라의 캘리브레이션 자세, 관절의 가속 상한)
   - `uv run python -m horilab_design.studies.wiring` (배선: 관절을 넘는 선 길이, 구간마다 쓸 선, D405 선, [0031](docs/decisions/0031-wiring.md))

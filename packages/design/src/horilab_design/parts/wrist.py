@@ -16,7 +16,7 @@ from build123d import Compound, Location, Pos, Rot
 
 from horilab_design.parts import joint as j
 from horilab_design.parts.shapes import box, cyl_x, cyl_y, cyl_z, far_apart, nut_trap, solid
-from horilab_design.printcheck import overhangs, printed_mass_g
+from horilab_design.printcheck import mid_layer_levels, overhangs, printed_mass_g
 from horilab_design.values import ServoModel
 
 # 서보 먼 끝과 앞 관절 출력 원판 사이: 혼 볼트 머리(1.65)가 들고, 그 양옆으로 선 둘(두께 1.5)이 지나간다
@@ -38,17 +38,15 @@ NOTCH = (7.0, j.NECK_IN)  # 옆 홈의 |z| 범위: 그 길의 입구라 목 안�
 # D405 선의 클립을 M3 나사 둘로 단다. 너트는 뒤(-y, 뽑을 때 위)에서 떨어뜨려 넣는다
 MOUNT_X = 12.0  # 돋움 가운데의 |x|
 MOUNT_HW = 4.5  # 돋움의 반폭
-MOUNT_Y = (
-    -17.0,
-    -7.0,
-)  # 돋움의 y 범위: 뒷덮개 테(-17.8) 앞. 서보를 잠그는 벽 나사(-3.5)는 두 돋움 사이에 있다
+# 돋움의 y 범위: 뒷덮개 테(-17.8) 앞. 서보를 잠그는 벽 나사(-3.5)는 두 돋움 사이에 있다. 뒤 끝 -16.9는 몸통을
+# 뽑을 때 층 경계(바닥에서 47.4)에 온다
+MOUNT_Y = (-16.9, -7.0)
 MOUNT_Z = 27.6  # 돋움 면의 |z| (원통 옆면에서 4.0)
 MOUNT_SCREW_Y = -12.0
-MOUNT_NUT = (
-    5.6,
-    2.8,
-    1.6,
-)  # 너트 홈의 폭과 두께, 돋움 면에서 홈까지의 살 (임시: 흰색 fit1_nut_drops 값으로 바꾼다)
+# 너트 홈의 폭과 두께(흰색 fit1_nut_drops 값: 저절로 내려가고 조여도 안 돈다), 돋움 면에서 홈까지의 살
+_DROP = j._WHITE
+assert _DROP.m3_nut_drop_width_mm is not None and _DROP.m3_nut_drop_thickness_mm is not None
+MOUNT_NUT = (_DROP.m3_nut_drop_width_mm, _DROP.m3_nut_drop_thickness_mm, 1.6)
 MOUNT_HOLE = 6.0  # 나사 구멍의 깊이 (돋움 면에서. 원통 벽에는 닿지 않는다)
 
 
@@ -237,7 +235,7 @@ def report(model: ServoModel = "STS3215") -> None:
     print(
         f"첫 관절 (손목 몸통 둘, {model}): 발 바닥 x {X_FOOT:.2f}, 앞 관절 축 y {AX_Y}, 귀 두께 {j.EAR_T}"
     )
-    print(f"임시 값: {', '.join(j.PROVISIONAL)}")
+    print(f"임시 값: {', '.join(j.PROVISIONAL) or '없음'}")
     print("\n뽑는 부품 (무게는 뽑아서 잰 부품에 맞춘 어림, 걸침은 바닥에 닿지 않고 아래를 보는 면)")
     for name, (shape, up, color, preset) in printed().items():
         bb = shape.bounding_box()
@@ -247,6 +245,16 @@ def report(model: ServoModel = "STS3215") -> None:
             f"{printed_mass_g(shape, up, preset):5.1f} g  걸침 {over.total:5.0f} mm² (거의 수평 {over.flat:.0f}, "
             f"가장 넓은 한 자리 {over.largest:.0f})"
         )
+    mid = {n: mid_layer_levels(s, up) for n, (s, up, _c, _p) in printed().items()}
+    print(
+        "층 가운데에 걸친 수평면 (한 층이 더 뽑힐지가 정해지지 않는다): "
+        + (", ".join(f"{n} {z}" for n, z in mid.items() if z) or "없음")
+    )
+    paths = {name: j.nut_entry_overlap(part, c, a, s) for name, part, c, a, s in j.side_nuts()}
+    print(
+        "옆 홈에 너트를 곧게 밀어 넣을 때 겹침 [mm³]: "
+        + (", ".join(f"{n} {v:.2f}" for n, v in paths.items() if v > 0.01) or "없음")
+    )
     hits = j.overlaps([p for p in parts if "핀" not in p.name])
     print(
         "\n겹침 [mm³]: " + (", ".join(f"{a} ∩ {b} {v:.2f}" for (a, b), v in hits.items()) or "없음")

@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import math
+
 import pytest
 
 from horilab_design.parts import joint as j
 from horilab_design.parts import links, wrist
-from horilab_design.printcheck import overhangs
+from horilab_design.parts.shapes import cyl_y
+from horilab_design.printcheck import LAYER, mid_layer_levels, overhangs
 from horilab_design.values import ServoModel, load_measured
 
 BED = 256.0  # 출력 범위 [mm]
@@ -101,11 +104,19 @@ def test_horn_screw_head_and_back_side_fit() -> None:
     # 서보 받침: 먼 가로대의 선 자리는 눕힌 선 밑보다 낮고, 그 밑에 판이 2 mm 넘게 남는다
     groove = j.L1 - j.PLATE_T + j.WIRE_GROOVE
     assert groove - j.PLUG_TOP >= 0.3 and j.PLATE_T - j.WIRE_GROOVE >= 2.0
-    # 서보 뒷면 나사 M2 × 4: 머리(높이 2.0까지)는 판 속 자리에 들어 뒷덮개와 1.5 넘게 뜨고, 서보에 2.5 ~ 3.5 물린다
-    head_top = j.L1 - j.PLATE_T + j.M2_SINK - 2.0
-    assert head_top - j.BACK_IN >= 1.5
-    assert j.PLATE_T - j.M2_SINK >= 1.2 - 1e-9
-    assert 2.5 <= j.M2_SCREW - (j.PLATE_T - j.M2_SINK) <= 3.5
+    # 서보 뒷면 나사: 둥근머리(높이 1.6)가 판 속 자리에 0.8 들고, 나온 머리가 뒷덮개 안쪽 면과 1.0 넘게 뜬다
+    head_top = j.L1 - j.PLATE_T + j.M2_SINK - 1.6
+    assert head_top - j.BACK_IN >= 1.0
+    # 머리 밑의 살 2.2 mm: STS3250의 M2 × 5는 서보에 2.8 mm 물리고, STS3215의 자가탭 나사(전체 7.16 mm, 머리 밑
+    # 5.5 ~ 6.0으로 본다)는 3.3 ~ 3.8 mm 물린다
+    web = j.PLATE_T - j.M2_SINK
+    assert web == pytest.approx(2.2)
+    assert j.M2_SCREW - web == pytest.approx(2.8)
+    measured = load_measured()
+    assert measured.servo_back_screw is not None
+    assert measured.servo_back_screw.total_length_mm == pytest.approx(7.16)
+    # 머리 자리와 구멍: 흔한 M2·ST2.2 둥근머리(머리 지름 4.0, 나사산 2.2까지)가 검정 세로 구멍의 줄어듦까지 넣어 든다
+    assert 2 * j.M2_HEAD_R - 4.0 >= 0.6 and 2 * j.M2_HOLE_R - 2.2 >= 0.4
     # 판 위를 지나는 선(두께 1.5)과 뒷덮개 사이
     assert (j.L1 - j.PLATE_T - j.WIRE_T) - j.BACK_IN >= 0.5
     # 뒷덮개 나사 M3 × 12의 끝이 받침의 기둥 속에서 끝난다
@@ -127,3 +138,80 @@ def test_screw_lengths_match_the_stack() -> None:
     assert j.FRONT - (j.ATOP + j.EAR_T + 3.0 - 20.0) > 4.0
     # 멈춤 나사 끝이 홈 바닥에 닿지 않는다
     assert (j.ATOP - 1.8 - 10.0) - j.CH_Y > 0.8
+
+
+def _on_layer(height: float) -> bool:
+    return abs(height / LAYER - round(height / LAYER)) < 1e-6
+
+
+@pytest.mark.slow
+def test_horizontal_faces_do_not_sit_mid_layer() -> None:
+    # 슬라이서는 층의 가운데 높이에서 자른다. 수평면이 그 높이에 있으면 한 층이 더 뽑힐지가 정해지지 않는다
+    for name, (shape, up, _color, _preset) in wrist.printed().items():
+        assert mid_layer_levels(shape, up) == [], name
+
+
+def test_fits_land_on_layer_boundaries() -> None:
+    # 시험편으로 고른 값이 그대로 뽑히려면 홈의 위아래와 맞닿는 면이 층 경계에 와야 한다
+    w = j.K_NUT_SLOT[0]
+    # 누름 틀 (고리 앞면이 바닥): 너트 홈의 바닥과 천장. 홈은 나사 축에서 0.1 안으로만 옮겨진다
+    y = j.retainer_nut_y()
+    assert _on_layer(j.B0 - (y + w / 2)) and _on_layer(j.B0 - (y - w / 2))
+    assert abs(y - j.RET_SCREW_Y) <= 0.1
+    # 서보 받침 (판 뒷면이 바닥)
+    bed = j.L1 - j.PLATE_T
+    assert _on_layer(j.CAR_SCREW_Y - w / 2 - bed) and _on_layer(j.CAR_SCREW_Y + w / 2 - bed)
+    # 출력 원판 (테 윗면이 바닥): 너트 홈 바닥, 테두리 끝, 멈춤 기둥 끝, 저널 끝
+    for y in (j.SEAM + j.NUT_POCKET, j.FRONT + j.LIP_GAP, j.POST_TIP, j.B0 + j.CLAMP_GAP):
+        assert _on_layer(j.ATOP - y), y
+    # 손목 몸통 (원통 앞 끝이 바닥): 턱, 베어링 자리의 끝, 원통 뒤 끝
+    for y in (j.B0 + j.BRG_B, j.SEAT_Y, j.BACK_END):
+        assert _on_layer(j.FRONT - y), y
+    # 뒷덮개 (바깥 면이 바닥): 판 안쪽 면, 테 끝
+    for y in (j.BACK_IN, j.BACK_END + j.COVER_SKIRT):
+        assert _on_layer(y - j.BACK_OUT), y
+
+
+def test_bearing_seat_is_stepped_for_entry() -> None:
+    # 베어링 자리는 시험편 값이고, 그 뒤는 0.2 넓어서 베어링과 속 부품이 걸리지 않고 드나든다
+    assert j.BEARING_ENTRY - j.BEARING_BORE == pytest.approx(0.2)
+    assert j.R_ENTRY - j.R_SLIDE == pytest.approx(0.3)
+    # 누름 틀의 고리(앞면이 베어링 뒷면 B0)는 좁은 구멍에 들지 않고, 자리는 베어링 폭 7 mm 중 6.5 mm를 넘게 문다
+    assert j.B0 < j.SEAT_Y <= j.B0 + 0.5
+    assert j.B0 + j.BRG_B - j.SEAT_Y >= 6.5
+
+
+def test_nut_seats_use_the_coupon_values_for_their_colour_and_pose() -> None:
+    fit = load_measured().fit
+    black, white = fit["pla_basic_black"], fit["pla_basic_white"]
+    assert j.K_NUT_SLOT == (black.m3_nut_upright_width_mm, black.m3_nut_upright_thickness_mm)
+    assert j.K_NUT_AF == black.m3_nut_pocket_mm
+    assert j.BEARING_BORE == white.bearing_6806_bore_mm
+    assert j.JOURNAL_D == black.bearing_6806_shaft_mm
+    assert j.PROVISIONAL == ()
+    # 옆 홈: 안쪽에 살이 남아 벽 나사가 밀어도 너트가 빠지지 않고, 조인 너트를 나사가 1 mm 넘게 지나간다
+    tip = j.SPOT_R - j.SCREW_LEN
+    assert j.NUT_Z - j.K_NUT_SLOT[1] / 2 - tip >= 0.8
+    assert (j.NUT_Z + j.K_NUT_SLOT[1] / 2 - j.NUT_T) - tip >= 1.0
+    # 출력 원판 밑면의 너트 홈(맞변이 반지름 쪽을 본다)은 안쪽 링을 누르는 단과 테 밑의 테두리 사이에 든다
+    r = math.hypot(*j.RIM[0])
+    assert r - j.K_NUT_AF / 2 >= j.R_STEP + 0.2
+    assert r + j.K_NUT_AF / 2 <= j.R_DRUM - j.LIP_W - 0.1
+
+
+@pytest.mark.slow
+def test_side_nuts_slide_straight_into_their_slots() -> None:
+    # 누름 틀과 서보 받침의 너트 다섯은 옆 입구에서 기울이지 않고 자리까지 들어간다
+    for name, part, center, axis, slide in j.side_nuts():
+        assert j.nut_entry_overlap(part, center, axis, slide) < 0.01, name
+
+
+def test_cover_screw_hole_stops_at_the_pillar_top() -> None:
+    # 덮개 나사 M3 × 12의 끝은 기둥 윗면보다 0.4 mm 아래다. 구멍을 기둥 위의 돋움까지 파면 돋움의 안쪽 모서리가
+    # 조각으로 떨어져 허공에서 뽑히기 시작한다 (슬라이서의 떠 있는 영역 경고)
+    pillar = j.BACK_OUT + 1.2 + j.COVER_SCREW + 0.4
+    part = j.carrier()
+    x, z = j.COVER_BOSS[0]
+    # 구멍 속이던 자리 가운데 돋움 밑의 살 안(축에서 먼 쪽)에 든 작은 기둥이 꽉 차 있다
+    probe = cyl_y(0.4, pillar + 0.3, pillar + 0.8, x, z + 0.8)
+    assert (part & probe).volume == pytest.approx(probe.volume, rel=1e-3)

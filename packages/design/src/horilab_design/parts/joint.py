@@ -22,9 +22,29 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from build123d import Compound, Cone, Polygon, Pos, RegularPolygon, Rot, extrude
+from build123d import (
+    Compound,
+    Cone,
+    Location,
+    Plane,
+    Polygon,
+    Pos,
+    RegularPolygon,
+    Rot,
+    extrude,
+)
 
-from horilab_design.parts.shapes import box, cyl_x, cyl_y, cyl_z, far_apart, solid
+from horilab_design.parts.shapes import (
+    Point,
+    box,
+    cyl_x,
+    cyl_y,
+    cyl_z,
+    far_apart,
+    nut_trap,
+    solid,
+)
+from horilab_design.printcheck import layer_snap
 from horilab_design.values import ServoModel, load_measured
 
 PLA = 1.24e-3  # [g/mm³] 나사와 너트의 무게를 어림할 때만 쓴다. 출력 무게는 printcheck.printed_mass_g가 낸다
@@ -56,27 +76,48 @@ assert _WIRE.horn_to_wire_mm is not None
 WIRE_TOP = HORN_TOP["STS3250"] - _WIRE.horn_to_wire_mm  # 꽂아 눕힌 선 (혼 윗면에서 잰 값, -20.12)
 BACK_HOLES = ((-8.30, 10.25), (-8.30, -10.25), (-32.75, 10.25), (-32.75, -10.25))
 
-# ---- 공차 (시험편 값. 검정과 6806은 아직 재지 않아 임시 값이다) ----
+# ---- 공차 (공차 시험편으로 고른 값: data/measured.toml, 고르는 규칙은 docs/manufacturing.md의 "공차") ----
+# 구멍과 홈은 부품의 색과 뽑히는 방향이 같은 시험편의 값을 쓴다. 몸통(손목 몸통, 링크)은 흰색이고, 속 부품(출력
+# 원판, 허브 판, 누름 틀, 서보 받침, 뒷덮개)은 검정이다. 검정 값은 K_로 시작한다
 _WHITE = _MEASURED.fit["pla_basic_white"]
-assert _WHITE.pin_hole_mm is not None and _WHITE.pin_hole_horizontal_mm is not None
-PIN_HOLE = _WHITE.pin_hole_mm  # 세로 구멍 (몸통의 살)
-PIN_HOLE_H = _WHITE.pin_hole_horizontal_mm  # 가로 구멍 (손목 몸통의 귀는 뽑을 때 눕는다)
-M3_FREE = 3.2  # 볼트가 지나가는 세로 구멍: 시험편 3.1에 구멍 자리 오차 몫 0.1
-M3_FREE_H = 3.4  # 가로 구멍: 시험편 3.3에 0.1
-M3_TAP = 2.8  # 조여 넣는 구멍 (뒷덮개 나사)
-NUT_AF, NUT_T = 5.6, 2.4  # 위에서 눌러 끼우는 육각 홈의 맞변 거리, 너트 두께 (출력 원판 밑면)
-# 누름 틀과 서보 받침의 너트 자리: 뽑을 때 너트가 서고(축이 가로) 홈 천장이 허공에 걸친다. 위에서 끼우는 홈과
-# 뽑히는 방향이 달라 그 값이 옮겨지지 않는다 (흰 받침 기둥 귀에서 5.6에 너트가 손으로 들어가지 않았다).
-# 임시: 검정 fit1_nut_slots_upright 결과(세로 폭)로 바꾼다
-NUT_AF_UPRIGHT = 5.6
-BEARING_BORE = 42.1  # 6806 바깥 링 자리 (임시: 흰색 fit3_6806_bores 결과로 바꾼다)
-JOURNAL_D = 29.9  # 안쪽 링 속 저널 (임시: 검정 fit3_6806_shafts 결과로 바꾼다)
-PROVISIONAL = (
-    "BEARING_BORE",
-    "JOURNAL_D",
-    "NUT_AF_UPRIGHT",
-    "검정 부품의 구멍과 너트 홈 (흰색 값을 씀)",
+_BLACK = _MEASURED.fit["pla_basic_black"]
+HOLE_SLACK = 0.1  # 볼트가 지나가는 구멍에 더하는 구멍 자리 오차 몫
+
+
+def _fit(value: float | None) -> float:
+    if value is None:
+        raise ValueError("공차 시험편 값이 없다 (data/measured.toml)")
+    return value
+
+
+PIN_HOLE = _fit(_WHITE.pin_hole_mm)  # 세로 구멍 (몸통의 살)
+PIN_HOLE_H = _fit(_WHITE.pin_hole_horizontal_mm)  # 가로 구멍 (손목 몸통의 귀는 뽑을 때 눕는다)
+M3_FREE = _fit(_WHITE.m3_hole_mm) + HOLE_SLACK  # 흰색, 볼트가 지나가는 세로 구멍 (3.2)
+M3_FREE_H = _fit(_WHITE.m3_hole_horizontal_mm) + HOLE_SLACK  # 흰색, 가로 구멍 (3.4)
+K_M3_FREE = _fit(_BLACK.m3_hole_mm) + HOLE_SLACK  # 검정, 세로 구멍 (3.4)
+K_M3_FREE_H = _fit(_BLACK.m3_hole_horizontal_mm) + HOLE_SLACK  # 검정, 가로 구멍 (3.3)
+M3_TAP = _fit(_BLACK.m3_tap_hole_mm)  # 조여 넣는 구멍 (뒷덮개 나사). 흰색도 같은 값이다 (2.8)
+NUT_T = 2.4  # M3 너트 두께
+NUT_AF = _fit(_WHITE.m3_nut_pocket_mm)  # 흰색, 위에서 눌러 끼우는 육각 홈의 맞변 거리 (5.6)
+# 검정, 위에서 눌러 끼우는 육각 홈 (5.5): 엄지로 눌러 들어가고 뒤집어도 안 빠진다 (출력 원판 밑면의 너트)
+K_NUT_AF = _fit(_BLACK.m3_nut_pocket_mm)
+# 검정, 너트가 서서 옆에서 밀려 들어가는 홈 (세로 폭 5.8, 두께 2.8): 누름 틀과 서보 받침의 너트 자리.
+# 뽑을 때 너트의 축이 가로이고 홈 천장이 허공에 걸쳐서, 위에서 끼우는 홈의 값이 옮겨지지 않는다
+K_NUT_SLOT = (
+    _fit(_BLACK.m3_nut_upright_width_mm),
+    _fit(_BLACK.m3_nut_upright_thickness_mm),
 )
+# 너트가 서는 홈을 옛 방식(안쪽 면에서 판 육각 자리)으로 둔 부품이 쓰는 임시 값 (어깨, 베이스). 그 부품의 뽑을
+# 파일을 낼 때 위의 옆 홈으로 바꾼다
+NUT_AF_UPRIGHT = 5.6
+# 6806 바깥 링 자리: 엄지로 꾹 눌러 들어가고 놀지 않는다. 흰색과 검정이 같은 값이다 (42.2)
+BEARING_BORE = _fit(_WHITE.bearing_6806_bore_mm)
+assert BEARING_BORE == _fit(_BLACK.bearing_6806_bore_mm)
+# 베어링이 자리까지 지나가는 구멍과 속 부품이 드나드는 구멍: 자리보다 0.2 넓다 (42.3이 저절로 들어가는 칸이다)
+BEARING_ENTRY = BEARING_BORE + 0.2
+JOURNAL_D = _fit(_BLACK.bearing_6806_shaft_mm)  # 검정, 안쪽 링 속 저널 (30.1)
+# 다른 부품 코드가 이어 쓰는 임시 값의 목록 (이 모듈의 값은 모두 시험편 값이다)
+PROVISIONAL: tuple[str, ...] = ()
 
 # ---- 베어링과 축 방향 쌓임 ----
 BRG_D, BRG_OD, BRG_B = 30.0, 42.0, 7.0
@@ -102,37 +143,57 @@ SEAM = FRONT + GAP  # 출력 원판 테의 밑면
 BRIM_T = 3.8  # M3 × 20 혼 볼트 머리가 테 윗면(뽑을 때 바닥 면)에 바로 앉고 혼에 2.6 들어가는 두께
 ATOP = SEAM + BRIM_T  # 출력 원판 윗면 = 자식 몸통이 앉는 면
 R_BORE = BEARING_BORE / 2
-WALL = 2.55
-R_DRUM = R_BORE + WALL  # 원통 바깥 반지름 23.6
+R_ENTRY = BEARING_ENTRY / 2
+R_DRUM = 23.6  # 원통 바깥 반지름. 벽은 베어링 자리에서 2.5, 그 뒤에서 2.4 mm다
+WALL = R_DRUM - R_BORE
+# 베어링 자리(좁은 구멍)가 시작하는 곳: 누름 틀의 고리가 좁은 구멍에 들지 않게 0.4 앞이다. 몸통을 뽑을 때
+# 이 단이 층 경계(바닥에서 8.4)에 온다
+SEAT_Y = B0 + 0.4
+R_SLIDE = R_ENTRY - 0.3  # 원통 속에서 드나드는 부품(누름 틀, 서보 받침)의 바깥 반지름 (20.9)
 R_LIP = 19.5
 R_STEP = 16.5  # 허브 판의 테와 출력 원판의 단: 안쪽 링 앞뒤 면만 누른다
 R_JOURNAL = JOURNAL_D / 2
-COVER_GAP = 1.0
-BACK_IN = WIRE_TOP - COVER_GAP  # 뒷덮개 안쪽 면
-COVER_T = 1.5
-BACK_END = BACK_IN + 0.8  # 원통 뒤 끝. 덮개는 서보 받침을 따라 앉으므로 0.8 띄운다
+COVER_GAP = (
+    1.0  # 꽂아 눕힌 선과 그 위를 덮는 면 사이의 기준 틈 (어깨의 뒷덮개와 베이스의 판도 쓴다)
+)
+# 뒷덮개: 바깥 면은 눕힌 선 위 2.5 mm다 (관절의 길이 ATOP - BACK_OUT = 58.9를 정한다). 판은 1.4 mm(7층)이고
+# 선과 안쪽 면 사이가 1.1 mm다. 판이 1.5면 안쪽 면이 덮개를 뽑을 때 층의 한가운데에 온다
+COVER_T = 1.4
+BACK_OUT = WIRE_TOP - COVER_GAP - 1.5  # 뒷덮개 바깥 면
+BACK_IN = BACK_OUT + COVER_T  # 뒷덮개 안쪽 면
+# 원통 뒤 끝 (몸통을 뽑을 때 맨 위, 바닥에서 50.8). 덮개 안쪽 면과 0.9 띄운다: 덮개는 서보 받침을 따라 앉는다
+BACK_END = BACK_OUT + 2.3
 COVER_SKIRT = 2.5  # 덮개 테가 원통 뒤 끝을 겹쳐 가리는 길이
 COVER_R = R_DRUM + 0.4 + 1.6
-BACK_OUT = BACK_IN - COVER_T  # 뒷덮개 바깥 면
 
 # ---- 원통 속 부품 ----
 RET_Y = (5.0, 18.7)  # 누름 틀 다리의 범위
 RET_SCREW_Y = 12.0
-CAR_Y = (L1, L1 + 17.7)  # 서보 받침 날개의 범위
+CAR_Y = (L1, L1 + 17.8)  # 서보 받침 날개의 범위
 CAR_SCREW_Y = L1 + 12.5  # 서보를 잠그는 벽 나사 (받침 판에서 12.5)
 LEAF_T = 1.4  # 날개 두께: 반지름 쪽으로 무르고 돌리는 쪽으로 단단하다
 PLATE_T = 3.0
 COVER_BOSS = ((3.0, 16.0), (3.0, -16.0))  # 뒷덮개 나사 자리 (x, z)
 COVER_SCREW = 12.0  # 뒷덮개 나사 M3 × 12
-# 서보 뒷면 나사(M2)의 머리는 받침 판 속 자리에 든다: 뒷덮개 안쪽 면이 판에서 2.1 mm라, 머리가 판 위로 나오면
-# 덮개에 닿고 그 위로 선이 지나가지 못한다. 자리 밑에 남는 판의 살은 PLATE_T - M2_SINK = 1.2 mm다
-M2_SINK = 1.8
-M2_HEAD_R = 2.2  # 머리 자리의 반지름 (머리 지름 3.5 ~ 4.0)
-M2_SCREW = 4.0  # M2 × 4: 서보에 2.8 mm 물린다
+# 서보 뒷면 나사: STS3215는 2 mm 자가탭(가진 것은 예전 SO-101에서 뺀 둥근머리, 전체 7.16 mm), STS3250은 M2다.
+# 흔한 M2·ST2.2 둥근머리(머리 지름 4.0, 높이 1.6, 나사산 2.2까지)가 검정 세로 구멍의 줄어듦(M3에서 약 0.3)까지
+# 넣어 걸리지 않게 낸다. 머리 밑의 살을 2.2 mm 두어, 가진 자가탭 나사(머리 밑 5.5 ~ 6.0으로 본다)가 서보에
+# 3.3 ~ 3.8 mm 물린다 (살이 1.2면 4.3 ~ 4.8 mm라 구멍 바닥에 먼저 닿을 수 있다). 머리는 판 뒷면 위로 0.8까지
+# 나오고, 뒷덮개 안쪽 면(판에서 2.1)과 1.3 mm 뜬다. 선은 나사 줄 사이(|z| 7.3까지)로 지나간다
+M2_SINK = 0.8
+M2_HEAD_R = 2.4  # 머리 자리의 반지름
+M2_HOLE_R = 1.35  # 나사가 지나가는 구멍의 반지름
+M2_SCREW = 5.0  # STS3250: M2 × 5가 서보에 2.8 mm 물린다
 # 먼 가로대의 가운데는 뒷면을 이만큼 낮춘다: 꽂아 눕힌 선(밑이 판 뒷면보다 0.4 낮다)이 잰 높이 그대로 지나간다
 WIRE_GROOVE = 0.8
 SPOT_R = R_DRUM - 0.6  # 벽 나사 머리가 앉는 면
 SCREW_LEN = 8.0  # 벽 나사 M3 × 8
+# 벽 나사의 너트가 드는 홈의 가운데 (축에서). 홈은 15.9 ~ 18.7이고, 조이면 너트가 바깥 면에 붙는다 (16.3 ~ 18.7).
+# 나사 끝(15.0)이 너트를 1.3 지나간다. 홈이 서보 받침의 날개 안쪽 면(19.5)보다 안에 있어 날개를 파지 않는다
+NUT_Z = 17.3
+# 서보 받침의 날개를 따내기 시작하는 x: 돋움의 옆면이다. 날개 안쪽 면은 x 5.53부터 홈의 바깥 면(18.7)보다
+# 안으로 들어온다 (√(19.5² - 18.7²))
+NUT_GATE_X = 4.6
 
 # ---- 목 (서보 먼 끝을 품는다) ----
 NECK_HW = HW + 0.34 + 2.6  # 목 바깥 반폭 15.3
@@ -145,7 +206,7 @@ BOSS_R = 3.25
 # 멈춤 기둥 귀의 반폭. 귀의 옆면은 멈춤 각에서 살 가운데(선이 넘는 자리) 가까이 온다. 4.0이면 테의 면에서
 # 살 가운데까지 3.1 mm가 남아 선(반폭 2.4)과 0.7 mm 뜬다 (4.6이면 2.5 mm가 남아 0.1 mm다)
 EAR_HW = 4.0
-POST_TIP = SEAM - 4.5  # 기둥 돋움의 끝. 그 아래 너트 2.4
+POST_TIP = SEAM - 4.6  # 기둥 돋움의 끝 (원판을 뽑을 때 바닥에서 8.4). 그 아래 너트 2.4
 STOP_DEG = 163.0  # 기둥이 살에 닿는 각. 프로그램 한계는 SOFT_DEG
 SOFT_DEG = 160.0
 WEB_HALF = 180.0 - STOP_DEG - math.degrees(math.asin(BOSS_R / R_POST))  # 살의 반각 10.3°
@@ -154,11 +215,13 @@ CH_Y = 23.5  # 홈 바닥 (원통 앞 끝에서 7.0). 멈춤 나사 끝(24.5)과
 TUB_Y = CH_Y - 1.6  # 홈 밑을 막는 살의 밑면. 서보 앞면의 라벨 판(17.3)과 4.6 띄운다
 TUB_X = -34.6  # 그 살이 끝나는 x
 R_PIN = 29.0  # 영점 핀
-RIM = ((5.0, 19.4), (-5.0, 19.4), (5.0, -19.4), (-5.0, -19.4))  # 자식 몸통 나사 (x, z)
+# 자식 몸통 나사 (x, z): 축에서 19.5 mm. 출력 원판 밑면의 너트 홈(맞변이 반지름 쪽을 본다)이 안쪽 링을 누르는
+# 단(R_STEP)과 테 밑의 테두리(R_DRUM - LIP_W) 사이에 든다. z가 ±19.4(축에서 20.0)일 때는 테두리가 홈 입구를 0.9 mm 막았다
+RIM = ((5.0, 18.85), (-5.0, 18.85), (5.0, -18.85), (-5.0, -18.85))
 BODY_SCREW = 10.0  # M3 × 10
-EAR_T = (
-    6.2  # 자식 몸통 귀의 두께: 나사 10 = 귀 6.2 + 출력 원판 살 1.3 + 너트 2.4 (끝이 0.1 모자라게)
-)
+# 자식 몸통 귀의 두께: 나사 10 = 귀 6.2 + 출력 원판 살 1.2 + 너트 2.4 + 0.2 (끝이 테 밑면과 같은 높이에 온다)
+EAR_T = 6.2
+NUT_POCKET = NUT_T + 0.2  # 출력 원판 밑면의 너트 홈 깊이: 홈 바닥이 원판을 뽑을 때의 층 경계에 온다
 WIN_X = (-45.0, -35.4)  # 링크의 선 창 (플러그 9.58 × 4.75가 지나간다)
 WIN_Z = 3.0
 
@@ -170,7 +233,9 @@ WIRE_W, WIRE_T = _MEASURED.servo_wire.width_mm, _MEASURED.servo_wire.thickness_m
 PLUG_TOP = WIRE_TOP + WIRE_T
 # 선은 살(180°) 위에서 출력 원판의 테로 건너가 테 둘레에 감긴다. 테 밑의 틈(GAP)으로 선이 빠지면 도는 원판과
 # 서 있는 원통 사이에 낀다. 테 밑면 가장자리에 테두리를 내려 틈을 LIP_GAP으로 좁힌다 (선 두께보다 좁다)
-LIP_GAP = 0.7
+# 0.8이면 테두리 끝이 원판을 뽑을 때의 층 경계(바닥에서 5.0 mm)에 온다. 0.7이면 층의 한가운데라 한 층이
+# 더 뽑힐지가 정해지지 않는다
+LIP_GAP = 0.8
 LIP_W = 1.2
 
 
@@ -196,6 +261,13 @@ def hex_x(y: float, z: float, x0: float, x1: float, af: float = NUT_AF) -> Compo
 def hex_y(x: float, z: float, y0: float, y1: float, af: float = NUT_AF) -> Compound:
     h = extrude(RegularPolygon(af / 2, 6, major_radius=False), amount=y1 - y0)
     return solid(Pos(x, y1, z) * (Rot(90, 0, 0) * h))
+
+
+def hex_y_radial(x: float, z: float, y0: float, y1: float, af: float = NUT_AF) -> Compound:
+    """y 방향 육각 기둥인데, 맞변 한 쌍이 축에서 (x, z)로 가는 반지름과 직각이다 (원판 둘레의 너트 자리)."""
+    h = extrude(RegularPolygon(af / 2, 6, major_radius=False), amount=y1 - y0)
+    turned_h = Rot(0, 0, math.degrees(math.atan2(z, x)) - 90.0) * h
+    return solid(Pos(x, y1, z) * (Rot(90, 0, 0) * turned_h))
 
 
 def polar(r: float, a: float) -> tuple[float, float]:
@@ -277,7 +349,10 @@ def drum_cavity(
 
     roof_y를 주면 목의 뒷면 쪽(y < roof_y)은 x = roof_x에서 막힌다 (링크: 목이 낮은 관으로 이어질 때).
     """
-    c = cyl_y(R_BORE, BACK_END - 1, B0 + BRG_B) + cyl_y(R_LIP, B0, FRONT + 1)
+    # 베어링 자리(R_BORE)는 앞 끝의 턱 바로 뒤 6.5 mm뿐이고, 그 뒤는 0.1 넓다 (R_ENTRY): 베어링이 자리까지
+    # 걸리지 않고 내려가고, 누름 틀과 서보 받침이 드나든다
+    c = cyl_y(R_ENTRY, BACK_END - 1, SEAT_Y) + cyl_y(R_BORE, SEAT_Y - 0.01, B0 + BRG_B)
+    c += cyl_y(R_LIP, B0, FRONT + 1)
     if roof_y is None or roof_x is None:
         c += box(neck_x - 1, -12.0, BACK_END - 1, TUB_Y, -NECK_IN, NECK_IN)
     else:
@@ -303,14 +378,15 @@ def cut_joint_features(h: Compound, window: bool) -> Compound:
         z0, z1 = (15.0, R_DRUM + 1) if s > 0 else (-R_DRUM - 1, -15.0)
         zs0, zs1 = (SPOT_R, R_DRUM + 1) if s > 0 else (-R_DRUM - 1, -SPOT_R)
         h = solid(h - cyl_z(r, z0, z1, 0.0, RET_SCREW_Y))
-        h = solid(h - box(-3.4, 3.4, RET_SCREW_Y - 3.4, RET_SCREW_Y + 3.4, zs0, zs1))
+        # 머리 자리의 위아래는 ±3.5다 (±3.4면 몸통을 뽑을 때 층 가운데에서 0.02 mm라 한 층이 오갈 수 있다)
+        h = solid(h - box(-3.4, 3.4, RET_SCREW_Y - 3.5, RET_SCREW_Y + 3.5, zs0, zs1))
         # 서보 받침 나사 구멍은 축 방향으로 길다 (서보가 찾은 자리 그대로 잠근다)
         slot = cyl_z(r, z0, z1, 0.0, CAR_SCREW_Y - 1.0) + cyl_z(r, z0, z1, 0.0, CAR_SCREW_Y + 1.0)
         slot += box(-r, r, CAR_SCREW_Y - 1.0, CAR_SCREW_Y + 1.0, z0, z1)
         h = solid(h - solid(slot))
         h = solid(h - box(-4.2, 4.2, CAR_SCREW_Y - 5.2, CAR_SCREW_Y + 5.2, zs0, zs1))
     h = solid(h - cyl_x(r, 15, R_DRUM + 1, RET_SCREW_Y, 0.0))
-    h = solid(h - box(SPOT_R, R_DRUM + 1, RET_SCREW_Y - 3.4, RET_SCREW_Y + 3.4, -3.4, 3.4))
+    h = solid(h - box(SPOT_R, R_DRUM + 1, RET_SCREW_Y - 3.5, RET_SCREW_Y + 3.5, -3.4, 3.4))
     if not h.is_valid or h.volume < 1000:
         raise RuntimeError(f"몸통 형상이 깨졌다: 부피 {h.volume:.1f}")
     return h
@@ -321,7 +397,9 @@ def cut_joint_features(h: Compound, window: bool) -> Compound:
 
 
 def bearing() -> Compound:
-    return ring(BRG_OD / 2, BRG_D / 2, B0, B0 + BRG_B)
+    """검사용 베어링. 저널은 시험편으로 고른 지름(뽑으면 줄어 안쪽 링에 맞는다)이라 그린 값이 안지름 30보다
+    크다. 그린 값끼리 겹치지 않게 안쪽을 저널에 맞춘다."""
+    return ring(BRG_OD / 2, max(BRG_D / 2, R_JOURNAL), B0, B0 + BRG_B)
 
 
 def bolt_xz() -> list[tuple[float, float]]:
@@ -338,7 +416,7 @@ def hub_plate() -> Compound:
     h = cyl_y(HUB_SEAT_R, SEAT, SEAT + RELIEF + 0.01) + cyl_y(R_STEP, SEAT + RELIEF, B0)
     h -= cyl_y(3.6, SEAT - 1, B0 + 1)  # 혼 가운데 나사 머리
     for x, z in bolt_xz():
-        h -= cyl_y(M3_FREE / 2, SEAT - 1, B0 + 1, x, z)
+        h -= cyl_y(K_M3_FREE / 2, SEAT - 1, B0 + 1, x, z)
     return solid(h)
 
 
@@ -358,14 +436,23 @@ def out_disc() -> Compound:
     a += box(20.0, R_POST, SEAM, ATOP, -EAR_HW, EAR_HW)
     a += cyl_y(EAR_HW, SEAM, ATOP, R_POST, 0.0)  # 귀
     a += cyl_y(BOSS_R, POST_TIP, SEAM + 0.01, R_POST, 0.0)  # 멈춤 기둥 (속에 M3 나사)
-    a -= cyl_y(M3_FREE / 2, POST_TIP - 1, ATOP + 1, R_POST, 0.0)
-    a -= cyl_y(3.1, ATOP - 1.8, ATOP + 1, R_POST, 0.0)  # 기둥 나사 머리 자리
+    a -= cyl_y(K_M3_FREE / 2, POST_TIP - 1, ATOP + 1, R_POST, 0.0)
+    a -= cyl_y(3.3, ATOP - 1.8, ATOP + 1, R_POST, 0.0)  # 기둥 나사 머리 자리
     for x, z in bolt_xz():
-        a -= cyl_y(M3_FREE / 2, B0, ATOP + 1, x, z)
+        a -= cyl_y(K_M3_FREE / 2, B0, ATOP + 1, x, z)
+    a = solid(a)
     for x, z in RIM:
-        a -= cyl_y(M3_FREE / 2, SEAM - 1, ATOP + 1, x, z)
-        a -= hex_y(x, z, SEAM - 0.01, SEAM + NUT_T + 0.1)  # 밑면에서 끼우는 너트 홈
-    return solid(a)
+        a = solid(a - cyl_y(K_M3_FREE / 2, SEAM - 1, ATOP + 1, x, z))
+        # 밑면에서 눌러 끼우는 너트 홈. 테 밑면에서만 판다 (테두리와 단은 건드리지 않는다)
+        a = solid(a - hex_y_radial(x, z, SEAM, SEAM + NUT_POCKET, K_NUT_AF))
+    return a
+
+
+def retainer_nut_y(b0: float = B0) -> float:
+    """누름 틀 너트 홈의 가운데 y. 홈의 위아래(세로 폭)가 뽑을 때의 층 경계에 오게 맞춘다 (고리 앞면 b0이
+    바닥이다). 나사 축(RET_SCREW_Y)에서 0.1 안으로만 옮겨진다."""
+    w = K_NUT_SLOT[0]
+    return b0 - layer_snap(b0 - RET_SCREW_Y - w / 2) - w / 2
 
 
 def retainer(b0: float = B0) -> Compound:
@@ -373,27 +460,29 @@ def retainer(b0: float = B0) -> Compound:
 
     b0은 고리가 받치는 베어링 뒷면이다 (J1은 허브가 두꺼워 고리가 더 길다, parts/base.py).
     """
-    r_out = R_BORE - 0.15
+    r_out = R_SLIDE
     leg_in = SPOT_R - SCREW_LEN  # 나사 끝이 닿는 면 = 다리 안쪽 면 (15.0)
+    y_end = b0 - layer_snap(
+        b0 - RET_Y[0]
+    )  # 다리 끝: 뽑을 때 층 경계에 오게 맞춘다 (0.1 안에서 옮겨진다)
     # 원기둥 면의 이음선(방위각 0°)을 나사 구멍 자리에서 45° 돌려 둔다. 이음선 위에 구멍을 내면 형상이 깨진다
     part = solid(Rot(0, 45, 0) * ring(r_out, R_STEP + 1.3, RET_Y[1], b0))
-    seg = solid(Rot(0, 45, 0) * cyl_y(r_out, RET_Y[0], RET_Y[1] + 0.01))
-    legs = box(-8.0, 8.0, RET_Y[0], RET_Y[1] + 0.01, leg_in, 30)
-    legs += box(-8.0, 8.0, RET_Y[0], RET_Y[1] + 0.01, -30, -leg_in)
-    legs += box(leg_in, 30, RET_Y[0], RET_Y[1] + 0.01, -7.0, 7.0)
+    seg = solid(Rot(0, 45, 0) * cyl_y(r_out, y_end, RET_Y[1] + 0.01))
+    legs = box(-8.0, 8.0, y_end, RET_Y[1] + 0.01, leg_in, 30)
+    legs += box(-8.0, 8.0, y_end, RET_Y[1] + 0.01, -30, -leg_in)
+    legs += box(leg_in, 30, y_end, RET_Y[1] + 0.01, -7.0, 7.0)
     part += seg & legs
-    r = M3_FREE_H / 2
+    r = K_M3_FREE_H / 2
+    w, t = K_NUT_SLOT
+    # 너트 홈: 다리의 옆면에서 너트를 세워 밀어 넣는다 (시험편과 같은 모양). 홈이 다리 속에 있어 너트가 안쪽으로
+    # 빠지지 않고, 벽 나사가 밀어도 뒤가 받친다
+    y_nut = retainer_nut_y(b0)
     for s in (1, -1):
-        z0, z1 = (
-            (leg_in - 0.01, leg_in + NUT_T + 0.3)
-            if s > 0
-            else (-leg_in - NUT_T - 0.3, -leg_in + 0.01)
-        )
-        part -= hex_z(0.0, RET_SCREW_Y, z0, z1, NUT_AF_UPRIGHT)
+        part -= nut_trap((0.0, y_nut, s * NUT_Z), (0.0, 0.0, 1.0), (1.0, 0.0, 0.0), 8.02, w, t)
         part -= (
             cyl_z(r, 10, 25, 0.0, RET_SCREW_Y) if s > 0 else cyl_z(r, -25, -10, 0.0, RET_SCREW_Y)
         )
-    part -= hex_x(RET_SCREW_Y, 0.0, leg_in - 0.01, leg_in + NUT_T + 0.3, NUT_AF_UPRIGHT)
+    part -= nut_trap((NUT_Z, y_nut, 0.0), (1.0, 0.0, 0.0), (0.0, 0.0, 1.0), 7.02, w, t)
     part -= cyl_x(r, 10, 25, RET_SCREW_Y, 0.0)
     # 앞면 라벨 판 위를 0.75 띄운다 (STS3215는 몸통이 0.17 앞이다). 고리(RET_Y[1]부터)는 그보다 위라 깎이지 않는다
     part -= box(-30, -9.0, 0, LABEL + 0.17 + 0.75, -7.7, 7.7)
@@ -413,7 +502,7 @@ def carrier() -> Compound:
     M2 나사의 머리는 판 속 자리에 든다 (M2_SINK). 선은 먼 가로대 위를 어디로든 지나간다.
     """
     y0, y1 = L1 - PLATE_T, L1
-    r_out = R_BORE - 0.15
+    r_out = R_SLIDE
     hw = HW - 0.06  # 목 안쪽 벽과 0.4
     plate = box(-35.0, -30.2, y0, y1, -hw, hw)  # 먼 가로대
     plate -= box(-36.0, -29.2, y0 - 1, y0 + WIRE_GROOVE, -8.6, 8.6)  # 선이 지나는 자리
@@ -426,12 +515,16 @@ def carrier() -> Compound:
         plate += wing & cyl_y(r_out - 0.4, y0, y1)
     part = plate
     leaf_in = r_out - LEAF_T
-    boss_in = SPOT_R - SCREW_LEN + 1.6  # 너트 자리 입구: 나사 끝이 너트를 1.6 지나간다
-    r = M3_FREE_H / 2
+    w, t = K_NUT_SLOT
+    # 돋움의 안쪽 면: 너트 홈 안쪽에 살 1.0이 남는다. 서보를 넣은 뒤에는 너트에 손이 닿지 않으므로, 벽 나사가
+    # 밀어도 너트가 빠지지 않게 홈을 돋움 속에 둔다. 서보 옆면(HW)과는 2.5 mm 뜬다
+    boss_in = NUT_Z - t / 2 - 1.0
+    r = K_M3_FREE_H / 2
     for sg in (1, -1):
         side = box(-10.0, 10.0, y1 - 0.01, CAR_Y[1], min(sg * 10, sg * 30), max(sg * 10, sg * 30))
         part += ring(r_out, leaf_in, y1 - 0.01, CAR_Y[1]) & side
-        y_lo, y_hi = CAR_SCREW_Y - 4.6, CAR_SCREW_Y + 4.6
+        # 돋움의 위아래: 너트 홈(세로 5.8) 위아래에 살 1.8. 판 뒷면에서 10.8, 20.2라 층 경계에 온다
+        y_lo, y_hi = CAR_SCREW_Y - 4.7, CAR_SCREW_Y + 4.7
         bz = box(-4.6, 4.6, y_lo, y_hi, min(sg * boss_in, sg * 30), max(sg * boss_in, sg * 30))
         part += cyl_y(r_out, y_lo, y_hi) & bz
         # 판 뒷면을 바닥에 두고 뽑을 때 돋움 밑이 걸치지 않게 45°로 받친다
@@ -442,22 +535,32 @@ def carrier() -> Compound:
             (y_lo + 0.01, sg * boss_in),
         ]
         part += prism_x(under, -4.6, 4.6)
-        z0, z1 = (
-            (boss_in - 0.01, boss_in + NUT_T + 0.3)
-            if sg > 0
-            else (-boss_in - NUT_T - 0.3, -boss_in + 0.01)
+        # 너트 홈: 돋움의 +x 옆면에서 너트를 세워 밀어 넣는다 (두 돋움의 입구가 같은 쪽이다)
+        part -= nut_trap(
+            (0.0, CAR_SCREW_Y, sg * NUT_Z), (0.0, 0.0, 1.0), (1.0, 0.0, 0.0), 4.62, w, t
         )
-        part -= hex_z(0.0, CAR_SCREW_Y, z0, z1, NUT_AF_UPRIGHT)
+        # 날개는 둥글어서 입구 앞(+x)으로 갈수록 안쪽 면이 홈의 바깥 면(18.7)보다 안으로 들어온다. 너트(길이
+        # 6.35)가 곧게 들어가도록, 입구 앞의 날개를 홈 바닥 높이부터 따낸다 (돋움 밑의 날개는 폭 그대로다)
+        part -= box(
+            NUT_GATE_X,
+            10.1,
+            CAR_SCREW_Y - w / 2,
+            CAR_Y[1] + 1,
+            min(sg * (NUT_Z - t / 2), sg * 30),
+            max(sg * (NUT_Z - t / 2), sg * 30),
+        )
         part -= (
             cyl_z(r, 10, 25, 0.0, CAR_SCREW_Y) if sg > 0 else cyl_z(r, -25, -10, 0.0, CAR_SCREW_Y)
         )
-    # 뒷덮개 나사가 물리는 기둥: 나사 끝(덮개의 머리 자리에서 COVER_SCREW)보다 0.4 길다
+    # 뒷덮개 나사가 물리는 기둥: 나사 끝(덮개의 머리 자리에서 COVER_SCREW)보다 0.4 길다. 구멍은 기둥 윗면에서
+    # 끝난다. 그 위의 돋움까지 파면 구멍이 돋움의 안쪽 모서리를 0.7 mm 조각으로 떼어 놓아, 그 조각이 허공에서
+    # 뽑히기 시작한다 (슬라이서가 떠 있는 영역이라고 경고한다)
     pillar = BACK_OUT + 1.2 + COVER_SCREW + 0.4
     for x, z in COVER_BOSS:
         part += cyl_y(3.2, y1 - 0.01, pillar, x, z)
-        part -= cyl_y(M3_TAP / 2, y0 - 1, pillar + 1, x, z)
+        part -= cyl_y(M3_TAP / 2, y0 - 1, pillar + 0.01, x, z)
     for x, z in BACK_HOLES:
-        part -= cyl_y(1.15, y0 - 1, y1 + 1, x, z)
+        part -= cyl_y(M2_HOLE_R, y0 - 1, y1 + 1, x, z)
         part -= cyl_y(M2_HEAD_R, y0 - 1, y0 + M2_SINK, x, z)  # 머리 자리
     return solid(part)
 
@@ -478,8 +581,8 @@ def back_cover(neck_x: float, end_skirt: bool) -> Compound:
     c = solid(outline - inner)
     for x, z in COVER_BOSS:
         c = solid(c + cyl_y(3.2, BACK_IN - 0.01, L1 - PLATE_T, x, z))
-        c = solid(c - cyl_y(M3_FREE_H / 2, BACK_OUT - 1, L1 - PLATE_T + 1, x, z))
-        c = solid(c - cyl_y(3.1, BACK_OUT - 0.01, BACK_OUT + 1.2, x, z))  # 나사 머리 자리
+        c = solid(c - cyl_y(K_M3_FREE / 2, BACK_OUT - 1, L1 - PLATE_T + 1, x, z))
+        c = solid(c - cyl_y(3.3, BACK_OUT - 0.01, BACK_OUT + 1.2, x, z))  # 나사 머리 자리
     return c
 
 
@@ -549,25 +652,23 @@ def inner_hardware(model: ServoModel) -> list[Part]:
         out.append(Part(f"너트 (출력 원판) {k + 1}", solid(nut), STEEL, True, "metal"))
     for k, (x, z) in enumerate(BACK_HOLES):
         y = L1 - PLATE_T + M2_SINK + dy  # 머리 밑면 (판 속 자리의 바닥)
-        shape = cyl_y(1.0, y, y + M2_SCREW, x, z) + cyl_y(1.9, y - 2.0, y, x, z)
-        out.append(Part(f"M2x4 {k + 1}", solid(shape), STEEL, False, "metal"))
+        shape = cyl_y(1.0, y, y + M2_SCREW, x, z) + cyl_y(2.0, y - 1.6, y, x, z)
+        out.append(Part(f"서보 뒷면 나사 {k + 1}", solid(shape), STEEL, False, "metal"))
     for k, (x, z) in enumerate(COVER_BOSS):
         y = BACK_OUT + 1.2 + dy
         shape = cyl_y(1.5, y, y + COVER_SCREW, x, z) + cyl_y(2.85, y - 1.65, y, x, z)
         out.append(Part(f"덮개 나사 M3x12 {k + 1}", solid(shape), STEEL, False, "metal"))
-    leg_in = SPOT_R - SCREW_LEN
-    boss_in = leg_in + 1.6
+    seat = NUT_Z + K_NUT_SLOT[1] / 2  # 조인 너트가 붙는 홈의 바깥 면
     for sg in (1, -1):
-        z0, z1 = (leg_in, leg_in + NUT_T) if sg > 0 else (-leg_in - NUT_T, -leg_in)
+        z0, z1 = (seat - NUT_T, seat) if sg > 0 else (-seat, -seat + NUT_T)
         out.append(
             Part(
                 "너트 (누름 틀)", hex_z(0.0, RET_SCREW_Y, z0, z1, 5.4), STEEL * 0.72, False, "metal"
             )
         )
-        z0, z1 = (boss_in, boss_in + NUT_T) if sg > 0 else (-boss_in - NUT_T, -boss_in)
         nut_c = solid(Pos(0, dy, 0) * hex_z(0.0, CAR_SCREW_Y, z0, z1, 5.4))
         out.append(Part("너트 (서보 받침)", nut_c, STEEL * 0.72, False, "metal"))
-    nut_x = hex_x(RET_SCREW_Y, 0.0, leg_in, leg_in + NUT_T, 5.4)
+    nut_x = hex_x(RET_SCREW_Y, 0.0, seat - NUT_T, seat, 5.4)
     out.append(Part("너트 (누름 틀)", nut_x, STEEL * 0.72, False, "metal"))
     return out
 
@@ -589,6 +690,38 @@ def inner_parts(model: ServoModel, neck_x: float, end_skirt: bool) -> list[Part]
         Part("선 자리", sv["wires"], color="wire"),
     ]
     return parts + wall_screws()
+
+
+def side_nuts() -> list[tuple[str, Compound, Point, Point, Point]]:
+    """옆 홈에 세워 넣는 너트 다섯: (이름, 홈이 있는 부품, 너트 가운데, 볼트 방향, 입구 쪽 방향)."""
+    ret, car = retainer(), carrier()
+    y_ret = retainer_nut_y()
+    x_dir, z_dir = (1.0, 0.0, 0.0), (0.0, 0.0, 1.0)
+    return [
+        ("누름 틀 +z", ret, (0.0, y_ret, NUT_Z), z_dir, x_dir),
+        ("누름 틀 -z", ret, (0.0, y_ret, -NUT_Z), z_dir, x_dir),
+        ("누름 틀 +x", ret, (NUT_Z, y_ret, 0.0), x_dir, z_dir),
+        ("서보 받침 +z", car, (0.0, CAR_SCREW_Y, NUT_Z), z_dir, x_dir),
+        ("서보 받침 -z", car, (0.0, CAR_SCREW_Y, -NUT_Z), z_dir, x_dir),
+    ]
+
+
+def nut_entry_overlap(
+    part: Compound, center: Point, axis: Point, slide: Point, reach: float = 14.0, step: float = 0.5
+) -> float:
+    """M3 너트(맞변 5.5, 모서리 6.35, 두께 2.4)를 입구 밖 reach에서 자리까지 곧게 밀 때 부품과 겹치는 가장 큰
+    부피 [mm³]. 0이면 너트가 기울이지 않고 들어간다."""
+    nut = extrude(RegularPolygon(5.5 / 2, 6, major_radius=False), amount=NUT_T / 2, both=True)
+    worst = 0.0
+    for k in range(int(reach / step) + 1):
+        at = (
+            center[0] + slide[0] * k * step,
+            center[1] + slide[1] * k * step,
+            center[2] + slide[2] * k * step,
+        )
+        placed = nut.moved(Location(Plane(origin=at, x_dir=slide, z_dir=axis)))
+        worst = max(worst, solid(part & placed).volume)
+    return worst
 
 
 # 서로 닿거나 겹쳐 그린 것으로 치는 쌍 (서보 안의 조각끼리)

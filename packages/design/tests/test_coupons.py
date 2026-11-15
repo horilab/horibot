@@ -30,6 +30,7 @@ def test_heights_follow_the_layer_height() -> None:
         coupons.UPRIGHT_BLOCK[2],
         *coupons.DROP_BLOCK[1:],
         coupons.PIN_DEPTH,
+        coupons.PIN_PRESS_DEPTH,
         coupons.SEAT_DEPTH,
         coupons.LIP_HEIGHT,
         coupons.SHOULDER_H,
@@ -62,3 +63,21 @@ def test_upright_nut_slots_keep_the_nut_in_the_same_pose_as_the_parts() -> None:
     w, t = coupons.DROP_SLOTS[0]
     top = Pos(coupons.MARGIN + coupons.PITCH / 2, ny, height - 0.5) * Box(w - 0.4, t - 0.4, 0.4)
     assert (drop & top).volume == pytest.approx(0, abs=1e-6)
+
+
+def test_shoulder_bearing_coupons_bracket_the_6806_result() -> None:
+    # 6806은 구멍이 베어링 바깥지름 + 0.2, 축이 안지름 + 0.1에서 맞았다. 6808(40 × 52) 칸은 그 값과 양옆이다
+    assert coupons.BEARING_BORES_6808 == (52.1, 52.2, 52.3)
+    assert coupons.BEARING_SHAFTS_6808 == (40.0, 40.1, 40.2)
+    # 턱은 맞은편 링을 비킨다: 바깥 링이 얹히는 턱은 안쪽 링(바깥지름 약 44)보다 넓고, 안쪽 링이 얹히는 턱은
+    # 바깥 링(안지름 약 48)보다 좁다
+    assert coupons.LIP_BORE_6808 > 44.5 and coupons.SHOULDER_D_6808 < 47.5
+    assert coupons.STUB_BORE_6808 < coupons.BEARING_SHAFTS_6808[0] - 8.0  # 축 벽 4 mm 넘게
+
+
+def test_pin_press_coupon_goes_below_the_smallest_hand_fit() -> None:
+    # 검정 세로 핀 구멍은 3.30도 손끝으로 들어갔다. 눌러 박는 구멍은 그보다 작은 칸에서 찾는다
+    assert max(coupons.PIN_PRESS_HOLES) == min(coupons.PIN_HOLES)
+    assert min(coupons.PIN_PRESS_HOLES) > 3.0
+    for name in ("fit3_6808_bores", "fit3_6808_shafts", "fit3_pin_press"):
+        assert name in coupons.COUPONS
