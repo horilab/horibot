@@ -252,3 +252,15 @@ vendor = "뱀부랩"
 unit_price_krw = 25000
 priced = "2026-11-07"
 why = "구조색 (manufacturing.md). 오면 공차 시험편을 다시 뽑는다"
+
+[[item]]
+name = "뱀부랩 PLA Basic 검정 (둘째 롤)"
+qty = 1
+stage = 5
+when = "stage"
+vendor = "뱀부랩"
+search = "Bambu Lab PLA Basic 검정 1kg"
+lead_days = [2, 4]
+unit_price_krw = 25000
+priced = "2026-11-13"
+why = "구조색. 호리봇의 검정은 모두 약 800 g이다 (어림, 2026-11-15: 지금까지 시험편과 첫 관절에 약 250 g, 남은 부품 약 470 g에 다시 뽑는 몫). 첫 롤에서 호리봇과 관계없는 출력에 300 g쯤 쓰기로 해서, 팔 전체(베이스와 어깨)를 뽑기 전에 모자란다. 값은 같은 제품의 흰색을 산 때의 값이다"
