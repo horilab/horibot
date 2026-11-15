@@ -41,6 +41,22 @@ def test_camera_and_mount_do_not_overlap_the_wrist(parts: list[j.Part]) -> None:
 
 
 @pytest.mark.slow
+def test_plug_fits_between_the_camera_and_the_drum(parts: list[j.Part]) -> None:
+    # 커넥터가 있는 옆면이 원통 쪽을 본다: ㄱ자 플러그가 카메라와 원통 사이에 들고 PLUG_GAP이 남는다
+    plug = next(p for p in parts if p.name == "D405 플러그")
+    cam = next(p for p in parts if p.name == "D405")
+    assert plug.shape.distance_to(cam.shape) < 0.01
+    near = cm.plug_clearance(parts)
+    assert min(near.values()) >= cm.PLUG_GAP, near
+    assert near["손목 몸통"] < cm.PLUG_GAP + 1.0  # 카메라를 더 밖으로 내지 않았다
+    # 선은 플러그의 J5 쪽(-x) 끝에서 나와 받침의 발 밑으로 돈다
+    run = cm.wire_run()
+    assert run[1][0] < run[0][0] and run[0][0] == pytest.approx(cm.to_servo(cm.wire_exit())[0])
+    assert all(p[0] <= -cm.MOUNT_W / 2 - cm.WIRE_D / 2 - 1.0 for p in run[2:])
+    assert run[-1][2] == 0.0 and run[-1][1] == pytest.approx(j.BACK_OUT - cm.WIRE_D / 2)
+
+
+@pytest.mark.slow
 def test_turning_parts_clear_the_camera_by_2mm(parts: list[j.Part]) -> None:
     # J6를 멈춤 각까지 돌려도 플랜지 원판, 멈춤 기둥의 나사와 너트, 도구 어댑터가 카메라와 받침에서 2 mm 넘게 뜬다
     gaps = cm.sweep_gaps(parts)

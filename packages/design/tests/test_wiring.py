@@ -80,27 +80,48 @@ def test_gap_under_the_brim_is_too_narrow_for_a_wire() -> None:
     assert j.LIP_GAP >= 0.6  # 도는 원판과 서 있는 원통 사이의 축 방향 틈
 
 
-def test_d405_cable_cannot_wrap_the_brims() -> None:
-    # 두 몸통 사이 층(5.8 mm)에 감기려면 선이 3.8 mm보다 가늘어야 한다. 가진 기본 선은 5.12 mm다
+def test_d405_wire_wraps_the_brims_over_the_servo_wire() -> None:
+    # 두 몸통 사이 층(5.8 mm)에 감기려면 선이 3.8 mm보다 가늘어야 한다. 얇은 USB 2 선(3.0)은 들고, 기본 선(5.12)은 안 든다
     assert wr.layer_height() == pytest.approx(j.GAP + j.BRIM_T)
     assert wr.d405_max_diameter() == pytest.approx(3.8)
-    assert wr.D405_D == pytest.approx(5.12)
-    assert wr.D405_D > wr.d405_max_diameter()
-    # 테에 감으면 범위 가운데에서 남는 선이 반지름 30 mm 아래의 고리가 된다. 움직이는 고리의 기준은 지름의 10배다
-    x = wr.crossings()
-    for name in ("J1", "J2", "J3", "J4", "J5"):
-        assert wr.d405_mid_loop(x[name], wr.D405_D) < 30.0 < wr.BEND_RATIO * wr.D405_D, name
+    assert wr.D405_D == pytest.approx(3.0) and wr.D405_OLD_D == pytest.approx(5.12)
+    assert wr.D405_D + 0.5 < wr.d405_max_diameter() < wr.D405_OLD_D
+    # 서보 선과 같은 방위각으로 넘는다 (부모는 살 쪽, 자식은 멈춤 귀의 맞은편)
+    x = wr.d405_crossings()
+    assert set(x) == {"J1", "J2", "J3", "J4", "J5"}
+    for name, c in x.items():
+        assert c.exit_az == c.entry_az == 180.0, name
+        # 감기는 반지름은 기준(지름의 8배)보다 크다
+        assert wr.d405_wrap_radius(name) >= wr.WRAP_RATIO * wr.D405_D, name
+    # 서보 선 위에 겹치므로 서보 선보다 바깥에서 감긴다 (J1은 띠에 나란히 놓인다)
+    assert wr.d405_wrap_radius("J5") == pytest.approx(j.R_DRUM + j.WIRE_T + wr.D405_D / 2)
+    assert wr.d405_wrap_radius("J1") == pytest.approx(bp.R_CORE + wr.D405_D / 2)
+    # 감기는 쪽이 바뀌며 꺾이는 자리는 기준(지름의 4배)보다 완만하다. 손목 1은 선을 잡지 않는다
+    for name in ("J2", "J3", "J4"):
+        assert wr.d405_lead_radius(name) >= wr.FLEX_RATIO * wr.D405_D, name
+    for name in ("J2", "J3", "J5"):
+        lead = wr.d405_child_lead(name)
+        assert lead is not None and lead >= wr.FLEX_RATIO * wr.D405_D, name
+    assert wr.d405_child_lead("J4") is None
+    assert 2 * wr.FLEX_RATIO * wr.D405_D > wr.d405_wrist1_gap() > 10.0
+    # 멈춤 각에서도 선이 팽팽하지 않고(D405_SPARE), 멈춤 귀가 선에서 2 mm 넘게 뜬다
+    for name, c in x.items():
+        wd = wr.D405_D if name == "J1" else wr.D405_OVER
+        assert dict(wr.d405_path())[f"{name} 넘기"] - c.longest(wd) == pytest.approx(wr.D405_SPARE)
+    assert wr.d405_ear_gap(j.R_DRUM, j.EAR_HW) > 2.0
+    assert wr.d405_ear_gap(sp.R_DRUM, sp.EAR_HW) > 2.0
     # 고리 식: 반원(현 2R, 호 πR)이면 R이 나오고, 선이 두 끝 사이보다 짧으면 고리가 없다
     assert wr.loop_radius(40.0, math.pi * 20.0) == pytest.approx(20.0, rel=1e-6)
     assert wr.loop_radius(50.0, 40.0) == math.inf
-    # 기본 선 1 m는 가장 짧은 길(테에 감는 길)로도 베이스의 띠 밑 누르개까지 닿지 않는다
-    assert sum(v for _, v in wr.d405_path(wr.D405_D)) > wr.D405_STOCK_MM
+    # 가진 선(1,550 mm)은 베이스의 띠 밑 누르개까지 가고 40 cm 넘게 남는다 (베이스에서 파이까지 갈 몫)
+    total = sum(v for _, v in wr.d405_path())
+    assert 950.0 < total < wr.D405_STOCK_MM - 400.0
 
 
 def test_wire_masses_for_the_arm_model() -> None:
     masses = wr.wire_masses()
     assert set(masses) == {"upper_mid", "upper_end", "fore_mid", "fore_end", "wrist1", "wrist2"}
-    assert sum(masses.values()) == pytest.approx(0.052, abs=0.006)
+    assert sum(masses.values()) == pytest.approx(0.044, abs=0.004)
     # 20 cm 선의 무게(실측 3.5 g)가 식에서 다시 나온다
     again = wr.usable(200.0) * 1e-3 * wr.SERVO_WIRE_KG_M + 2 * wr.PLUG_KG
     assert again == pytest.approx(3.5e-3)

@@ -1,4 +1,4 @@
-"""배선 검토 (0031): 선이 관절을 넘는 길이, 구간마다 쓸 서보 선, D405 선이 지나갈 수 있는 굵기와 길이.
+"""배선 검토 (0031): 선이 관절을 넘는 길이, 구간마다 쓸 서보 선, D405 선이 넘는 자리와 길이.
 
 선은 부모의 살(멈춤 홈 가운데, 방위각 180°) 쪽에서 나와 출력 원판의 테에 감기며 자식으로 넘어간다 (0029).
 범위 가운데에서 나가는 자리와 들어가는 자리가 같은 방위각에 오고, 관절이 돌면 그 사이의 선이 테에 감긴다.
@@ -6,12 +6,12 @@
 - 관절마다: 나가는 자리와 들어가는 자리 사이에 필요한 선 길이(관절 각의 함수), 가장 길 때, 범위 가운데에서 남는 길이.
 - 선마다: 몸통 속 길(부품 좌표의 꺾은선)과 관절을 넘는 길이를 더해, 가진 선(20 cm, 300 mm, 900 mm)으로 닿는지.
 - 살 위 통로: 멈춤 기둥과 귀가 지나가지 않는 폭.
-- D405 선: 서보 선처럼 테에 감을 수 있는지 (두 몸통 사이 층의 높이, 범위 가운데에서 생기는 고리의 반지름),
-  팔을 따라 베이스까지 가는 가장 짧은 길의 길이. 가진 기본 선(지름 5.12 mm, 1 m)은 테에 감지 못해 관절마다
-  밖으로 넘긴다 (0031).
+- D405 선(얇은 USB 2 선): 서보 선과 같은 자리(살 위, 두 몸통 사이 층)로 넘는다. 서보 선 위에 겹쳐 테에
+  감기고, 몸통과 링크에서는 겉을 따라간다. 층에 드는 굵기인지, 감기는 반지름과 범위 가운데에서 남는 길이,
+  멈춤 각에서 귀와의 틈, 카메라에서 베이스의 띠 밑 누르개까지의 길이를 본다 (0031).
 
 좌표는 부품 코드와 같다 (parts/joint.py의 서보 좌표, mm). 몸통 속 길의 점은 그 부품의 치수에서 낸다.
-서보 선의 폭과 두께, D405 선의 지름은 잰 값이다 (data/measured.toml). D405 선의 무게는 가정이다.
+서보 선의 폭과 두께, D405 선의 길이·지름·무게는 잰 값이다 (data/measured.toml).
 
     uv run python -m horilab_design.studies.wiring
 """
@@ -43,18 +43,31 @@ PLUG_X = -14.2  # 꽂은 플러그의 가운데 (서보 좌표 x)
 PLUG_Z = 4.95  # 커넥터 둘의 가운데 |z|
 PLUG_Y = j.PLUG_TOP  # 플러그 뒤 끝 (선이 나오는 곳)
 BACK_Y = (j.WIRE_TOP + PLUG_Y) / 2  # 뒷면에 눕힌 선의 가운데
-_D405 = load_measured().d405_cable
-assert _D405 is not None
-D405_D = _D405.diameter_mm  # 가진 D405 기본 선의 지름 (잰 값, 5.12)
-D405_STOCK_MM = 1000.0  # 그 선의 길이 (사양)
+_MEASURED = load_measured()
+_D405, _D405_OLD = _MEASURED.d405_usb2_cable, _MEASURED.d405_cable
+assert _D405 is not None and _D405_OLD is not None
+assert _D405.diameter_mm is not None and _D405.mass_g is not None
+# D405 선: 얇은 USB 2 마이크로 USB 선 (잰 값: 지름 3.0, 플러그 끝에서 끝까지 1,550 mm, 선 전체 31.3 g)
+D405_D = _D405.diameter_mm
+D405_STOCK_MM = _D405.length_mm
+# 1 m의 무게: 양쪽 플러그까지 길이로 고르게 편 값이라, 팔에 실리는 몫을 선 자체보다 무겁게 센다
+D405_KG_M = _D405.mass_g / _D405.length_mm
+D405_OLD_D = _D405_OLD.diameter_mm  # 쓰지 않기로 한 기본 선(USB 3, 1 m)의 지름 (잰 값, 5.12)
 LAYER_GAP = 2.0  # 두 몸통 사이 층에서 선 위에 남길 틈 (0017의 움직이는 틈)
-BEND_RATIO = (
-    10.0  # 움직이는 고리의 반지름은 선 지름의 10 ~ 12배 이상 (docs/design.md의 "D405 케이블")
-)
+# D405 선이 굽는 반지름의 기준 (선 지름의 배수, docs/design.md의 "D405 케이블"): 테에 감기는 자리와, 감기는 쪽이
+# 바뀌며 꺾이는 자리(살 위에서 테로 들어가는 곳, 자식 몸통에서 층으로 내려오는 곳)
+WRAP_RATIO = 8.0
+FLEX_RATIO = 4.0
+# 링크의 납작한 면에서 D405 선을 잡는 자리: 관절 축에서 관 쪽으로 (살 위를 지나 테로 들어가는 선이 이 길이만큼
+# 풀려 있어 완만하게 굽는다)
+LINK_HOLD_R = 50.0
+HEEL_RISE = 18.0  # 링크 발의 끝벽을 타고 올라가 잡히는 높이 (링크를 그릴 때 확정한다)
+# 관절마다 D405 선에 더 두는 길이: 멈춤 각에서도 선이 팽팽해지지 않는다. 손목 1에서는 두 관절의 선이 같은 쪽으로
+# 감길 때 목 앞면 위에서 되돌아 굽는데, 팽팽하면 그 반지름이 작아진다 (d405_wrist1_turn)
+D405_SPARE = 8.0
 # 무게: 20 cm 서보 선이 3.5 g이다 (실측). 플러그 하나를 0.45 g으로 어림하면 선은 1 m에 14.4 g이다
 SERVO_WIRE_KG_M = (3.5 - 2 * 0.45) / (200.0 - 2 * PLUG[0])
 PLUG_KG = 0.45e-3
-D405_KG_M = 0.030  # D405 선 1 m의 무게 (가정. 가진 선을 저울로 재서 바꾼다)
 
 
 def length(points: list[Point]) -> float:
@@ -427,47 +440,108 @@ def loop_radius(chord: float, arc: float) -> float:
     return hi
 
 
-def d405_mid_loop(c: Crossing, wire_d: float) -> float:
-    """D405 선을 서보 선처럼 테에 감을 때, 범위 가운데에서 남는 선이 만드는 고리의 반지름 [mm].
-
-    멈춤 각에 맞춘 길이의 선이 범위 가운데에서는 가까이 붙은 두 자리 사이에 다 남는다.
-    """
-    return loop_radius(c.length(0.0, wire_d), c.longest(wire_d))
+# D405 선은 서보 선 위에 겹쳐 감긴다: 선의 가운데가 테에서 (서보 선 두께 + 반지름)만큼 뜬다.
+# Crossing.length는 가운데가 wire_d / 2만큼 뜬다고 보므로, 그 값이 되는 두께를 넘긴다
+D405_OVER = 2 * j.WIRE_T + D405_D
 
 
-def d405_path(wire_d: float) -> list[tuple[str, float]]:
-    """D405 선이 팔을 따라 베이스의 띠 밑 누르개까지 가는 가장 짧은 길의 길이 (관절마다 테에 감길 때, 가장 길 때).
+def d405_crossings() -> dict[str, Crossing]:
+    """관절마다 D405 선이 넘는 자리. 방위각은 서보 선과 같다 (부모는 살 쪽, 자식은 멈춤 귀의 맞은편).
 
-    관절을 넘는 자리는 서보 선과 같은 방위각이고, 링크에서는 납작한 면 옆을 따라간다. 가진 선은 테에 감지
-    못해 관절마다 밖으로 넘기므로(0031) 실제 길은 이보다 길다. 선의 무게를 링크마다 나누는 데에도 쓴다.
+    - J5: 자식(손목 2)은 뒷덮개 가운데의 클립에서 층으로 내려온다 (parts/camera_mount.py의 wire_run). 부모(손목 1)는
+      목 앞면이 짧아 선을 잡지 않는다: 선이 목 앞면 위에서 그대로 J4의 층으로 넘어간다. 길이는 목 앞면의
+      가운데를 경계로 나눠 센다.
+    - J4: 자식은 손목 1의 목 앞면(위와 같은 선), 부모는 아래팔의 납작한 면.
+    - J3, J2: 자식은 링크 발의 끝벽을 타고 올라가 잡히고, 부모는 링크의 납작한 면(J2는 J1 몸통 왼쪽 면의 누르개).
+    - J1: 서보 선과 같은 띠에 나란히 감긴다 (겹치지 않는다).
     """
     x = crossings()
+    lift = j.WIRE_T + D405_D / 2  # 서보 선 위에 놓인 선의 가운데 높이
+    neck_mid = (j.R_DRUM - wp.X_FOOT) / 2  # 손목 1 목 앞면의 가운데: J5 축에서
+    clip_r = wp.AX_Y - cmt.LEAD_Y  # 손목 2 뒷덮개의 클립: J5 축에서
+    clip_rise = (j.ATOP + cmt.RUN_X - wp.X_FOOT) - (j.FRONT + lift)
+    top_r = j.FRONT - wp.AX_Y + lift  # 손목 1 목 앞면 위의 선: J4 축에서
+    heel_u, heel_f = lp.SHOULDER_FOOT.hx + D405_D, lp.STS_FOOT.hx + D405_D
+    return {
+        "J1": x["J1"],
+        "J2": Crossing("J2", sp.R_DRUM, STRIP_R, 180.0, heel_u, 180.0, HEEL_RISE),
+        "J3": Crossing("J3", j.R_DRUM, LINK_HOLD_R, 180.0, heel_f, 180.0, HEEL_RISE),
+        "J4": Crossing("J4", j.R_DRUM, LINK_HOLD_R, 180.0, top_r, 180.0, -wp.X_FOOT - neck_mid),
+        "J5": Crossing("J5", j.R_DRUM, neck_mid, 180.0, clip_r, 180.0, clip_rise),
+    }
+
+
+def _d405_wire_d(name: str) -> float:
+    """Crossing.length에 넘길 두께: J1은 띠에 바로 놓이고, 나머지는 서보 선 위에 겹친다."""
+    return D405_D if name == "J1" else D405_OVER
+
+
+def d405_wrap_radius(name: str) -> float:
+    """D405 선의 가운데가 감기는 반지름 [mm]."""
+    return d405_crossings()[name].drum_r + _d405_wire_d(name) / 2
+
+
+def d405_lead_radius(name: str) -> float:
+    """부모에서 살 위를 지나 테로 들어가는 선이 굽는 반지름 [mm].
+
+    선이 잡힌 자리(축에서 exit_r)에서 축을 보고 오다가, 감기는 쪽으로 둥글게 꺾여 테에 닿는다. 그 호의 반지름은
+    (exit_r² - r²) / 2r이다 (r은 감기는 반지름). 잡힌 자리가 멀수록 완만하다.
+    """
+    c, r = d405_crossings()[name], d405_wrap_radius(name)
+    return (c.exit_r**2 - r**2) / (2 * r)
+
+
+def d405_child_lead(name: str) -> float | None:
+    """자식 몸통에서 잡힌 자리부터 층까지 내려오는 길이 [mm]: 선이 감기는 쪽으로 꺾이는 반지름이 이쯤이다.
+
+    손목 1(J4의 자식)은 선을 잡지 않으므로 없다.
+    """
+    rise = d405_crossings()[name].rise
+    return None if name in ("J1", "J4") else rise
+
+
+def d405_wrist1_gap() -> float:
+    """손목 1의 목 앞면 위에서, J5의 테에 감긴 선과 J4의 테에 감긴 선이 가장 가까운 두 접선 사이 [mm].
+
+    두 관절의 선이 반대쪽으로 감기면 선이 이 사이를 비스듬히 건너고(완만하다), 같은 쪽으로 감기면 되돌아 굽는다.
+    되돌아 굽는 반지름은 선이 팽팽할 때 이 거리의 절반쯤에서 시작하고, 남는 길이가 있으면 커진다.
+    """
+    r = d405_wrap_radius("J5")
+    return (-wp.X_FOOT + layer_height() / 2) - r
+
+
+def d405_ear_gap(drum_r: float, ear_hw: float, q_deg: float = j.STOP_DEG) -> float:
+    """멈춤 각에서, 살 가운데를 넘는 D405 선의 옆과 멈춤 귀의 옆면 사이 [mm]. 감기는 반지름에서 잰다."""
+    r = drum_r + j.WIRE_T + D405_D / 2
+    d = math.radians(180.0 - abs(q_deg))
+    return r * math.sin(d) - ear_hw * math.cos(d) - D405_D / 2
+
+
+def d405_path() -> list[tuple[str, float]]:
+    """D405 선이 카메라의 플러그에서 베이스의 띠 밑 누르개까지 가는 길 (관절은 가장 길 때)."""
+    x = d405_crossings()
+    over = {k: c.longest(_d405_wire_d(k)) + D405_SPARE for k, c in x.items()}
     span_u, _, foot_u = lp.LINKS["upper_arm"]
     span_f, _, foot_f = lp.LINKS["forearm"]
-    win = -sum(j.WIN_X) / 2
-    cam = cmt.CAM_W / 2 + cmt.PLUG_LEN + cmt.PLUG_RELIEF  # J6 축에서 곧은 플러그의 끝까지 (J5 쪽)
-    # 손목 2: 플러그에서 몸통 옆을 따라 뒷덮개 쪽 발 모서리까지
-    w2 = math.dist((-cam, cmt.LENS[1] - 10.0, cmt.LENS[2]), (wp.X_FOOT, j.BACK_OUT, -wp.SIDE_LANE))
     return [
-        ("손목 2 겉", w2 + 8.0),
-        ("J5 넘기", x["J5"].longest(wire_d)),
-        ("손목 1 겉", 10.0),
-        ("J4 넘기", x["J4"].longest(wire_d)),
-        ("아래팔 겉", span_f - win + foot_f.hx),
-        ("J3 넘기", x["J3"].longest(wire_d)),
-        ("위팔 겉", span_u - win + foot_u.hx),
-        ("J2 넘기", x["J2"].longest(wire_d)),
+        ("손목 2 겉", length(cmt.wire_run())),
+        ("J5 넘기", over["J5"]),
+        ("J4 넘기", over["J4"]),
+        ("아래팔 겉", span_f - LINK_HOLD_R + foot_f.hx + D405_D),
+        ("J3 넘기", over["J3"]),
+        ("위팔 겉", span_u - LINK_HOLD_R + foot_u.hx + D405_D),
+        ("J2 넘기", over["J2"]),
         ("J1 몸통 겉", length(j1_strip())),
-        ("J1 넘기", x["J1"].longest(wire_d)),
+        ("J1 넘기", over["J1"]),
     ]
 
 
 def wire_masses() -> dict[str, float]:
     """팔 전체 모델(studies/ur_arm.py)에 넣을 선의 무게 [kg]: 위팔과 아래팔은 (가운데, 끝 집), 손목 몸통 둘.
 
-    서보 선은 고른 선의 길이 전체(남는 길이는 그 선이 지나는 관이나 몸통 속에 접어 둔다)와 플러그, D405 선은 겉을
-    따라가는 가장 짧은 길의 길이다 (밖으로 넘기는 고리를 그린 뒤에 그 길이로 바꾼다. 1 m에 D405_KG_M도 가정이다).
-    J6 → 그리퍼 선은 그리퍼의 무게에 들어 있다. J2보다 아래(J1 몸통, 베이스)의 선은 넣지 않는다.
+    서보 선은 고른 선의 길이 전체(남는 길이는 그 선이 지나는 관이나 몸통 속에 접어 둔다)와 플러그, D405 선은
+    d405_path의 길이다 (1 m의 무게는 플러그까지 고르게 편 값). J6 → 그리퍼 선은 그리퍼의 무게에 들어 있다.
+    J2보다 아래(J1 몸통, 베이스)의 선은 넣지 않는다.
     """
     by = {w.name: w for w in wires()}
 
@@ -478,7 +552,7 @@ def wire_masses() -> dict[str, float]:
     def servo(length_mm: float, plugs: int) -> float:
         return length_mm * 1e-3 * SERVO_WIRE_KG_M + plugs * PLUG_KG
 
-    d = dict(d405_path(D405_D))
+    d = dict(d405_path())
 
     def cam(length_mm: float) -> float:
         return length_mm * 1e-3 * D405_KG_M
@@ -493,7 +567,7 @@ def wire_masses() -> dict[str, float]:
         + cam(d["아래팔 겉"] + (d["J3 넘기"] + d["J4 넘기"]) / 2),
         "fore_end": servo(mm(j45, "아래팔 끝 집"), 1),
         "wrist1": servo(mm(j45, "J4 넘기", "손목 1 속") + by[j45].left + mm(j56, "손목 1 속"), 2)
-        + cam(d["손목 1 겉"] + (d["J4 넘기"] + d["J5 넘기"]) / 2),
+        + cam((d["J4 넘기"] + d["J5 넘기"]) / 2),
         "wrist2": servo(mm(j56, "J5 넘기", "손목 2 속") + by[j56].left, 1)
         + cam(d["손목 2 겉"] + d["J5 넘기"] / 2),
     }
@@ -539,27 +613,48 @@ def report() -> None:
         f"옆 홈 {exit_to_ear(side, j.SOFT_DEG):.1f} / {exit_to_ear(side, j.STOP_DEG):.1f}, "
         f"가운데 홈 {exit_to_ear(0.0, j.SOFT_DEG):.1f} / {exit_to_ear(0.0, j.STOP_DEG):.1f}"
     )
-    d = D405_D
+    dx = d405_crossings()
     print(
-        f"\n## D405 선 (가진 기본 선, 지름 {d} mm, {D405_STOCK_MM:.0f} mm)을 서보 선처럼 테에 감을 수 있는지"
+        f"\n## D405 선 (얇은 USB 2 선, 지름 {D405_D} mm, {D405_STOCK_MM:.0f} mm, 1 m에 "
+        f"{D405_KG_M * 1000:.1f} g): 서보 선 위에 겹쳐 테에 감긴다"
     )
     print(
         f"- 굵기: 두 몸통 사이 층 {layer_height():.1f} mm에 감길 수 있는 지름 한도 {d405_max_diameter():.1f} mm "
-        f"(선 위에 {LAYER_GAP:.0f} mm를 남긴다)"
+        f"(선 위에 {LAYER_GAP:.0f} mm를 남긴다). 쓰지 않기로 한 기본 선은 {D405_OLD_D} mm다"
     )
     print(
-        f"- 굽힘: 움직이는 고리의 반지름 기준 {BEND_RATIO * d:.0f} mm (지름의 {BEND_RATIO:.0f}배). 테에 감기면 "
-        + ", ".join(f"{k} {c.drum_r + d / 2:.0f}" for k, c in x.items() if k != "J6")
+        "| 관절 | 감기는 반지름 (지름의 배수) | 부모 쪽에서 굽는 반지름 | 자식 쪽에서 굽는 반지름 | 선 길이 | "
+        "가운데에서 남는 길이 | 프로그램 한계에서 남는 길이 |"
+    )
+    print("|---|---|---|---|---|---|---|")
+    for k, c in dx.items():
+        wd, r = _d405_wire_d(k), d405_wrap_radius(k)
+        full = c.longest(wd) + D405_SPARE
+        parent = "띠" if k == "J1" else "손목 1" if k == "J5" else f"{d405_lead_radius(k):.0f}"
+        lead = d405_child_lead(k)
+        child = "띠" if k == "J1" else "손목 1" if lead is None else f"{lead:.0f}"
+        soft = full - max(c.length(sg * j.SOFT_DEG, wd) for sg in (1, -1))
+        print(
+            f"| {k} | {r:.1f} ({r / D405_D:.1f}) | {parent} | {child} | {full:.0f} | "
+            f"{full - c.length(0.0, wd):.0f} | {soft:.0f} |"
+        )
+    print(
+        f"  (기준: 감기는 반지름은 지름의 {WRAP_RATIO:.0f}배 {WRAP_RATIO * D405_D:.0f} mm, 꺾이는 자리는 "
+        f"{FLEX_RATIO:.0f}배 {FLEX_RATIO * D405_D:.0f} mm 이상. 선 길이는 멈춤 각에서 {D405_SPARE:.0f} mm가 남는 값이다)"
     )
     print(
-        "- 범위 가운데에서 남는 선이 만드는 고리의 반지름: "
-        + ", ".join(f"{k} {d405_mid_loop(c, d):.0f}" for k, c in x.items() if k != "J6")
+        f"- 손목 1: 선을 잡지 않는다. 목 앞면 위에서 J5 쪽 접선과 J4 쪽 접선 사이가 {d405_wrist1_gap():.1f} mm다 "
+        "(같은 쪽으로 감길 때 선이 이 사이에서 되돌아 굽는다)"
     )
-    path = d405_path(d)
+    print(
+        f"- 멈춤 각에서 선의 옆과 멈춤 귀 사이: STS 관절 {d405_ear_gap(j.R_DRUM, j.EAR_HW):.1f}, "
+        f"어깨 {d405_ear_gap(sp.R_DRUM, sp.EAR_HW):.1f} mm"
+    )
+    path = d405_path()
     total = sum(v for _, v in path)
     print(
-        f"- 길이: 테에 감는 가장 짧은 길로도 카메라에서 띠 밑 누르개까지 {total:.0f} mm "
-        f"(선 {D405_STOCK_MM:.0f} mm에서 {D405_STOCK_MM - total:.0f})"
+        f"- 길이: 카메라의 플러그에서 띠 밑 누르개까지 {total:.0f} mm, 그 뒤로 {D405_STOCK_MM - total:.0f} mm가 남는다 "
+        "(플러그 끝에서 끝까지 잰 길이에서 뺀 값)"
     )
     print("  " + ", ".join(f"{n} {v:.0f}" for n, v in path))
     masses = wire_masses()

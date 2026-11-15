@@ -142,10 +142,10 @@ def test_geometry_keeps_the_camera_view_and_the_weight_cap() -> None:
 @pytest.mark.slow
 def test_camera_sees_the_work_ahead_of_the_fingers() -> None:
     # 잡기 전 높이(도구 끝점보다 6 cm 앞)에서 D405가 도구 끝점 둘레의 80% 넘게 본다 (0017, 0029).
-    # 손가락을 40 mm 넘게 벌린 채 본다. 닫으면 손가락이 가운데를 가린다
+    # 이 높이에서는 랙 집만 화면을 가려서 손가락을 닫아도 같다 (카메라가 플러그만큼 밖에 있다, 0029)
     assert g.view_share(40.0) >= 0.80
     assert g.view_share(g.OPEN_MAX) >= 0.80
-    assert g.view_share(0.0) < g.view_share(g.OPEN_MAX)
+    assert g.view_share(0.0) >= 0.80
 
 
 @pytest.mark.slow

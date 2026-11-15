@@ -10,10 +10,11 @@
 - 베이스 몸통, 돌림판, J1 몸통의 바닥판은 J1 관절 CAD(parts/base.py)의 치수다.
 - 관절마다 원통 밖으로 나온 것도 넣는다: 자식 몸통의 귀와 그 위의 나사 머리, 멈춤 기둥과 그 귀, 영점 핀 귀,
   원통 옆의 벽 나사 머리. 집의 목에는 멈춤 기둥이 도는 홈과 가운데 살을 넣어, 관절이 멈춤 각(163°)에서 막힌다.
-- 손목 끝은 그린 부품의 자리다: 손목 몸통 옆의 돋움, 기울인 D405와 받침과 플러그(parts/camera_mount.py),
-  플랜지 원판의 영점 핀 귀(parts/flange.py), 평행 그리퍼(parts/gripper.py). 포인터는 아직 그리지 않아
-  자리표시(packaging.TOOLS)다.
-- 선은 무게만 넣는다 (studies/wiring.py: 서보 선과 D405 선을 링크마다 한 덩어리로). 느슨한 고리의 형상은 없다.
+- 손목 끝은 그린 부품의 자리다: 손목 몸통 옆의 돋움, 기울인 D405와 받침, 얇은 USB 2 선의 ㄱ자 플러그와
+  손목 2 몸통을 따라가는 선(parts/camera_mount.py), 플랜지 원판의 영점 핀 귀(parts/flange.py), 평행
+  그리퍼(parts/gripper.py). 포인터는 아직 그리지 않아 자리표시(packaging.TOOLS)다.
+- 그 밖의 선은 무게만 넣는다 (studies/wiring.py: 서보 선과 D405 선을 링크마다 한 덩어리로). 관절의 두 몸통
+  사이에 감긴 선과 느슨한 고리의 형상은 없다.
 
     uv run python -m horilab_design.studies.ur_arm               # 쌓임, 옆 자리, 무게, 세운 자세의 범위
     uv run python -m horilab_design.studies.ur_arm compare       # UR3e와 같은 자세 시험 (0027, 5분쯤)
@@ -72,11 +73,13 @@ from horilab_design.values import ServoModel, load_measured, load_servos, servo_
 G = 1e-3  # g → kg
 # 무게 [kg]. 출력 부품은 맞춘 어림이다 (uv run python -m horilab_design.parts.wrist, ...links).
 # tests/test_ur_arm.py가 CAD 값과 견준다.
+# 출력 면 베어링: STS 관절은 6806, 어깨는 6808 (저울로 잰 값, data/measured.toml의 bearing_mass_g)
+_BEARING_G = load_measured().bearing_mass_g
 BEARING_MASS: dict[ServoModel, float] = {
-    "STS3215": 0.024,
-    "STS3250": 0.024,
-    "ST-3120": 0.031,
-}  # NSK 카탈로그
+    "STS3215": _BEARING_G["6806"] * G,
+    "STS3250": _BEARING_G["6806"] * G,
+    "ST-3120": _BEARING_G["6808"] * G,
+}
 # 원통 속 부품과 나사: 누름 틀 4.1, 서보 받침 3.2, 뒷덮개 5.3, 벽 나사 3.9, 너트 1.5, 서보 뒷면 나사 0.8, 덮개 나사 1.8
 INNER_MASS = 21.0 * G
 WRIST_BODY_MASS = 26.6 * G  # 손목 몸통 (원통 옆의 돋움 둘 포함)
@@ -109,7 +112,7 @@ LINK_TUBE: dict[
     "upper": (0.320, 22.4 * G, 0.0128),
     "fore": (0.287, 16.7 * G, 0.0133),
 }
-D405_PLATE_MASS = 12.1 * G  # D405 받침 8.5 (parts/camera_mount.py)과 나사 넷, 너트 둘 3.6
+D405_PLATE_MASS = 13.4 * G  # D405 받침 9.8 (parts/camera_mount.py)과 나사 넷, 너트 둘 3.6
 # J6의 자식 쪽 (uv run python -m horilab_design.parts.flange): 플랜지 원판 12.6, 허브 판 1.3, 혼 2.0, 혼 볼트 넷 5.4,
 # 너트 둘 0.7, 멈춤 나사와 너트 1.2, 도구 핀 둘 2.2. 손나사 둘과 손잡이는 도구의 무게에 들어 있다
 FLANGE_MASS = 25.4 * G
@@ -121,13 +124,9 @@ GRIPPER_LUMPS: dict[str, tuple[float, Vec3]] = {
     "랙 집과 속 부품, 나사": (37.0 * G, (1.0, 47.2, 0.0)),
     "손가락": (7.2 * G, (0.0, 71.5, 0.0)),
 }
-# D405의 옆면에서 선이 굽기 시작하는 곳까지 [m] (가정: parts/camera_mount.py의 PLUG_*). 가진 기본 선의 곧은
-# 플러그다 (새 선은 사지 않는다, 0031)
-PLUGS = {
-    "straight": (cmt.PLUG_LEN + cmt.PLUG_RELIEF) * MM,
-    "none": 0.0,
-}
-PLUG_NAMES = {"straight": "곧은 것", "none": "없음"}
+# D405의 플러그: "angle"은 얇은 USB 2 선의 ㄱ자 플러그와 손목 2 몸통을 따라가는 선(잰 값, parts/camera_mount.py),
+# "none"은 넣지 않는다 (견줄 때)
+PLUG_NAMES = {"angle": "ㄱ자", "none": "없음"}
 HEAD = wp.HEAD * MM  # 출력 원판 윗면에서 다음 서보 먼 끝까지
 # 발 상자의 (반 길이, 반폭, 윗모서리를 깎은 깊이): 위팔은 어깨 출력 원판에, 아래팔은 STS 출력 원판에 앉는다
 FEET = {
@@ -204,9 +203,9 @@ class Concept:
     sign4: int = 1  # J4 출력이 보는 쪽 (+1: 위팔 쪽으로 돌아온다)
     tube_scale: float = 1.0  # 관 무게에 곱하는 값 (벽을 얇게 할 때)
     extra: float = 0.0  # 플랜지에 더 다는 무게 [kg] (형상에 없는 것: 선, 나사)
-    # D405의 플러그 (PLUGS): "straight"(가진 곧은 플러그 선), "none"(넣지 않음).
-    # 커넥터가 있는 옆면은 J5 쪽을 본다 (0029)
-    plug: str = "straight"
+    # D405의 플러그 (PLUG_NAMES): "angle"(얇은 USB 2 선의 ㄱ자 플러그와 선), "none"(넣지 않음).
+    # 커넥터가 있는 옆면은 J6 원통 쪽을 본다 (0029)
+    plug: str = "angle"
     wires: bool = True  # 선의 무게를 넣는다 (0031)
     ranges_deg: tuple[tuple[float, float], ...] = DEFAULT_RANGES  # (가운데, 반폭)
 
@@ -422,7 +421,8 @@ def _j6_frame(c: Concept) -> tuple[np.ndarray, np.ndarray]:
 
 
 def camera_frame(c: Concept) -> tuple[np.ndarray, np.ndarray]:
-    """링크 5 좌표에서 본 D405의 좌표: 원점이 렌즈 면 가운데, x가 가로, y가 세로 바깥쪽, z가 광축."""
+    """링크 5 좌표에서 본 D405의 좌표: 원점이 렌즈 면 가운데, x가 J6 서보의 +x(카메라의 윗면 쪽), y가 J6 축에서
+    멀어지는 쪽(카메라의 가로. 커넥터가 있는 옆면은 -y), z가 광축."""
     origin, rot = _j6_frame(c)
     axis, wide = np.array(cmt.AXIS), np.array(X)
     local = np.column_stack([wide, np.cross(axis, wide), axis])
@@ -873,19 +873,37 @@ def build(c: Concept, tool: Tool) -> tuple[Robot, list[Prim]]:
         group="D405",
         frame=fcam,
     )
-    if PLUGS[c.plug] > 0:
-        # 플러그 몸통이 차지하는 자리: 커넥터가 있는 옆면(J5 쪽)에서 선이 굽기 시작하는 곳까지
-        zc, pw, pt = -cd + cmt.CONN_BACK * MM, cmt.PLUG_W / 2 * MM, cmt.PLUG_T / 2 * MM
+    if c.plug == "angle":
+        # ㄱ자 플러그: 커넥터가 있는 옆면(J6 원통 쪽)에 세로로 붙은 몸통. 선은 J5 쪽 끝에서 나온다
+        zc, pa = -cd + cmt.CONN_BACK * MM, cmt.PLUG_ACROSS / 2 * MM
+        x1 = (cmt.CAM_H / 2 - cmt.PLUG_TOP) * MM
         b.box(
             5,
             "d405_plug",
-            (-cw - PLUGS[c.plug], -pw, zc - pt),
-            (-cw, pw, zc + pt),
+            (x1 - cmt.PLUG_LEN * MM, -cw - cmt.PLUG_OUT * MM, zc - pa),
+            (x1, -cw, zc + pa),
             material="camera",
             mass=0.0,
             group="D405 플러그",
             frame=fcam,
         )
+        # 선: 플러그에서 받침의 발 밑을 돌아 뒷덮개 가운데까지, 거기서 발 바닥까지 내려간다. 그 밑(J5의 두 몸통
+        # 사이)은 관절을 따라 움직이는 구간이라 넣지 않는다
+        run = [np.array(p) * MM for p in cmt.wire_run()]
+        run.append(np.array([wp.X_FOOT * MM, run[-1][1], run[-1][2]]))
+        for k, (p0, p1) in enumerate(itertools.pairwise(run)):
+            b.cyl(
+                5,
+                f"d405_wire{k}",
+                tuple((p0 + p1) / 2),
+                tuple(p1 - p0),
+                cmt.WIRE_D / 2 * MM,
+                float(np.linalg.norm(p1 - p0)),
+                material="camera",
+                mass=0.0,
+                group="D405 선",
+                frame=f6,
+            )
     if c.wires:
         # 선의 무게 (0031): 링크마다 관 가운데와 끝 집, 손목 몸통 둘. J6 → 그리퍼 선은 도구의 무게에 들어 있다
         wire = wr.wire_masses()
@@ -1469,8 +1487,8 @@ def parse(args: list[str]) -> Concept:
         elif k == "sign4":
             c = replace(c, sign4=int(v))
         elif k == "plug":
-            if v not in PLUGS:
-                raise SystemExit(f"모르는 플러그: {v} ({', '.join(PLUGS)})")
+            if v not in PLUG_NAMES:
+                raise SystemExit(f"모르는 플러그: {v} ({', '.join(PLUG_NAMES)})")
             c = replace(c, plug=v)
         elif k == "wires":
             c = replace(c, wires=bool(int(v)))

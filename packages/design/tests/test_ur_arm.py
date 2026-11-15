@@ -69,9 +69,11 @@ def test_model_includes_what_sticks_out_of_the_joints() -> None:
     # 가운데라 관절 각 0에서는 목(-z) 쪽이다
     assert by["J3/post"].pos[2] > 0.02
     assert by["J4/post"].pos[2] < -0.02
-    # 손목 몸통 둘의 돋움, D405와 받침과 플러그, 그리퍼
+    # 손목 몸통 둘의 돋움, D405와 받침과 플러그, 손목 2 몸통을 따라가는 선, 그리퍼
     for name in ("J5/boss0", "J6/boss1", "d405", "d405_plate", "d405_seat", "d405_plug", "adapter"):
         assert name in by, name
+    wire = [p for p in prims if p.group == "D405 선"]
+    assert len(wire) == len(cmt.wire_run()) and all(p.link == 5 for p in wire)
     assert by["d405_plate"].mass == pytest.approx(ur_arm.D405_PLATE_MASS)
     assert by["J6/cap"].mass == pytest.approx(ur_arm.FLANGE_MASS)
 
@@ -83,19 +85,20 @@ def test_camera_sits_where_the_mount_puts_it() -> None:
     assert cam.lens == pytest.approx([-cmt.LENS[2] * MM, c.d6 - cmt.LENS_BACK * MM, c.d5], abs=1e-9)
     t = math.radians(cmt.TILT)
     assert cam.axis == pytest.approx([-math.sin(t), math.cos(t), 0.0], abs=1e-9)
-    # 플러그는 J5 쪽(링크 5의 -z)으로 나간다. 기본은 가진 선의 곧은 플러그다
-    assert ur_arm.Concept().plug == "straight"
-    lengths = {}
-    for plug in ("straight", "none"):
-        _robot, prims = ur_arm.build(ur_arm.Concept(plug=plug), ur_arm.GRIPPER)
-        found = [p for p in prims if p.name == "d405_plug"]
-        if plug == "none":
-            assert found == []
-            continue
-        cam_box = next(p for p in prims if p.name == "d405")
-        assert found[0].pos[2] < cam_box.pos[2] - 0.021
-        lengths[plug] = 2 * found[0].size[0]
-    assert lengths["straight"] == pytest.approx((cmt.PLUG_LEN + cmt.PLUG_RELIEF) * MM)
+    # 기본은 얇은 USB 2 선의 ㄱ자 플러그다: 카메라와 J6 원통 사이에 있고(카메라보다 축에 가깝다), 몸통이 J6 서보의
+    # x 방향(링크 5의 z)으로 길다
+    assert ur_arm.Concept().plug == "angle"
+    _robot, prims = ur_arm.build(ur_arm.Concept(), ur_arm.GRIPPER)
+    plug = next(p for p in prims if p.name == "d405_plug")
+    cam_box = next(p for p in prims if p.name == "d405")
+    assert 0.0235 < plug.pos[0] < cam_box.pos[0] - 0.021
+    assert 2 * plug.size[0] == pytest.approx(cmt.PLUG_LEN * MM)
+    assert 2 * plug.size[1] == pytest.approx(cmt.PLUG_OUT * MM)
+    # 선은 플러그의 J5 쪽 끝에서 나와 손목 2 몸통의 발 바닥까지 간다
+    wire = [p for p in prims if p.group == "D405 선"]
+    assert min(p.pos[2] for p in wire) < c.d5 + (wrist.X_FOOT + 10.0) * MM
+    _robot, bare = ur_arm.build(ur_arm.Concept(plug="none"), ur_arm.GRIPPER)
+    assert not [p for p in bare if p.name == "d405_plug" or p.group == "D405 선"]
 
 
 def test_gripper_tool_is_the_drawn_gripper() -> None:

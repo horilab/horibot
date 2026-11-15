@@ -1,11 +1,13 @@
 """손목 D405 받침: 손목 2 몸통(J6의 집) 옆의 돋움 둘에 다는 꺾인 판 (0018, 0029의 "D405 받침").
 
-D405는 J6 원통 옆(-z 쪽, 영점 핀 귀의 반대쪽)에 있고, 광축을 도구 축 쪽으로 20° 기울인다 (0017). 카메라 뒷면의
-M3 구멍 둘(간격 20 mm)에 받침의 뒤에서 나사를 조인다. 받침의 발은 손목 몸통의 돋움 둘(parts/wrist.py)에 M3 나사
-둘로 단다. 커넥터가 있는 옆면은 J5 쪽(-x)을 본다.
+D405는 J6 원통 옆(-z 쪽, 영점 핀 귀의 반대쪽)에 있고, 광축을 도구 축 쪽으로 20° 기울인다 (0017). 카메라는
+광축 둘레로 90° 돌려 단다: 커넥터가 있는 옆면이 J6 원통 쪽을 보고, 카메라의 윗면이 +x(J5 반대쪽), 바닥면(1/4
+나사 구멍)이 J5 쪽을 본다. 그래서 얇은 USB 2 선의 ㄱ자 플러그(0031)가 카메라와 원통 사이에 들고, 선이 손목
+몸통을 따라 J5 쪽으로 나온다. 카메라 뒷면의 M3 구멍 둘(간격 20 mm)은 원통에서 멀어지는 쪽으로 나란히 놓이고,
+받침의 뒤에서 나사를 조인다. 받침의 발은 손목 몸통의 돋움 둘(parts/wrist.py)에 M3 나사 둘로 단다.
 
-카메라의 치수는 공식 사양서와 CAD에서 읽은 값이고(docs/hardware.md의 D405), 플러그의 폭과 두께는 USB 3.0 규격의
-한계다. 플러그는 가진 기본 선의 곧은 플러그이고, 꺾임 보호의 길이는 가정이다 (PLUG_*: 가진 선을 재서 확인한다).
+카메라의 치수는 공식 사양서와 CAD에서 읽은 값이고(docs/hardware.md의 D405), 플러그는 잰 값이다
+(data/measured.toml의 d405_usb2_plug). 몸통이 옆면의 어디에 붙는지는 사진으로 어림한 값이다 (PLUG_TOP, ±2).
 
 좌표는 joint.py의 서보 좌표다 (y가 J6 축, 플랜지 면이 y = ATOP, -x가 J5 쪽).
 
@@ -20,23 +22,35 @@ from build123d import Compound, Location, Plane
 
 from horilab_design.parts import flange, wrist
 from horilab_design.parts import joint as j
-from horilab_design.parts.shapes import box, cyl_z, far_apart, solid
+from horilab_design.parts.shapes import box, cyl_x, cyl_z, far_apart, solid
 from horilab_design.printcheck import overhangs, printed_mass_g
-from horilab_design.values import ServoModel
+from horilab_design.values import ServoModel, load_measured
+
+_MEASURED = load_measured()
+assert _MEASURED.d405_usb2_plug is not None and _MEASURED.d405_usb2_cable is not None
+_PLUG, _CABLE = _MEASURED.d405_usb2_plug, _MEASURED.d405_usb2_cable
+assert _CABLE.diameter_mm is not None
 
 # ---- D405 (docs/hardware.md: 공식 사양서와 CAD) ----
-CAM_W, CAM_H, CAM_D = 42.0, 42.0, 23.0  # 가로(커넥터가 있는 옆면까지) × 세로 × 깊이
-CAM_HOLE_X = 10.0  # 뒷면의 M3 구멍 둘: 가로 가운데에서 ±10, 세로 가운데
+# 카메라 자신의 가로(커넥터가 있는 옆면까지) × 세로 × 깊이. 90° 돌려 달아서 가로가 원통에서 멀어지는 쪽이다
+CAM_W, CAM_H, CAM_D = 42.0, 42.0, 23.0
+CAM_HOLE_X = 10.0  # 뒷면의 M3 구멍 둘: 카메라의 가로 가운데에서 ±10, 세로 가운데
 CAM_HOLE_DEPTH = 4.0  # 나사가 들어갈 수 있는 깊이
 CONN_BACK = 6.82  # 옆면 커넥터의 가운데: 뒷면에서
-# ---- 플러그 (USB 3.0 규격 그림 5-17, docs/hardware.md의 D405. 가진 기본 선을 재서 확인한다) ----
-PLUG_W, PLUG_T = 16.0, 8.5  # 플러그 몸통의 폭(카메라의 세로 방향)과 두께(깊이 방향): 규격의 한계
-PLUG_LEN = 18.5  # 곧은 플러그의 몸통이 옆면에서 나온 길이: 규격의 참고 값
-PLUG_RELIEF = 12.0  # 그 뒤에 선이 굽지 못하는 길이 (꺾임 보호. 규격에 없는 가정)
+# ---- 플러그: 얇은 USB 2 선의 ㄱ자 플러그 (잰 값, 2026-11-15) ----
+PLUG_OUT = _PLUG.protrusion_mm  # 커넥터가 있는 옆면에서 플러그의 가장 바깥까지
+PLUG_LEN = _PLUG.body_length_mm  # 몸통의 길이: 카메라의 세로 방향이고, 선은 바닥면 쪽 끝에서 나온다
+PLUG_BODY = _PLUG.body_out_mm  # 꽂는 방향의 몸통 두께 (선은 그 가운데에서 나온다)
+PLUG_ACROSS = _PLUG.body_across_mm  # 카메라의 깊이 방향 폭
+PLUG_TOP = 7.0  # 몸통 위끝이 옆면의 위 모서리에서 내려온 거리 (사진으로 어림, ±2)
+WIRE_D = _CABLE.diameter_mm  # 그 선의 지름
+PLUG_GAP = 1.0  # 플러그와 손목 몸통(원통, 벽 나사 머리) 사이에 남길 틈
 
 # ---- 카메라 자리 ----
 TILT = 20.0  # 광축을 도구 축 쪽으로 기울인 각 [°] (0017)
-DRUM_GAP = 1.0  # 카메라의 안쪽 앞 모서리와 원통 옆면 사이
+# 카메라의 안쪽 앞 모서리와 원통 옆면 사이. 커넥터 면과 원통 사이에 플러그(PLUG_OUT)가 들고 PLUG_GAP이 남는
+# 값이다 (plug_clearance). 가장 가까운 곳은 플러그의 앞 안쪽 모서리와 원통이다
+DRUM_GAP = 6.0
 # 렌즈 면의 가운데가 플랜지 면보다 뒤에 있는 거리. J6 멈춤 기둥의 나사 끝(이음매에서 8.0 아래, 축에서 26.5 ~ 29.5)이
 # 카메라 앞을 2 mm 넘게 띄우고 지나가는 값이다 (8.0이면 0.9 mm)
 LENS_BACK = 9.2
@@ -48,24 +62,26 @@ LENS = (
     j.ATOP - LENS_BACK,
     -(j.R_DRUM + DRUM_GAP + CAM_H / 2 * math.cos(_T)),
 )  # 렌즈 면의 가운데
-# 카메라 좌표: 원점이 렌즈 면 가운데, x가 가로(+x), y가 세로 바깥쪽(J6 축에서 멀어지는 쪽), z가 광축
+# 카메라 좌표: 원점이 렌즈 면 가운데, x가 서보의 +x(카메라의 윗면 쪽), y가 J6 축에서 멀어지는 쪽(카메라의
+# 가로. 커넥터가 있는 옆면은 -y), z가 광축
 FRAME = Location(Plane(origin=LENS, x_dir=(1.0, 0.0, 0.0), z_dir=AXIS))
 
 # ---- 받침 ----
 # 카메라 뒤의 판. 카메라 무게에 판이 휘어 카메라가 기우는 양이 화소 반 칸(1280 화소에서 0.034°)보다 작은 두께다
-# (tilt_under_weight). 3.5면 0.05°다
-PLATE_T = 4.5
-MOUNT_W = (
-    34.0  # 받침의 폭 (카메라 나사 ±10과 발 나사 ±12를 품는다. 카메라 폭 42보다 좁혀 무게를 줄였다)
-)
-HEAD_REC = 1.5  # 카메라 나사 머리 자리의 깊이: 남은 살 3.0에 M3 × 6이 카메라에 3.0 들어간다
+# (tilt_under_weight). 카메라를 플러그만큼 밖으로 옮겨 팔이 길어져서 4.5로는 0.036°다
+PLATE_T = 5.0
+MOUNT_W = 34.0  # 받침의 폭 (발 나사 ±12를 품는다. 카메라 폭 42보다 좁혀 무게를 줄였다)
+HEAD_REC = 2.0  # 카메라 나사 머리 자리의 깊이: 남은 살 3.0에 M3 × 6이 카메라에 3.0 들어간다
 CAM_SCREW = 6.0
 FOOT_T = 3.0  # 돋움에 앉는 발
 FOOT_Y0 = wrist.MOUNT_Y[0] - 0.5  # 발의 뒤 끝
 FOOT_SCREW = 8.0  # M3 × 8: 발 3.0 + 돋움 속 5.0 (너트를 0.6 지나간다)
-FILLET = 1.5  # 발과 판이 만나는 안쪽 모서리를 메운 길이 (발 나사 머리와 0.5 뜬다)
+FILLET = 1.5  # 발과 판이 만나는 안쪽 모서리를 메운 길이
+HEAD_RELIEF_R = (
+    3.3  # 발 나사 머리(반지름 2.85)가 앉는 자리의 반지름: 판의 뿌리와 메운 자리를 이만큼 판다
+)
 PROVISIONAL = (
-    "PLUG_* (가진 D405 선의 플러그)",
+    "PLUG_TOP (플러그 몸통이 옆면에 붙는 자리, 사진 어림)",
     "wrist.MOUNT_NUT (흰색 fit1_nut_drops)",
     *j.PROVISIONAL[:1],
 )
@@ -89,13 +105,68 @@ def camera() -> Compound:
     return solid(body.moved(FRAME))
 
 
-def plug(length: float = PLUG_LEN + PLUG_RELIEF) -> Compound:
-    """커넥터에 꽂은 플러그가 차지하는 자리 (-x 쪽 옆면에서 length만큼)."""
+def plug() -> Compound:
+    """커넥터에 꽂은 ㄱ자 플러그가 차지하는 자리: 커넥터가 있는 옆면(-y)에 세로로 붙은 몸통.
+
+    옆면에서 PLUG_OUT까지를 통째로 넣는다 (몸통 두께 PLUG_BODY에 꽂는 목까지). 선은 -x 끝에서 나온다.
+    """
+    x1 = CAM_H / 2 - PLUG_TOP
     z = -CAM_D + CONN_BACK
     body = box(
-        -CAM_W / 2 - length, -CAM_W / 2, -PLUG_W / 2, PLUG_W / 2, z - PLUG_T / 2, z + PLUG_T / 2
+        x1 - PLUG_LEN,
+        x1,
+        -CAM_W / 2 - PLUG_OUT,
+        -CAM_W / 2,
+        z - PLUG_ACROSS / 2,
+        z + PLUG_ACROSS / 2,
     )
     return solid(body.moved(FRAME))
+
+
+def wire_exit() -> tuple[float, float, float]:
+    """플러그에서 선이 나오는 곳 (카메라 좌표): 몸통의 -x 끝, 몸통 두께의 가운데."""
+    return (
+        CAM_H / 2 - PLUG_TOP - PLUG_LEN,
+        -CAM_W / 2 - PLUG_OUT + PLUG_BODY / 2,
+        -CAM_D + CONN_BACK,
+    )
+
+
+def to_servo(p: tuple[float, float, float]) -> tuple[float, float, float]:
+    """카메라 좌표의 점을 서보 좌표로 옮긴다."""
+    x, y, z = p
+    oy, oz = -INWARD[1], -INWARD[2]
+    return (LENS[0] + x, LENS[1] + y * oy + z * AXIS[1], LENS[2] + y * oz + z * AXIS[2])
+
+
+# 선이 손목 2 몸통을 따라가는 높이: 받침의 발(x -MOUNT_W / 2까지) 바로 밑이다
+RUN_X = -MOUNT_W / 2 - WIRE_D / 2 - 3.0
+LEAD_Y = j.BACK_OUT - WIRE_D / 2  # 뒷덮개 바깥 면에 붙어 내려가는 선의 가운데
+
+
+def wire_run() -> list[tuple[float, float, float]]:
+    """플러그에서 나온 선이 손목 2 몸통을 따라 뒷덮개 가운데까지 가는 길 (서보 좌표의 꺾은선, 어림).
+
+    플러그 끝에서 J5 쪽으로 곧게 나와 받침의 발 밑에서 뒤로 돌고, 목의 뒤 모서리를 돌아 뒷덮개의 가운데에서
+    끝난다. 거기서 선을 잡고(받침에 낼 클립, 손목 끝의 뽑을 파일을 낼 때 그린다), 그 밑으로는 J5를 넘는
+    느슨한 구간이다 (studies/wiring.py).
+    """
+    ex, ey, ez = to_servo(wire_exit())
+    side = -(j.NECK_HW + WIRE_D / 2 + 4.0)  # 목의 옆벽에서 조금 뜬 자리
+    return [
+        (ex, ey, ez),
+        (ex - 5.0, ey, ez),
+        (RUN_X, ey - 9.0, (ez + side) / 2),
+        (RUN_X, j.BACK_OUT + 6.0, side),
+        (RUN_X, LEAD_Y - 1.5, -(j.NECK_HW - 3.0)),  # 뒤 모서리를 돈다
+        (RUN_X, LEAD_Y, 0.0),
+    ]
+
+
+def wire_stub(length: float = 15.0) -> Compound:
+    """플러그에서 나와 J5 쪽(-x)으로 곧게 가는 선의 첫 구간 (틈 검사와 그림에 쓴다)."""
+    x, y, z = wire_exit()
+    return solid(cyl_x(WIRE_D / 2, x - length, x, y, z).moved(FRAME))
 
 
 def profile() -> list[tuple[float, float]]:
@@ -130,10 +201,12 @@ def mount() -> Compound:
     m = j.prism_x(profile(), -MOUNT_W / 2, MOUNT_W / 2)
     for x, y in wrist.mount_xy():  # 발 나사
         m = solid(m - cyl_z(j.M3_FREE_H / 2, z_out - 1, z_in + 1, x, y))
+        # 머리 자리: 카메라를 플러그만큼 밖으로 옮겨 판의 뿌리가 나사 쪽으로 왔다. 머리 둘레만 판과 메운 자리를 판다
+        m = solid(m - cyl_z(HEAD_RELIEF_R, z_out - 2.5, z_out, x, y))
     r = j.M3_FREE_H / 2
-    for sx in (1, -1):  # 카메라 나사와 머리 자리 (카메라 좌표)
-        hole = cyl_z(r, -CAM_D - PLATE_T - 1, -CAM_D + 1, sx * CAM_HOLE_X, 0.0)
-        hole += cyl_z(3.1, -CAM_D - PLATE_T - 1, -CAM_D - PLATE_T + HEAD_REC, sx * CAM_HOLE_X, 0.0)
+    for sy in (1, -1):  # 카메라 나사와 머리 자리 (카메라 좌표: 원통에서 멀어지는 쪽으로 나란하다)
+        hole = cyl_z(r, -CAM_D - PLATE_T - 1, -CAM_D + 1, 0.0, sy * CAM_HOLE_X)
+        hole += cyl_z(3.1, -CAM_D - PLATE_T - 1, -CAM_D - PLATE_T + HEAD_REC, 0.0, sy * CAM_HOLE_X)
         m = solid(m - solid(hole).moved(FRAME))
     if not m.is_valid:
         raise RuntimeError("D405 받침 형상이 깨졌다")
@@ -144,9 +217,9 @@ def hardware() -> list[j.Part]:
     """카메라 나사 M3 × 6 둘, 발 나사 M3 × 8 둘과 돋움 속 너트."""
     out: list[j.Part] = []
     seat = -CAM_D - PLATE_T + HEAD_REC  # 카메라 좌표에서 머리 밑면
-    for k, sx in enumerate((1, -1), start=1):
-        s = cyl_z(1.5, seat, seat + CAM_SCREW, sx * CAM_HOLE_X, 0.0)
-        s += cyl_z(2.85, seat - 1.65, seat, sx * CAM_HOLE_X, 0.0)
+    for k, sy in enumerate((1, -1), start=1):
+        s = cyl_z(1.5, seat, seat + CAM_SCREW, 0.0, sy * CAM_HOLE_X)
+        s += cyl_z(2.85, seat - 1.65, seat, 0.0, sy * CAM_HOLE_X)
         out.append(
             j.Part(f"카메라 나사 M3x6 {k}", solid(solid(s).moved(FRAME)), j.STEEL, False, "metal")
         )
@@ -162,14 +235,30 @@ def hardware() -> list[j.Part]:
 
 
 def assembly(model: ServoModel = "STS3215") -> list[j.Part]:
-    """J6 조립(parts/flange.py)에 D405와 받침을 더한 것. 플러그는 가진 선의 곧은 플러그다 (길이는 가정)."""
+    """J6 조립(parts/flange.py)에 D405와 받침, 얇은 USB 2 선의 ㄱ자 플러그와 선의 첫 구간을 더한 것."""
     parts = flange.assembly(model)
     parts += [
         j.Part("D405 받침", mount(), color="cap"),
         j.Part("D405", camera(), color="servo"),
         j.Part("D405 플러그", plug(), color="plug"),
+        j.Part("D405 선", wire_stub(), color="plug"),
     ]
     return parts + hardware()
+
+
+def plug_clearance(parts: list[j.Part]) -> dict[str, float]:
+    """플러그와 선의 첫 구간에서 손목 몸통, 벽 나사, 받침까지의 틈 [mm] (가까운 것만)."""
+    mine = [p for p in parts if p.name in ("D405 플러그", "D405 선")]
+    out: dict[str, float] = {}
+    for other in parts:
+        if not other.name.startswith(("손목 몸통", "벽 나사", "D405 받침", "받침 나사", "뒷덮개")):
+            continue
+        key = other.name.rstrip("0123456789 ").strip()
+        for p in mine:
+            if far_apart(p.shape, other.shape, 8.0):
+                continue
+            out[key] = min(out.get(key, 8.0), p.shape.distance_to(other.shape))
+    return out
 
 
 def screw_checks() -> dict[str, float]:
@@ -188,7 +277,9 @@ def screw_checks() -> dict[str, float]:
     }
 
 
-CAM_LOAD_N = 0.75  # 카메라 58 ~ 60 g에 플러그와 선의 몫 15 g을 더한 무게 [N]
+CAM_LOAD_N = (
+    0.65  # 카메라 58 ~ 60 g에 플러그와 선의 몫 6 g을 더한 무게 [N] (얇은 선 전체가 31.3 g이다)
+)
 PIXEL_DEG = 87.0 / 1280  # 가장 촘촘한 영상(가로 1280 화소)의 한 화소
 
 
@@ -206,7 +297,7 @@ def tilt_under_weight(e_gpa: float = 2.0) -> float:
 
 def sweep_gaps(parts: list[j.Part]) -> dict[str, float]:
     """J6를 멈춤 각까지 돌릴 때, 도는 부품과 D405·받침·플러그 사이의 가장 좁은 틈 [mm]."""
-    fixed = [p for p in parts if p.name in ("D405", "D405 받침", "D405 플러그")]
+    fixed = [p for p in parts if p.name in ("D405", "D405 받침", "D405 플러그", "D405 선")]
     moving = [p for p in parts if p.moving]
     out: dict[str, float] = {}
     for q in range(-165, 166, 15):
@@ -256,6 +347,11 @@ def report(model: ServoModel = "STS3215") -> None:
     print(
         f"  카메라 무게에 기우는 각: {tilt_under_weight(2.75):.3f} ~ {tilt_under_weight(2.0):.3f}° "
         f"(화소 반 칸 {PIXEL_DEG / 2:.3f}°)"
+    )
+    near = plug_clearance(parts)
+    print(
+        "  플러그와 선에서 가까운 것까지: "
+        + ", ".join(f"{k} {v:.2f}" for k, v in sorted(near.items(), key=lambda kv: kv[1]))
     )
     solids = [p for p in parts if "핀" not in p.name and "손잡이" not in p.name]
     hits = j.overlaps(solids)

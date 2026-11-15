@@ -53,7 +53,8 @@ from horilab_design.studies.packaging import (
 from horilab_design.values import ServoModel, load_measured, load_servos, servo_mass
 
 # 출력 면 베어링 (안지름, 바깥지름, 폭 [m], 무게 [kg]). 출력 혼(STS 지름 20, ST-3120 지름 30)을 감싸는 뚜껑의
-# 허브가 안쪽 링에 들어간다. 무게는 카탈로그를 보기 전의 어림이다.
+# 허브가 안쪽 링에 들어간다. 무게는 개념 형상을 견줄 때(0027)의 어림이다. 그린 팔의 모델(studies/ur_arm.py)은
+# 저울로 잰 값을 쓴다 (6806 24.22 g, 6808 28.98 g)
 BEARINGS: dict[ServoModel, tuple[float, float, float, float]] = {
     "STS3215": (0.030, 0.042, 0.007, 0.019),  # 6806 (61806)
     "STS3250": (0.030, 0.042, 0.007, 0.019),
