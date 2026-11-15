@@ -222,6 +222,7 @@ qty = 1
 stage = 2
 ordered = 2026-11-07
 arrive = [2026-11-12, 2026-11-18]
+received = 2026-11-15
 vendor = "AliExpress"
 unit_price_krw = 155960
 priced = "2026-11"

@@ -67,6 +67,8 @@
 
 다른 서보를 빼고 혼자 꽂아, 아무것도 쓰기 전에 `scan`과 `dump`를 뜬다. 새 서보의 덤프가 그 모델의 공장값이다. 이어서 혼자 꽂은 채 `set-id --to 2`로 ID를 2(어깨)로 바꾼다. 메모리 표의 ID 초기값이 1이라 J1과 겹치니, 바꾸기 전에는 다른 서보와 같은 버스에 두지 않는다. 처음 보는 모델 번호는 [hardware.md](hardware.md#서보-사양)의 표와 `registers.py`, `registers.rs`의 `MODELS`, 시뮬레이션의 `MODEL_NAMES`(`packages/sim/src/horilab_sim/world.py`)에 넣고, 그 덤프로 로봇 설정에 `[models.ST-3120.registers]`를 적는다 (Claude).
 
+2026-11-15에 했다: 모델 번호 3337, 펌웨어 3.10, ID 2. 기록은 `records/servo/2026-11-15_155927_dump-crazyhappy`(공장값)와 `2026-11-15_160021_set-id-crazyhappy`다.
+
 ## 값 적용
 
 서보의 EEPROM을 로봇 설정([data/robot.toml](../data/robot.toml))에 맞춘다. 서보에 남은 값에 기대지 않으려는 것이다 ([0024](decisions/0024-servo-bus.md)). 명령은 컨트롤러(`crates/controller`)에 있고, 레포 루트에서 돌린다.

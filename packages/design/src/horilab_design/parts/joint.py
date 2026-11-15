@@ -92,7 +92,7 @@ def _fit(value: float | None) -> float:
 
 PIN_HOLE = _fit(_WHITE.pin_hole_mm)  # 세로 구멍 (몸통의 살)
 PIN_HOLE_H = _fit(_WHITE.pin_hole_horizontal_mm)  # 가로 구멍 (손목 몸통의 귀는 뽑을 때 눕는다)
-M3_FREE = _fit(_WHITE.m3_hole_mm) + HOLE_SLACK  # 흰색, 볼트가 지나가는 세로 구멍 (3.2)
+M3_FREE = _fit(_WHITE.m3_hole_mm) + HOLE_SLACK  # 흰색, 볼트가 지나가는 세로 구멍 (3.4)
 M3_FREE_H = _fit(_WHITE.m3_hole_horizontal_mm) + HOLE_SLACK  # 흰색, 가로 구멍 (3.4)
 K_M3_FREE = _fit(_BLACK.m3_hole_mm) + HOLE_SLACK  # 검정, 세로 구멍 (3.4)
 K_M3_FREE_H = _fit(_BLACK.m3_hole_horizontal_mm) + HOLE_SLACK  # 검정, 가로 구멍 (3.3)

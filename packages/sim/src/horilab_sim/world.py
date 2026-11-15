@@ -24,8 +24,8 @@ RAD_PER_STEP = 2 * math.pi / STEPS_PER_TURN
 CENTER = 2048  # 관절 각 0의 엔코더 값
 KGCM = 0.0980665  # [N·m / (kg·cm)]
 
-# 모델 번호 → 서보 모델 (horilab_servo의 MODELS와 같다. ST-3120은 오면 더한다)
-MODEL_NAMES = {777: "STS3215", 2825: "STS3250"}
+# 모델 번호 → 서보 모델 (horilab_servo의 MODELS와 같다)
+MODEL_NAMES = {777: "STS3215", 2825: "STS3250", 3337: "ST-3120"}
 
 # 위치 서보의 어림
 STIFFNESS_STS3250 = 20 * KGCM / math.radians(1.23)  # [N·m/rad] 20 kg·cm에 1.23° 처짐
