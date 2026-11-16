@@ -186,6 +186,8 @@ M2_HOLE_R = 1.35  # 나사가 지나가는 구멍의 반지름
 M2_SCREW = 5.0  # STS3250: M2 × 5가 서보에 2.8 mm 물린다
 # 먼 가로대의 가운데는 뒷면을 이만큼 낮춘다: 꽂아 눕힌 선(밑이 판 뒷면보다 0.4 낮다)이 잰 높이 그대로 지나간다
 WIRE_GROOVE = 0.8
+WIRE_GROOVE_X = (-36.0, -29.2)  # 그 홈의 x 범위와 반폭 (작업 안내가 실 걷을 자리로 가리킨다)
+WIRE_GROOVE_HZ = 8.6
 SPOT_R = R_DRUM - 0.6  # 벽 나사 머리가 앉는 면
 SCREW_LEN = 8.0  # 벽 나사 M3 × 8
 # 벽 나사의 너트가 드는 홈의 가운데 (축에서). 홈은 15.9 ~ 18.7이고, 조이면 너트가 바깥 면에 붙는다 (16.3 ~ 18.7).
@@ -505,7 +507,14 @@ def carrier() -> Compound:
     r_out = R_SLIDE
     hw = HW - 0.06  # 목 안쪽 벽과 0.4
     plate = box(-35.0, -30.2, y0, y1, -hw, hw)  # 먼 가로대
-    plate -= box(-36.0, -29.2, y0 - 1, y0 + WIRE_GROOVE, -8.6, 8.6)  # 선이 지나는 자리
+    plate -= box(
+        WIRE_GROOVE_X[0],
+        WIRE_GROOVE_X[1],
+        y0 - 1,
+        y0 + WIRE_GROOVE,
+        -WIRE_GROOVE_HZ,
+        WIRE_GROOVE_HZ,
+    )  # 선이 지나는 자리
     for sg in (1, -1):
         plate += box(
             -10.4, -6.1, y0, y1, min(sg * 7.5, sg * hw), max(sg * 7.5, sg * hw)
@@ -692,17 +701,26 @@ def inner_parts(model: ServoModel, neck_x: float, end_skirt: bool) -> list[Part]
     return parts + wall_screws()
 
 
-def side_nuts() -> list[tuple[str, Compound, Point, Point, Point]]:
-    """옆 홈에 세워 넣는 너트 다섯: (이름, 홈이 있는 부품, 너트 가운데, 볼트 방향, 입구 쪽 방향)."""
-    ret, car = retainer(), carrier()
+def side_nut_slots() -> list[tuple[str, Point, Point, Point]]:
+    """옆 홈에 세워 넣는 너트 다섯: (이름, 너트 가운데, 볼트 방향, 입구 쪽 방향). 좌표는 부품 자신의 것이다
+    (서보 받침은 조립하면 servo_dy만큼 옮겨진다). 형상은 만들지 않는다 (작업 안내가 너트를 미는 방향으로 쓴다)."""
     y_ret = retainer_nut_y()
     x_dir, z_dir = (1.0, 0.0, 0.0), (0.0, 0.0, 1.0)
     return [
-        ("누름 틀 +z", ret, (0.0, y_ret, NUT_Z), z_dir, x_dir),
-        ("누름 틀 -z", ret, (0.0, y_ret, -NUT_Z), z_dir, x_dir),
-        ("누름 틀 +x", ret, (NUT_Z, y_ret, 0.0), x_dir, z_dir),
-        ("서보 받침 +z", car, (0.0, CAR_SCREW_Y, NUT_Z), z_dir, x_dir),
-        ("서보 받침 -z", car, (0.0, CAR_SCREW_Y, -NUT_Z), z_dir, x_dir),
+        ("누름 틀 +z", (0.0, y_ret, NUT_Z), z_dir, x_dir),
+        ("누름 틀 -z", (0.0, y_ret, -NUT_Z), z_dir, x_dir),
+        ("누름 틀 +x", (NUT_Z, y_ret, 0.0), x_dir, z_dir),
+        ("서보 받침 +z", (0.0, CAR_SCREW_Y, NUT_Z), z_dir, x_dir),
+        ("서보 받침 -z", (0.0, CAR_SCREW_Y, -NUT_Z), z_dir, x_dir),
+    ]
+
+
+def side_nuts() -> list[tuple[str, Compound, Point, Point, Point]]:
+    """옆 홈에 세워 넣는 너트 다섯: (이름, 홈이 있는 부품, 너트 가운데, 볼트 방향, 입구 쪽 방향)."""
+    ret, car = retainer(), carrier()
+    return [
+        (name, ret if name.startswith("누름 틀") else car, c, a, s)
+        for name, c, a, s in side_nut_slots()
     ]
 
 

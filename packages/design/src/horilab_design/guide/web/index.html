@@ -1,0 +1,83 @@
+<title>작업 안내</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
+<style>/*@CSS@*/</style>
+
+<div class="app" id="app" data-view="home" data-kind="work">
+  <header class="bar gut">
+    <button type="button" class="btn" id="homeBtn">처음 화면</button>
+    <div class="gsel" id="gsel">
+      <div class="gname"><b id="gTitle">작업 안내</b><span id="gSub">조립, 출력, 재기, 배선, 설계 보기</span></div>
+      <button type="button" class="btn gbtn" id="gBtn" aria-haspopup="true" aria-expanded="false" aria-controls="gMenu">안내 바꾸기<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button>
+      <div class="gmenu" id="gMenu" role="menu" hidden></div>
+    </div>
+    <div class="prog" id="prog" hidden><span id="progText"></span><div class="pbar"><i id="pbarFill"></i></div></div>
+    <div class="saved" id="saved"></div>
+  </header>
+
+  <main class="screen" id="screen" hidden>
+    <section class="stage" id="stage" aria-label="3D 그림">
+      <canvas id="c" aria-label="이번 단계의 부품을 보여 주는 3D 그림"></canvas>
+      <div class="tags" id="tags"></div>
+      <div class="donetag" id="doneTag" hidden>다 하면 이렇게 보입니다</div>
+      <div class="tools3d center-w" id="tools3d">
+        <button type="button" id="tCut" aria-pressed="false">반으로 자르기</button>
+        <button type="button" id="tGhost" aria-pressed="false">몸통 반투명</button>
+        <button type="button" id="tUnhide" hidden>숨긴 부품 보이기</button>
+        <button type="button" id="tView">처음 시점</button>
+        <button type="button" id="tBare" aria-pressed="false">칸 숨기기 (H)</button>
+        <span class="hint3d" id="hint3d">끌면 돌고, 휠로 확대 · 부품을 두 번 누르면 숨깁니다</span>
+      </div>
+      <div class="player center-w" id="player" role="group" aria-label="움직임" hidden>
+        <button type="button" class="pbtn main" id="pPlay"></button>
+        <button type="button" class="pbtn" id="pBack" aria-label="한 칸 뒤로"></button>
+        <input type="range" id="pScrub" min="0" max="1000" step="1" value="0" aria-label="움직임 위치">
+        <button type="button" class="pbtn" id="pFwd" aria-label="한 칸 앞으로"></button>
+        <span class="pct" id="pPct">0%</span>
+        <button type="button" class="pbtn" id="pDone">다 된 모습</button>
+        <div class="speed" role="group" aria-label="빠르기">
+          <button type="button" data-speed="1" aria-pressed="true">1×</button>
+          <button type="button" data-speed="0.5" aria-pressed="false">½×</button>
+          <button type="button" data-speed="0.25" aria-pressed="false">¼×</button>
+        </div>
+      </div>
+      <p class="loading" id="loading" hidden>형상을 불러오는 중입니다</p>
+      <p class="nogl" id="nogl" hidden>3D 그림을 띄우지 못했습니다. 글을 보고 따라 하세요.</p>
+      <div class="board" id="board" hidden><div class="board-in" id="boardIn"></div></div>
+    </section>
+    <button type="button" class="show3d" id="show3d">3D로 보기</button>
+    <div class="docks" id="docks">
+      <div class="dock dock-l" id="dockL" aria-label="왼쪽 칸 줄"></div>
+      <div class="dock dock-r" id="dockR" aria-label="오른쪽 칸 줄"></div>
+      <div class="dock dock-b" id="dockB" aria-label="아래 칸 줄"></div>
+    </div>
+  </main>
+
+  <section class="home" id="home">
+    <div class="home-in gut" id="homeIn">
+      <h1>작업 안내</h1>
+      <p class="lead">화면만 보고 판단이나 짐작 없이 끝까지 따라 하게 하는 안내입니다. 단계마다 "다 하면 확인" 칸을 다 누르면 끝낸 단계로 남습니다. 단계를 눌러 보기만 해서는 진행이 바뀌지 않습니다.</p>
+      <div class="resume" id="resume" hidden>
+        <div><p class="lab">이어서 하기</p><b id="resumeTitle"></b><span id="resumeStep"></span></div>
+        <button type="button" class="navb next" id="resumeBtn">이어서 하기</button>
+      </div>
+      <div class="kinds" id="kinds"></div>
+      <section class="settings">
+        <h2>이 화면 설정</h2>
+        <div class="row"><button type="button" class="btn" id="resetDocks">칸을 처음 자리로</button><span>칸의 자리와 접은 상태를 처음대로 돌립니다.</span></div>
+      </section>
+      <p class="foot" id="madeAt"></p>
+    </div>
+  </section>
+
+  <footer class="nav gut" id="nav" hidden>
+    <button type="button" class="navb" id="prevBtn">이전<small>← 키</small></button>
+    <ol class="strip" id="strip" aria-label="단계"></ol>
+    <button type="button" class="navb next" id="nextBtn">다음<small>스페이스 · → 키</small></button>
+  </footer>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>/*@JS@*/</script>

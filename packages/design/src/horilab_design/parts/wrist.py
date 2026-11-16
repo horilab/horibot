@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 
 from build123d import Compound, Location, Pos, Rot
 
@@ -223,15 +224,22 @@ LABELS = {
 }
 
 
-# 뽑는 부품: 이름 → (형상, 뽑을 때 위를 보는 방향, 색, 프리셋)
+# 뽑는 부품: 이름 → (형상을 만드는 함수, 뽑을 때 위를 보는 방향, 색, 프리셋). 작업 안내는 형상을 만들지 않고
+# 이름, 색, 파일 이름만 읽는다 (horilab_design.guide)
+PRINT_SPEC: dict[str, tuple[Callable[[], Compound], tuple[float, float, float], str, str]] = {
+    "wrist_body": (wrist_body, (0.0, -1.0, 0.0), "white", "strength"),
+    "out_disc": (j.out_disc, (0.0, -1.0, 0.0), "black", "strength"),
+    "hub_plate": (j.hub_plate, (0.0, -1.0, 0.0), "black", "strength"),
+    "retainer": (j.retainer, (0.0, -1.0, 0.0), "black", "strength"),
+    "carrier": (j.carrier, (0.0, 1.0, 0.0), "black", "strength"),
+    "wrist_cover": (wrist_cover, (0.0, 1.0, 0.0), "black", "standard"),
+}
+
+
 def printed() -> dict[str, tuple[Compound, tuple[float, float, float], str, str]]:
+    """뽑는 부품: 이름 → (형상, 뽑을 때 위를 보는 방향, 색, 프리셋)."""
     return {
-        "wrist_body": (wrist_body(), (0.0, -1.0, 0.0), "white", "strength"),
-        "out_disc": (j.out_disc(), (0.0, -1.0, 0.0), "black", "strength"),
-        "hub_plate": (j.hub_plate(), (0.0, -1.0, 0.0), "black", "strength"),
-        "retainer": (j.retainer(), (0.0, -1.0, 0.0), "black", "strength"),
-        "carrier": (j.carrier(), (0.0, 1.0, 0.0), "black", "strength"),
-        "wrist_cover": (wrist_cover(), (0.0, 1.0, 0.0), "black", "standard"),
+        key: (make(), up, color, preset) for key, (make, up, color, preset) in PRINT_SPEC.items()
     }
 
 
