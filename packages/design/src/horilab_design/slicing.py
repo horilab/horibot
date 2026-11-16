@@ -12,20 +12,22 @@ plan:
   1. 스튜디오 앱 판, 프리셋 묶음 판, 펼친 프리셋 내용의 지문을 값 파일과 견준다. 다르면 자르지 않는다.
   2. 부품을 프리셋과 색으로 묶고, 묶음마다 한 번 자동 배치해 판 나눔을 알아낸 뒤 판마다 다시 자른다.
   3. 판마다 3MF를 검사한다: 핵심 설정, 판 종류와 G-code의 바닥 온도, 설정 전체의 지문, 서포트, 판 밖,
-     들어간 부품과 개수, 부품이 눕지 않았는지(Z축으로만 돌렸는지), 스튜디오 로그(무해하다고 적은 줄 말고는 막는다).
+     들어간 부품과 개수, 부품이 눕지 않았는지(Z축으로만 돌렸는지), 스튜디오의 실패와 경고(result.json, 무해하다고
+     적은 줄 말고는 막는다).
   4. 모든 판이 통과해야 build/print/<이름>/에 판마다 3MF와 판 그림, plan.json을 낸다. 하나라도 걸리면 그 폴더를
      지우고(옛 파일을 뽑지 않게) 아무것도 내지 않는다.
 
 reference (처음 한 번, 가정 B): 화면에서 늘 쓰던 설정으로 잘라 저장한 3MF를, 같은 모델 자리 그대로 명령 모드로 다시
 자른다. 설정 칸, 예상 시간과 무게, G-code의 움직임 줄을 견주고, 같으면 설정 전체의 지문을 알려 준다 (값 파일에 적는다).
 
-스튜디오의 시스템 프리셋은 상위 파일의 값을 물려받는다. 명령 모드에 그대로 주면 멈춰서(2.4.0.70), 상속을 펼친
-파일을 만들어 준다. 공식 사용법도 "값을 다 채운 설정"을 요구한다.
+스튜디오의 시스템 프리셋은 상위 파일의 값을 물려받고, G-code 틀은 따로 둔 파일에서 끌어온다(include). 명령 모드에
+그대로 주면 멈춰서(2.4.0.70), 상속과 include를 펼친 파일을 만들어 준다. 공식 사용법도 "값을 다 채운 설정"을 요구한다.
 """
 
 from __future__ import annotations
 
 import argparse
+import ctypes
 import functools
 import hashlib
 import importlib
@@ -55,6 +57,8 @@ PRINT_FILE = REPO_ROOT / "params" / "print.toml"
 OUT_DIR = REPO_ROOT / "build" / "print"
 STUDIO = Path(os.environ.get("BAMBU_STUDIO", r"C:\Program Files\Bambu Studio\bambu-studio.exe"))
 TAG = re.compile(r"\[(error|warning)\]\s*(.*?)\s*$")
+# 명령 모드가 --outputdir에 쓰는 결과 (실패 문구, 판마다의 슬라이스 경고)
+RESULT_FILE = "result.json"
 SPEC = re.compile(
     r"^(?P<module>[a-z0-9_]+)(?:\.(?P<part>[a-z0-9_]+))?(?::(?P<count>[1-9][0-9]*))?(?:@(?P<color>[a-z]+))?$"
 )
@@ -132,19 +136,25 @@ def load_config(path: Path = PRINT_FILE) -> PrintConfig:
 
 
 def studio_version(exe: Path = STUDIO) -> str:
-    """스튜디오 앱 판 (--help의 첫 줄 "BambuStudio-02.04.00.70:")."""
-    run = subprocess.run(
-        [str(exe), "--help"],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=120,
-    )
-    found = re.search(r"BambuStudio-(\d+(?:\.\d+){3})", run.stdout + run.stderr)
-    if not found:
-        raise RuntimeError("스튜디오 판을 읽지 못했다 (--help 출력에 판이 없다)")
-    return found.group(1)
+    """스튜디오 앱 판: 실행 파일에 적힌 파일 판 ("02.09.01.70"). 2.9부터 --help가 아무것도 내보내지 않는다."""
+    if sys.platform != "win32":
+        raise RuntimeError("스튜디오 판은 윈도우에서 실행 파일의 판 정보로 읽는다")
+    version = ctypes.WinDLL("version")
+    path = str(exe)
+    size = version.GetFileVersionInfoSizeW(path, None)
+    data = ctypes.create_string_buffer(size)
+    block = ctypes.c_void_p()
+    length = ctypes.c_uint()
+    if not (
+        size
+        and version.GetFileVersionInfoW(path, 0, size, data)
+        and version.VerQueryValueW(data, "\\", ctypes.byref(block), ctypes.byref(length))
+    ):
+        raise RuntimeError(f"스튜디오 판을 읽지 못했다 ({exe})")
+    # VS_FIXEDFILEINFO: 서명, 구조 판, 파일 판 위 32비트, 아래 32비트, ...
+    fixed = ctypes.cast(block, ctypes.POINTER(ctypes.c_uint32 * 4)).contents
+    high, low = fixed[2], fixed[3]
+    return f"{high >> 16:02d}.{high & 0xFFFF:02d}.{low >> 16:02d}.{low & 0xFFFF:02d}"
 
 
 def profiles_root(exe: Path = STUDIO) -> Path:
@@ -181,7 +191,13 @@ def _index(root: Path, kind: str) -> dict[str, dict[str, Any]]:
 
 
 def flatten(root: Path, kind: str, name: str) -> dict[str, Any]:
-    """시스템 프리셋 하나의 상속을 펼친다. root는 .../profiles/BBL, kind는 machine, process, filament."""
+    """시스템 프리셋 하나의 상속을 펼친다. root는 .../profiles/BBL, kind는 machine, process, filament.
+
+    상위 파일(inherits)의 값을 물려받는다. 2.9의 프리셋 묶음(02.09.00.81)부터는 값의 일부를 따로 둔 파일에서
+    include로 끌어온다 (프린터의 G-code 틀, 필라멘트의 일반 틀). 가까운 것이 이긴다: 상위 < 끌어온 파일 < 자기 값.
+    끌어온 G-code 틀이 상위(일반 프린터)의 짧은 시작 G-code를 덮고, PLA Basic의 흐름 비율 0.98이 일반 틀의 0.95를
+    덮는다. 화면 결과와 칸마다 견줘 확인한다 (가정 B).
+    """
     index = _index(root, kind)
     chain: list[dict[str, Any]] = []
     current = name
@@ -194,9 +210,16 @@ def flatten(root: Path, kind: str, name: str) -> dict[str, Any]:
             raise RuntimeError(f"{kind}/{name}: 상속이 끝나지 않는다")
     merged: dict[str, Any] = {}
     for data in reversed(chain):
+        for part in data.get("include", []):
+            if part not in index:
+                raise KeyError(f"{kind}/{part} 프리셋이 없다 ({data['name']}의 include)")
+            merged.update(
+                {k: v for k, v in index[part].items() if k not in ("name", "instantiation")}
+            )
         merged.update(data)
     merged.update({"name": name, "inherits": "", "from": "system"})
     merged.pop("instantiation", None)
+    merged.pop("include", None)
     return merged
 
 
@@ -259,8 +282,11 @@ def run_studio(
     arrange: bool = True,
     exe: Path = STUDIO,
 ) -> tuple[Path, int, str]:
-    """명령 모드로 자른다. 출력 방향은 바꾸지 않는다(자동 방향 끔). (3MF, 끝난 값, 로그)."""
+    """명령 모드로 자른다. 출력 방향은 바꾸지 않는다(자동 방향 끔). (3MF, 끝난 값, 로그).
+
+    로그에는 스튜디오가 내보낸 줄 뒤에 result.json의 실패와 슬라이스 경고를 같은 꼴로 붙인다."""
     work.mkdir(parents=True, exist_ok=True)
+    (work / RESULT_FILE).unlink(missing_ok=True)  # 지난번 결과를 읽지 않게
     args = [
         str(exe),
         "--load-settings",
@@ -286,7 +312,28 @@ def run_studio(
     run = subprocess.run(
         args, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=1800
     )
-    return work / f"{name}.3mf", run.returncode, run.stdout + run.stderr
+    log = "\n".join([run.stdout + run.stderr, *result_lines(work / RESULT_FILE)])
+    return work / f"{name}.3mf", run.returncode, log
+
+
+def result_lines(path: Path) -> list[str]:
+    """명령 모드가 쓴 result.json을 로그 줄 꼴로: 실패 문구는 [error], 판마다의 슬라이스 경고는 줄마다 [warning].
+
+    2.9부터 명령 모드는 로그를 아무 데도 내보내지 않는다 (--debug를 줘도). 화면에 뜨는 슬라이스 경고(떠 있는 영역
+    등)와 실패는 이 파일에 나온다. 스튜디오 내부의 오류 줄(ZFiller 등)은 이제 볼 수 없다."""
+    if not path.exists():
+        return [f"[error] 스튜디오가 {path.name}을 쓰지 않았다"]
+    data = json.loads(path.read_text(encoding="utf-8"))
+    out: list[str] = []
+    if data.get("return_code", 0) != 0:
+        out.append(f"[error] {data.get('error_string', '')}")
+    for plate in data.get("sliced_plates", []):
+        out += [
+            f"[warning] {line.strip()}"
+            for line in str(plate.get("warning_message", "")).splitlines()
+            if line.strip()
+        ]
+    return out
 
 
 # ---- 3MF 읽기 -----------------------------------------------------------------------------------------
@@ -826,8 +873,12 @@ FEATURE_MARK = "; FEATURE:"
 EXTRUDE = re.compile(r"\bE(-?\d*\.?\d+)")
 TEMPERATURE = re.compile(r"^M(104|109|140|190)\b")
 # 화면과 명령 모드는 한 층의 섬(떨어진 덩어리)을 뽑는 순서와 둘레를 시작하는 점이 다를 수 있다. 그래서 G-code 줄이
-# 아니라 층마다 뽑는 양을 견주고, 이동이 달라 생기는 예상 시간 차이는 이만큼까지 둔다 (가정 B에서 0.04~0.15%)
+# 아니라 층마다 뽑는 양을 견주고, 이동이 달라 생기는 예상 시간 차이는 이만큼까지 둔다 (가정 B에서 0.04~0.2%)
 TIME_TOLERANCE = 0.01
+# 층마다 뽑는 양의 차이. 2.4에서는 모든 층이 0.01% 안이었다. 2.9에서는 같은 입력이라도 44층 가운데 1~6개 층에서
+# 채움의 갈래(속 채움, 다리, 떠 있는 세로 껍질)와 바깥 벽의 압출이 0.5%까지 달랐다. 바깥 벽의 자리와 무게는 같았고,
+# 명령 모드끼리는 같았다. 설정이 다르면(벽 수, 선 폭, 채움 밀도) 몇 %씩 달라져 이 한도에 걸린다
+LAYER_TOLERANCE = 0.01
 
 
 def _layers(gcode: str) -> list[dict[str, float]]:
@@ -914,7 +965,9 @@ def compare_output(gui: Sliced, cli: Sliced) -> list[str]:
         bad = [
             k + 1
             for k, (x, y) in enumerate(zip(a, b, strict=True))
-            if not math.isclose(sum(x.values()), sum(y.values()), rel_tol=1e-4, abs_tol=1e-3)
+            if not math.isclose(
+                sum(x.values()), sum(y.values()), rel_tol=LAYER_TOLERANCE, abs_tol=1e-3
+            )
         ]
         if bad:
             out.append(f"층마다 뽑는 양이 다르다: {len(bad)}개 층 (처음 {bad[0]}층)")

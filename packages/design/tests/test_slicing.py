@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import subprocess
 import zipfile
 from dataclasses import replace
@@ -54,7 +55,6 @@ def test_config_holds_documented_values() -> None:
     assert strength["curr_bed_type"] == CFG.bed_type == "Textured PEI Plate"
     assert CFG.keys_for("standard")["wall_loops"] == "2"
     assert "filament_colour" in CFG.sha_ignore
-    assert ("error", sl.TAG.search(NOZZLE_LINE).group(2)) in CFG.harmless  # pyright: ignore[reportOptionalMemberAccess]
 
 
 def test_flatten_follows_inherits(tmp_path: Path) -> None:
@@ -77,6 +77,28 @@ def test_flatten_follows_inherits(tmp_path: Path) -> None:
     assert flat["inherits"] == "" and flat["from"] == "system" and "instantiation" not in flat
     with pytest.raises(KeyError):
         sl.flatten(tmp_path, "process", "Missing")
+
+
+def test_flatten_pulls_in_include_files(tmp_path: Path) -> None:
+    # 2.9의 프리셋 묶음은 G-code 틀과 일반 틀을 따로 둔 파일에서 끌어온다. 상위 < 끌어온 파일 < 자기 값
+    _write(
+        tmp_path / "machine" / "common.json",
+        {"name": "Common", "inherits": "", "start_gcode": "short", "flow": "1"},
+    )
+    _write(
+        tmp_path / "machine" / "template.json",
+        {"name": "Template", "instantiation": "false", "start_gcode": "P1S", "flow": "0.95"},
+    )
+    _write(
+        tmp_path / "machine" / "printer.json",
+        {"name": "Printer", "inherits": "Common", "include": ["Template"], "flow": "0.98"},
+    )
+    _write(tmp_path / "machine" / "broken.json", {"name": "Broken", "include": ["Missing"]})
+    flat = sl.flatten(tmp_path, "machine", "Printer")
+    assert flat["start_gcode"] == "P1S" and flat["flow"] == "0.98"
+    assert flat["name"] == "Printer" and "include" not in flat and "instantiation" not in flat
+    with pytest.raises(KeyError):
+        sl.flatten(tmp_path, "machine", "Broken")
 
 
 def test_key_settings_compare_first_value() -> None:
@@ -115,23 +137,63 @@ def test_settings_fingerprint_ignores_colour_only() -> None:
 
 
 def test_log_lets_only_exact_harmless_lines_through() -> None:
+    nozzle = sl.TAG.search(NOZZLE_LINE).group(2)  # pyright: ignore[reportOptionalMemberAccess]
+    cfg = replace(
+        CFG,
+        harmless=frozenset(
+            {("error", nozzle), ("warning", "tree support default to organic support")}
+        ),
+    )
     harmless = (
         NOZZLE_LINE
         + "\n[trace] Initializing\n[2026] [0x1] [warning] tree support default to organic support\n"
     )
-    assert sl.log_problems(CFG, 0, harmless) == []
+    assert sl.log_problems(cfg, 0, harmless) == []
     near = NOZZLE_LINE.replace("extruder_count 1", "extruder_count 2")
-    assert sl.log_problems(CFG, 0, near)[0].startswith("스튜디오 오류")
-    assert sl.log_problems(CFG, 0, "[warning] floating regions found")[0].startswith("검토 필요")
+    assert sl.log_problems(cfg, 0, near)[0].startswith("스튜디오 오류")
+    assert sl.log_problems(cfg, 0, "[warning] floating regions found")[0].startswith("검토 필요")
     floating = (
         "[2026] [0x1] [warning] plate 1: found NON_CRITICAL slicing warnings: It seems object "
         "carrier.stl has floating regions. Please re-orient the object or enable support generation."
     )
-    assert "floating regions" in sl.log_problems(CFG, 0, floating)[0]
-    assert sl.log_problems(CFG, 0, "[error] ZFiller: encounter idx from clip: 85") == [
+    assert "floating regions" in sl.log_problems(cfg, 0, floating)[0]
+    assert sl.log_problems(cfg, 0, "[error] ZFiller: encounter idx from clip: 85") == [
         "스튜디오 오류: ZFiller: encounter idx from clip: 85"
     ]
-    assert sl.log_problems(CFG, -1073741819, "") == ["스튜디오가 -1073741819로 끝났다"]
+    assert sl.log_problems(cfg, -1073741819, "") == ["스튜디오가 -1073741819로 끝났다"]
+
+
+def test_result_file_failures_and_warnings_become_log_lines(tmp_path: Path) -> None:
+    # 2.9의 명령 모드는 로그를 내보내지 않고, 실패와 화면에 뜨는 슬라이스 경고를 result.json에 쓴다
+    path = tmp_path / "result.json"
+    assert sl.result_lines(path) == ["[error] 스튜디오가 result.json을 쓰지 않았다"]
+    floating = (
+        "It seems object island.stl has floating regions. "
+        "Please re-orient the object or enable support generation."
+    )
+    path.write_text(
+        json.dumps({"return_code": 0, "sliced_plates": [{"warning_message": floating}]}),
+        encoding="utf-8",
+    )
+    lines = sl.result_lines(path)
+    assert lines == [f"[warning] {floating}"]
+    assert sl.log_problems(CFG, 0, "\n".join(lines)) == [f"검토 필요 (처음 보는 경고): {floating}"]
+    failed = {
+        "return_code": -100,
+        "error_string": "Failed slicing the model.",
+        "sliced_plates": [{"warning_message": "Object can't be printed.\nObject: a.stl"}],
+    }
+    path.write_text(json.dumps(failed), encoding="utf-8")
+    assert sl.result_lines(path) == [
+        "[error] Failed slicing the model.",
+        "[warning] Object can't be printed.",
+        "[warning] Object: a.stl",
+    ]
+    path.write_text(
+        json.dumps({"return_code": 0, "sliced_plates": [{"warning_message": ""}]}),
+        encoding="utf-8",
+    )
+    assert sl.result_lines(path) == []
 
 
 def test_bed_type_and_gcode_temperature() -> None:
@@ -260,6 +322,34 @@ def test_studio_is_asked_for_warning_level_logs(
     assert args[args.index("--debug") + 1] == "2"
 
 
+def test_studio_run_reads_its_own_result_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    work = tmp_path / "w"
+    work.mkdir()
+    old = {"return_code": 0, "sliced_plates": [{"warning_message": "old"}]}
+    (work / "result.json").write_text(json.dumps(old), encoding="utf-8")
+
+    class Done:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    def fake(args: list[str], **_kw: Any) -> Done:
+        out = Path(args[args.index("--outputdir") + 1])
+        assert not (out / "result.json").exists()  # 지난번 결과는 지우고 자른다
+        new = {"return_code": 0, "sliced_plates": [{"warning_message": "new"}]}
+        (out / "result.json").write_text(json.dumps(new), encoding="utf-8")
+        return Done()
+
+    monkeypatch.setattr(subprocess, "run", fake)
+    presets = {k: tmp_path / f"{k}.json" for k in ("machine", "strength", "filament_white")}
+    _, code, log = sl.run_studio(
+        CFG, presets, "strength", "white", [tmp_path / "a.stl"], work, "plate"
+    )
+    assert sl.log_problems(CFG, code, log) == ["검토 필요 (처음 보는 경고): new"]
+
+
 def test_geometry_reports_base_area_and_slender_parts() -> None:
     _, flat = sl.geometry(_item("flat", Compound([Box(10, 20, 30)])))
     assert (
@@ -360,6 +450,12 @@ def test_failed_plan_removes_old_files(tmp_path: Path) -> None:
         and where.name == "report.txt"
         and "막힘" in where.read_text(encoding="utf-8")
     )
+
+
+@pytest.mark.skipif(not sl.STUDIO.exists(), reason="뱀부랩 스튜디오가 없는 PC")
+def test_studio_version_is_read_from_the_executable() -> None:
+    # 2.9부터 --help가 아무것도 내보내지 않아서, 실행 파일에 적힌 파일 판을 읽는다
+    assert re.fullmatch(r"\d{2}\.\d{2}\.\d{2}\.\d{2}", sl.studio_version())
 
 
 @pytest.mark.skipif(not sl.STUDIO.exists(), reason="뱀부랩 스튜디오가 없는 PC")

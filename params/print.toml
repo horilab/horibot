@@ -1,10 +1,11 @@
 # 출력 설정 (docs/manufacturing.md의 출력 설정, docs/decisions/0035-slicer-automation.md).
-# 공차 시험편을 이 판과 이 설정으로 뽑아 쟀다. 하나라도 바꾸면 중요한 맞춤을 다시 확인한다.
+# 공차 시험편은 이 설정과 스튜디오 02.04.00.70으로 뽑아 쟀다. 02.09.01.70은 같은 부품과 시험편을 잘라 치수를 정하는
+# 벽 선이 같은 것을 보고 옮겼다 (0035의 2.9.1.70으로 옮김). 판이나 설정을 바꾸면 중요한 맞춤을 다시 확인한다.
 # 출력 준비 도구(horilab_design.slicing)가 이 파일을 읽고, 맞지 않으면 파일을 내지 않는다.
 
 [studio]
-version = "02.04.00.70"          # 뱀부랩 스튜디오 앱 판
-profiles_version = "02.04.00.01" # 시스템 프리셋 묶음 판 (사용자 폴더의 system/BBL.json)
+version = "02.09.01.70"          # 뱀부랩 스튜디오 앱 판 (실행 파일의 파일 판)
+profiles_version = "02.09.00.81" # 시스템 프리셋 묶음 판 (사용자 폴더의 system/BBL.json)
 
 [printer]
 machine = "Bambu Lab P1S 0.4 nozzle"
@@ -21,18 +22,18 @@ standard = "0.20mm Standard @BBL X1C" # 힘을 받지 않는 덮개
 white = "#FFFFFF"
 black = "#202020"
 
-# 펼친 프리셋 내용의 지문 (sha256 앞 12자리, 열쇠를 정렬한 JSON). 판이 같아도 내용이 바뀌면 잡는다.
+# 펼친 프리셋 내용의 지문 (sha256 앞 12자리, 열쇠를 정렬한 JSON, include를 끌어온 뒤). 판이 같아도 내용이 바뀌면 잡는다.
 [presets_sha]
-machine = "a626d66bfae7"
-strength = "f62753feb400"
-standard = "6e844f899929"
-filament = "5d2da95b0e1b"
+machine = "3491460851be"
+strength = "a58f09e76f14"
+standard = "a8af98c62d4f"
+filament = "9066b2d0f897"
 
 # 3MF에 들어간 설정 전체의 지문. 화면에서 자른 기준과 견준 뒤(가정 B) 적는다. 비어 있으면 뽑을 파일을 내지 않는다.
-# 2026-11-15: 시험편 fit3_6806_bores를 화면과 명령 모드로 잘라 견주고 둘 다 통과해 적었다 (판을 낼 때의 길의 지문)
+# 2026-11-16: 02.09.01.70으로 옮긴 뒤 시험편 fit3_6806_bores를 화면과 명령 모드로 잘라 견주고 둘 다 통과해 적었다
 [settings_sha]
-strength = "0ec81cd673a018e5"
-standard = "c65da40f7e212c4e"
+strength = "a46a90ff236df277"
+standard = "3d33773eb64dfc2c"
 ignore = ["filament_colour"] # 지문에서 빼는 칸: 색은 묶음마다 일부러 바꾼다
 
 # 가정 B에서 화면 결과와 견줄 때 빼는 칸 (2026-11-15에 화면 결과와 견주며 하나씩 확인했다). 출력 설정이 아닌
@@ -62,6 +63,16 @@ stl_ignore = [
   "printhost_ssl_ignore_revoke",
   "wipe_tower_x",                # 프라임 타워 자리. 필라멘트가 하나면 타워를 만들지 않는다
   "wipe_tower_y",
+  # 2.9에서 늘어난 화면 기록 칸 (2026-11-16, 명령 모드는 비우거나 화면 목록의 첫 값만 적는다)
+  "extruder_nozzle_slot",        # 노즐이 여럿인 프린터의 노즐 자리
+  "extruder_nozzle_stats_new",   # 노즐 통계
+  "multi_nozzle_diameter_mode",  # 노즐 지름이 여럿인 프린터
+  "printer_nozzle_diameter_mode",
+  "filament_dev_ams_drying_ams_limitations",             # AMS 건조 설정 (AMS는 쓰지 않는다)
+  "filament_dev_ams_drying_heat_distortion_temperature",
+  "filament_dev_ams_drying_temperature",
+  "filament_dev_ams_drying_time",
+  "filament_dev_drying_softening_temperature",
 ]
 
 # 공차에 닿는 핵심 설정. 3MF에 들어간 값이 이와 다르면 뽑지 않는다. 값이 여럿인 칸은 첫 값(일반 노즐)을 본다.
@@ -112,24 +123,11 @@ top_shell_layers = "5"
 bottom_shell_layers = "3"
 outer_wall_speed = "200"
 
-# 무해하다고 확인한 스튜디오 로그 줄. "[error]"나 "[warning]" 뒤의 문구 전체가 같아야 뺀다.
-# 처음 보는 경고가 나오면 그 판은 "검토 필요"로 막는다.
-[[harmless]]
-level = "error"
-text = "3198: nozzle_volume_type not found, when different_extruder or multiple extruder, new_printer_name Bambu Lab P1S 0.4 nozzle, extruder_count 1"
-why = "P1S는 노즐 종류 칸이 없다. 이 줄이 나도 3MF의 설정과 G-code가 정상이다 (가정 B에서 확인)"
-
-[[harmless]]
-level = "warning"
-text = "cli mode, Current BambuStudio Version 02.04.00.70"
-why = "명령 모드에서 판을 알리는 줄"
-
-[[harmless]]
-level = "warning"
-text = "no filament colors found in projects"
-why = "STL을 불러올 때 색이 없다는 줄. 색은 필라멘트 설정으로 준다"
-
-[[harmless]]
-level = "warning"
-text = "tree support default to organic support"
-why = "서포트를 꺼서 쓰이지 않는다"
+# 무해하다고 확인한 스튜디오 경고와 오류 줄. "[error]"나 "[warning]" 뒤의 문구 전체가 같아야 뺀다.
+# 처음 보는 경고가 나오면 그 판은 "검토 필요"로 막는다. 02.09.01.70의 명령 모드는 로그를 내보내지 않아서, 도구는
+# result.json의 실패 문구와 슬라이스 경고(화면에 뜨는 것)를 같은 꼴로 본다. 지금 무해하다고 뺀 줄은 없다.
+# 적을 때는 이 꼴로 쓴다:
+# [[harmless]]
+# level = "warning"
+# text = "<문구 전체>"
+# why = "<무해한 까닭과 확인한 방법>"
