@@ -14,8 +14,9 @@ plan:
   3. 판마다 3MF를 검사한다: 핵심 설정, 판 종류와 G-code의 바닥 온도, 설정 전체의 지문, 서포트, 판 밖,
      들어간 부품과 개수, 부품이 눕지 않았는지(Z축으로만 돌렸는지), 스튜디오의 실패와 경고(result.json, 무해하다고
      적은 줄 말고는 막는다).
-  4. 모든 판이 통과해야 build/print/<이름>/에 판마다 3MF와 판 그림, plan.json을 낸다. 하나라도 걸리면 그 폴더를
-     지우고(옛 파일을 뽑지 않게) 아무것도 내지 않는다.
+  4. 모든 판이 통과해야 build/print/<이름>/에 판마다 3MF를, 레포의 data/prints/<이름>/에 판 계획(plan.json)과
+     판 그림을 낸다 (작업 안내의 출력 안내가 읽는다, 0036). 하나라도 걸리면 3MF 폴더를 지우고(옛 파일을 뽑지 않게)
+     아무것도 내지 않는다.
 
 reference (처음 한 번, 가정 B): 화면에서 늘 쓰던 설정으로 잘라 저장한 3MF를, 같은 모델 자리 그대로 명령 모드로 다시
 자른다. 설정 칸, 예상 시간과 무게, G-code의 움직임 줄을 견주고, 같으면 설정 전체의 지문을 알려 준다 (값 파일에 적는다).
@@ -55,6 +56,9 @@ from horilab_design.values import REPO_ROOT
 
 PRINT_FILE = REPO_ROOT / "params" / "print.toml"
 OUT_DIR = REPO_ROOT / "build" / "print"
+PLANS_DIR = (
+    REPO_ROOT / "data" / "prints"
+)  # 판 계획과 판 그림 (레포에 둔다: 작업 안내의 출력 안내, 0036)
 STUDIO = Path(os.environ.get("BAMBU_STUDIO", r"C:\Program Files\Bambu Studio\bambu-studio.exe"))
 TAG = re.compile(r"\[(error|warning)\]\s*(.*?)\s*$")
 # 명령 모드가 --outputdir에 쓰는 결과 (실패 문구, 판마다의 슬라이스 경고)
@@ -760,8 +764,18 @@ def make_plan(specs: Sequence[str], name: str, out: Path = OUT_DIR, exe: Path = 
     return plan
 
 
-def publish(plan: Plan, out: Path = OUT_DIR) -> Path:
-    """통과한 계획을 build/print/<이름>/에 낸다. 통과하지 못했으면 그 폴더를 지우고 아무것도 내지 않는다."""
+def _file_sha(path: Path) -> str | None:
+    return hashlib.sha256(path.read_bytes()).hexdigest()[:12] if path.exists() else None
+
+
+def publish(plan: Plan, out: Path = OUT_DIR, plans: Path = PLANS_DIR) -> Path:
+    """통과한 계획을 낸다. 판마다 3MF는 out/<이름>/에(만든 PC에만 있다), 판 계획(plan.json)과 판 그림은
+    plans/<이름>/에 낸다 (레포에 두어 작업 안내가 어느 PC에서든 출력 안내를 만들고, 뽑은 판의 기록으로 남는다).
+    부품마다 그때의 STL 해시를 적어, 설계가 바뀌어 달라진 부품을 찾는다.
+
+    통과하지 못했으면 3MF 폴더를 지우고 아무것도 내지 않는다. plans의 옛 계획은 그대로 둔다 (뽑은 판의 기록일 수
+    있다). 다시 뽑기와 새 일은 새 이름으로 낸다. 같은 이름으로 다시 내면 계획을 바꾼다 (옛 것은 git에 있다).
+    """
     cfg = load_config()
     dest = out / plan.name
     if dest.exists():
@@ -772,7 +786,13 @@ def publish(plan: Plan, out: Path = OUT_DIR) -> Path:
     if not plan.ok:
         return report
     dest.mkdir(parents=True)
+    record = plans / plan.name
+    if record.exists():
+        shutil.rmtree(record)
+    record.mkdir(parents=True)
+    stls = out / ".work" / plan.name / "stl"
     labels = {i.name: i.label for i in plan.items}
+    modules = {i.name: i.module for i in plan.items}  # 작업 안내가 형상을 다시 만들어 3D로 보인다
     plates: list[dict[str, Any]] = []
     for k, plate in enumerate(plan.plates, start=1):
         assert plate.path is not None
@@ -780,7 +800,7 @@ def publish(plan: Plan, out: Path = OUT_DIR) -> Path:
         stem = f"{k:02d}-{plate.color}-{hashlib.sha256(data).hexdigest()[:6]}"
         (dest / f"{stem}.3mf").write_bytes(data)
         if plate.png:
-            (dest / f"{stem}.png").write_bytes(plate.png)
+            (record / f"{stem}.png").write_bytes(plate.png)
         plates.append(
             {
                 "file": f"{stem}.3mf",
@@ -794,7 +814,9 @@ def publish(plan: Plan, out: Path = OUT_DIR) -> Path:
                     {
                         "file": f"{n}.stl",
                         "label": labels[n],
+                        "module": modules[n],
                         "count": c,
+                        "sha": _file_sha(stls / f"{n}.stl"),
                         **_geo_json(plan.geometry[n]),
                     }
                     for n, c in plate.items.items()
@@ -809,8 +831,8 @@ def publish(plan: Plan, out: Path = OUT_DIR) -> Path:
         "bed_type": cfg.bed_type,
         "plates": plates,
     }
-    (dest / "plan.json").write_text(
-        json.dumps(summary, ensure_ascii=False, indent=1), encoding="utf-8"
+    (record / "plan.json").write_text(
+        json.dumps(summary, ensure_ascii=False, indent=1) + "\n", encoding="utf-8"
     )
     return dest
 

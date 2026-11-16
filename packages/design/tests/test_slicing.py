@@ -439,17 +439,21 @@ def test_gui_result_reads_the_exported_sliced_file(tmp_path: Path) -> None:
     assert got.transforms == ((1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 5.0, 6.0, 0.0),)
 
 
-def test_failed_plan_removes_old_files(tmp_path: Path) -> None:
+def test_failed_plan_removes_old_files_but_keeps_the_plan_record(tmp_path: Path) -> None:
     old = tmp_path / "batch"
     old.mkdir()
     (old / "01-black-abcdef.3mf").write_bytes(b"old")
+    record = tmp_path / "prints" / "batch"
+    record.mkdir(parents=True)
+    (record / "plan.json").write_text("{}", encoding="utf-8")  # 뽑은 판의 기록일 수 있다
     plan = sl.Plan("batch", [], {}, [], ["프리셋 내용이 바뀌었다"])
-    where = sl.publish(plan, tmp_path)
+    where = sl.publish(plan, tmp_path, tmp_path / "prints")
     assert (
         not old.exists()
         and where.name == "report.txt"
         and "막힘" in where.read_text(encoding="utf-8")
     )
+    assert (record / "plan.json").exists()
 
 
 @pytest.mark.skipif(not sl.STUDIO.exists(), reason="뱀부랩 스튜디오가 없는 PC")

@@ -1,0 +1,142 @@
+{
+ "name": "first-joint",
+ "made": "2026-11-15T11:07:01",
+ "studio": "02.04.00.70",
+ "profiles": "02.04.00.01",
+ "bed_type": "Textured PEI Plate",
+ "plates": [
+  {
+   "file": "01-black-6003c4.3mf",
+   "image": "01-black-6003c4.png",
+   "color": "black",
+   "preset": "0.20mm Strength @BBL X1C",
+   "minutes": 126,
+   "grams": 64.0,
+   "overnight": false,
+   "parts": [
+    {
+     "file": "fit3_6808_shafts.stl",
+     "label": "시험편 fit3_6808_shafts",
+     "module": "coupons",
+     "count": 1,
+     "height_mm": 10.8,
+     "base_mm2": 5193,
+     "overhang_mm2": 0,
+     "slender": false
+    },
+    {
+     "file": "out_disc.stl",
+     "label": "출력 원판",
+     "module": "wrist",
+     "count": 1,
+     "height_mm": 14.4,
+     "base_mm2": 1704,
+     "overhang_mm2": 0,
+     "slender": false
+    },
+    {
+     "file": "carrier.stl",
+     "label": "서보 받침",
+     "module": "wrist",
+     "count": 1,
+     "height_mm": 20.8,
+     "base_mm2": 388,
+     "overhang_mm2": 9,
+     "slender": false
+    },
+    {
+     "file": "retainer.stl",
+     "label": "누름 틀",
+     "module": "wrist",
+     "count": 1,
+     "height_mm": 16.6,
+     "base_mm2": 377,
+     "overhang_mm2": 70,
+     "slender": false
+    },
+    {
+     "file": "hub_plate.stl",
+     "label": "허브 판",
+     "module": "wrist",
+     "count": 1,
+     "height_mm": 2.8,
+     "base_mm2": 778,
+     "overhang_mm2": 0,
+     "slender": false
+    },
+    {
+     "file": "fit3_pin_press.stl",
+     "label": "시험편 fit3_pin_press",
+     "module": "coupons",
+     "count": 1,
+     "height_mm": 14.0,
+     "base_mm2": 735,
+     "overhang_mm2": 0,
+     "slender": false
+    }
+   ]
+  },
+  {
+   "file": "02-black-fc0d0a.3mf",
+   "image": "02-black-fc0d0a.png",
+   "color": "black",
+   "preset": "0.20mm Standard @BBL X1C",
+   "minutes": 15,
+   "grams": 5.6,
+   "overnight": false,
+   "parts": [
+    {
+     "file": "wrist_cover.stl",
+     "label": "뒷덮개",
+     "module": "wrist",
+     "count": 1,
+     "height_mm": 4.8,
+     "base_mm2": 2482,
+     "overhang_mm2": 0,
+     "slender": false
+    }
+   ]
+  },
+  {
+   "file": "03-white-93fda7.3mf",
+   "image": "03-white-93fda7.png",
+   "color": "white",
+   "preset": "0.20mm Strength @BBL X1C",
+   "minutes": 256,
+   "grams": 141.7,
+   "overnight": true,
+   "parts": [
+    {
+     "file": "wrist_body.stl",
+     "label": "손목 몸통",
+     "module": "wrist",
+     "count": 2,
+     "height_mm": 50.8,
+     "base_mm2": 796,
+     "overhang_mm2": 68,
+     "slender": false
+    },
+    {
+     "file": "fit3_6806_bores.stl",
+     "label": "시험편 fit3_6806_bores",
+     "module": "coupons",
+     "count": 1,
+     "height_mm": 8.8,
+     "base_mm2": 7152,
+     "overhang_mm2": 0,
+     "slender": false
+    },
+    {
+     "file": "fit3_6808_bores.stl",
+     "label": "시험편 fit3_6808_bores",
+     "module": "coupons",
+     "count": 1,
+     "height_mm": 8.8,
+     "base_mm2": 3109,
+     "overhang_mm2": 0,
+     "slender": false
+    }
+   ]
+  }
+ ]
+}

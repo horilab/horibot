@@ -10,7 +10,8 @@ import argparse
 import time
 from pathlib import Path
 
-from horilab_design.guide.build import OUT, resolve, write_site
+from horilab_design.guide.build import OUT, print_json, resolve, write_site
+from horilab_design.guide.model import PrintGuide
 from horilab_design.values import REPO_ROOT
 
 
@@ -41,8 +42,12 @@ def main() -> None:
     elif args.cmd == "check":
         from horilab_design.guide.guides import ALL
 
+        prints = [g for g in ALL if isinstance(g, PrintGuide)]
         for g in ALL:
-            r = resolve(g)
+            if isinstance(g, PrintGuide):
+                print(f"{g.id}: 판 {print_json(g)['work']}개 (묶음 {', '.join(g.bundles)})")
+                continue
+            r = resolve(g, prints)
             work = sum(1 for s in r.steps if s["kind"] == "work")
             print(f"{g.id}: 장면 부품 {len(r.parts)}개, 작업 단계 {work}개")
             for w in r.warnings:

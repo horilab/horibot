@@ -10,10 +10,10 @@ import pytest
 from build123d import Box, Pos
 
 from horilab_design.guide import selftest
-from horilab_design.guide.build import GuideError, resolve, write_site
-from horilab_design.guide.guides import first_joint
+from horilab_design.guide.build import GuideError, plate_refs, print_json, resolve, write_site
+from horilab_design.guide.guides import first_joint, prints
 from horilab_design.guide.meshes import pack, tessellate, unpack
-from horilab_design.guide.model import Guide, Move, ScenePart, Step, View
+from horilab_design.guide.model import Guide, Move, PrintGuide, ScenePart, Step, View
 from horilab_design.parts import joint as j
 from horilab_design.parts.shapes import solid
 
@@ -116,22 +116,89 @@ def test_first_joint_guide_counts_match_the_parts_list() -> None:
     }
 
 
+def _plan(tmp: Path, bundle: str, plates: list[list[tuple[str, int]]]) -> None:
+    folder = tmp / bundle
+    folder.mkdir(parents=True)
+    rows = []
+    for k, parts in enumerate(plates, start=1):
+        name = f"{k:02d}-black-abc12{k}"
+        (folder / f"{name}.png").write_bytes(b"png")
+        rows.append(
+            {
+                "file": f"{name}.3mf",
+                "image": f"{name}.png",
+                "color": "black",
+                "preset": "0.20mm Strength @BBL X1C",
+                "minutes": 70 * k,
+                "grams": 10.0 * k,
+                "overnight": False,
+                "parts": [
+                    {
+                        "file": f,
+                        "label": f"부품 {f}",
+                        "count": c,
+                        "height_mm": 9.0,
+                        "slender": False,
+                    }
+                    for f, c in parts
+                ],
+            }
+        )
+    plan = {"name": bundle, "made": "2026-11-16T10:00:00", "bed_type": "Textured PEI Plate"}
+    (folder / "plan.json").write_text(json.dumps({**plan, "plates": rows}), encoding="utf-8")
+
+
+def test_print_guide_has_a_step_per_plate_and_numbers_reprints_after_them(tmp_path: Path) -> None:
+    _plan(tmp_path, "demo", [[("a.stl", 2), ("b.stl", 1)], [("c.stl", 1)]])
+    _plan(tmp_path, "demo-r1", [[("a.stl", 1)]])
+    pg = PrintGuide("demo-print", "데모 출력", "시험", ("demo", "demo-r1"))
+    data = print_json(pg, tmp_path)
+    steps = data["steps"]
+    assert [s["id"] for s in steps] == ["demo-1", "demo-2", "demo-r1-1"]
+    assert [s["no"] for s in steps] == ["1", "2", "3"] and {s["kind"] for s in steps} == {"plate"}
+    assert (
+        steps[0]["check"] == []
+        and steps[0]["plate"]["image"] == "data/prints/demo/01-black-abc121.png"
+    )
+    assert any("01-black-abc121.3mf" in t for t in steps[0]["do"])
+    assert any("끝 6자리가 abc121" in t for t in steps[0]["do"])  # 프린터 화면과 견줄 파일 이름 끝
+    assert data["summary"] == {"plates": 3, "minutes": 70 + 140 + 70, "grams": 40.0}
+    # 조립 안내의 출력 부품은 처음 판과 다시 뽑기 판을 모두 안다 (뽑았는지는 화면이 db의 기록으로 셈한다)
+    refs = plate_refs("demo", [pg], tmp_path)
+    assert refs["a.stl"] == [["demo-print", "demo-1", 1, 2], ["demo-print", "demo-r1-1", 3, 1]]
+    with pytest.raises(GuideError, match="판 계획이 없다"):
+        print_json(PrintGuide("x-print", "x", "x", ("missing",)), tmp_path)
+
+
 @pytest.mark.slow
 def test_built_site_has_every_file_its_guides_need(tmp_path: Path) -> None:
     summary = write_site(tmp_path)
     page = (tmp_path / "index.html").read_text(encoding="utf-8")
     assert "/*@CSS@*/" not in page and "/*@JS@*/" not in page and "<title>작업 안내</title>" in page
     catalog = json.loads((tmp_path / "data" / "catalog.json").read_text(encoding="utf-8"))
-    assert [g["id"] for g in catalog["guides"]] == ["first-joint"]
+    assert [g["id"] for g in catalog["guides"]] == ["first-joint", prints.FIRST_JOINT.id]
     for row in catalog["guides"]:
         guide = json.loads((tmp_path / row["file"]).read_text(encoding="utf-8"))
-        # 처음 화면의 진행은 확인 칸으로 셈한다: 작업 단계는 모두 확인 칸이 있어 track에 든다
+        # 처음 화면의 진행은 확인 칸(판은 Claude의 기록)으로 셈한다: 작업 단계와 판은 모두 track에 든다
         assert sum(1 for t in row["track"] if t[1] not in ("준비", "끝")) == row["work"]
+        for step in guide["steps"]:
+            if step["kind"] == "plate" and step["plate"]["image"]:
+                assert (tmp_path / step["plate"]["image"]).exists()
         assert {s["mesh"] for s in guide["scene"]} == set(guide["meshes"])
         for mesh in guide["meshes"]:
             assert (tmp_path / "data" / "meshes" / f"{mesh}.json").exists()
         for step in guide["steps"]:
             assert all(row[0] in guide["items"] for row in step["kit"]), step["id"]
+    joint = json.loads((tmp_path / "data/guides/first-joint.json").read_text(encoding="utf-8"))
+    printed = [it for it in joint["items"].values() if it["kind"] == "printed"]
+    assert printed and all(it["plates"][0][0] == prints.FIRST_JOINT.id for it in printed)
+    body = next(it for it in printed if it["file"] == "wrist_body.stl")
+    assert body["plates"] == [[prints.FIRST_JOINT.id, "first-joint-3", 3, 2]]
+    # 출력 안내: 판의 부품마다 3D로 볼 형상이 있다 (지금 설계 코드로 뽑는 방향에 놓아 만든다)
+    pr = json.loads((tmp_path / "data/guides/first-joint-print.json").read_text(encoding="utf-8"))
+    parts = [part for s in pr["steps"] for part in s["plate"]["parts"]]
+    assert len(pr["scene"]) == len({p["file"] for p in parts}) == 10
+    assert all(p["p"] is not None for p in parts)
     manifest = json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8"))
     assert len(manifest) == summary.files
     for rel, digest in manifest.items():
@@ -147,4 +214,5 @@ def test_site_passes_its_selftest_in_a_headless_browser(tmp_path: Path) -> None:
     if not report["three"]:
         pytest.skip("three.js를 받지 못했다 (인터넷)")
     assert selftest.problems(report) == []
-    assert sum(g["steps"] for g in report["guides"]) == len(first_joint.STEPS)
+    plates = len(print_json(prints.FIRST_JOINT)["steps"])
+    assert sum(g["steps"] for g in report["guides"]) == len(first_joint.STEPS) + plates

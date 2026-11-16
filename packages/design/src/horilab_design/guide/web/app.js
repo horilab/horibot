@@ -11,12 +11,12 @@
   const SELFTEST = location.hash === '#selftest';
   const LEAD_S = 0.6, MOVE_S = 1.5, TURN_S = 3.2, HOLD_S = 2.2, NOTCHES = 20;
   const KINDS = [['assembly', '조립'], ['print', '출력'], ['measure', '재기·시험'], ['wiring', '배선'], ['view', '설계 보기']];
-  const PHOTO_HELP = '억지로 하지 마세요. 휴대폰 Claude 앱(Remote Control) 대화창의 카메라로 그 자리를 찍어 보내면 됩니다. ' +
-    '어디까지 했는지는 확인 칸으로 보이니, 어느 단계인지 따로 적지 않아도 됩니다.';
+  const PHOTO_HELP = '억지로 하지 마세요. 휴대폰 Claude 앱(Remote Control) 대화창의 카메라로 그 자리를 찍어 보내면 됩니다.';
+  const PHOTO_HELP_STEP = ' 어디까지 했는지는 확인 칸으로 보이니, 어느 단계인지 따로 적지 않아도 됩니다.';
 
   const S = {
     catalog: null, guide: null, gid: '', cur: 0, view: 'home', speed: 1, db: null,
-    checks: {}, notes: [], records: [], localNotes: [], dbState: 'off', resumeGid: '',
+    checks: {}, notes: [], records: [], localNotes: [], dbState: 'off', resumeGid: '', platePart: null,
   };
 
   // ---------- 작은 도구 ----------
@@ -34,7 +34,11 @@
   function store(key, val) { try { localStorage.setItem('guide.' + key, JSON.stringify(val)); } catch (e) { /* 이 기기에 못 남겨도 화면은 된다 */ } }
   function recall(key) { try { return JSON.parse(localStorage.getItem('guide.' + key)); } catch (e) { return null; } }
   function two(n) { return (n < 10 ? '0' : '') + n; }
-  function hm(iso) { const d = new Date(iso); return isNaN(d) ? '' : (d.getMonth() + 1) + '/' + d.getDate() + ' ' + two(d.getHours()) + ':' + two(d.getMinutes()); }
+  function hm(iso) {
+    // 날짜만 적은 기록(예: 2026-11-15)은 날짜만 보인다 (모르는 시각을 지어내지 않게)
+    if (typeof iso === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(iso)) return Number(iso.slice(5, 7)) + '/' + Number(iso.slice(8, 10));
+    const d = new Date(iso); return isNaN(d) ? '' : (d.getMonth() + 1) + '/' + d.getDate() + ' ' + two(d.getHours()) + ':' + two(d.getMinutes());
+  }
   async function getJSON(path) {
     const r = await fetch(path, { cache: 'no-cache' });
     if (!r.ok) throw new Error(path + ' 를 읽지 못했습니다 (' + r.status + ')');
@@ -273,9 +277,10 @@
     return ins;
   }
   function padBoard() {
-    if ($('board').hidden || PHONE.matches) { $('boardIn').style.padding = ''; return; }
-    const ins = panelInsets();
-    $('boardIn').style.padding = '20px ' + Math.max(24, ins.r) + 'px ' + Math.max(40, ins.b) + 'px ' + Math.max(24, ins.l) + 'px';
+    const ins = PHONE.matches ? null : panelInsets();
+    $('boardIn').style.padding = $('board').hidden || !ins ? '' : '20px ' + Math.max(24, ins.r) + 'px ' + Math.max(40, ins.b) + 'px ' + Math.max(24, ins.l) + 'px';
+    const pv = $('plateView');
+    pv.style.padding = pv.hidden || !ins ? '' : '16px ' + Math.max(16, ins.r) + 'px ' + Math.max(16, ins.b) + 'px ' + Math.max(16, ins.l) + 'px';
   }
   function afterLayout() { requestAnimationFrame(() => { if (G) computeInsets(); padBoard(); }); }
   function toggleBare() {
@@ -292,8 +297,13 @@
   function checksFor(stepId) { const m = marksOf(S.gid)[stepId]; return Array.isArray(m) ? m : []; }
   function renderPanels(step) {
     const g = S.guide;
-    setTitle('pHead', step.kind === 'prep' ? '시작하기 전에' : step.kind === 'end' ? '끝' : step.no + '단계 / ' + g.work);
+    const head = step.kind === 'prep' ? '시작하기 전에' : step.kind === 'end' ? '끝' : step.kind === 'plate' ? '판 ' + step.no + ' / ' + g.work : step.no + '단계 / ' + g.work;
+    setTitle('pHead', head);
     P.pHead.body.textContent = ''; P.pHead.body.appendChild(el('h1', '', step.title));
+    if (step.plate) {
+      P.pHead.body.appendChild(fileLine(step.plate.file));
+      P.pHead.body.appendChild(el('div', 'meta', step.plate.folder + ' · ' + step.plate.preset));
+    }
 
     setTitle('pDo', step.kind === 'end' ? '마무리' : '할 일');
     P.pDo.body.textContent = '';
@@ -320,13 +330,13 @@
       });
       P.pKit.body.appendChild(box);
     }
-    renderChecks(step);
+    if (step.plate) { renderPlateParts(step); renderPlateStatus(step); } else renderChecks(step);
 
     P.pStuck.el.hidden = step.kind === 'end'; P.pStuck.body.textContent = '';
     setTitle('pStuck', '막히면');
     const help = el('div', 'helpbox');
     if (step.stuck) help.appendChild(el('p', '', step.stuck));
-    help.appendChild(el('p', '', PHOTO_HELP));
+    help.appendChild(el('p', '', PHOTO_HELP + (step.check.length ? PHOTO_HELP_STEP : '')));
     P.pStuck.body.appendChild(help);
 
     P.pNote.body.textContent = '';
@@ -366,6 +376,91 @@
     });
     P.pCheck.body.appendChild(ul);
   }
+  // ---------- 판: 뽑았는지와 못 쓰는 부품 ----------
+  // 사용자가 대화창에 알리면 Claude가 db의 records에 적는다. 화면은 보여 주기만 한다 (누를 칸이 없다).
+  // records: {guide, step, kind: 'printed' | 'bad', part: STL 파일 이름(bad), count, note, at}
+  function printedRec(gid, sid) { return S.records.find((r) => r.guide === gid && r.step === sid && r.kind === 'printed') || null; }
+  function badRecs(file, gid, sid) {
+    return S.records.filter((r) => r.kind === 'bad' && r.part === file && (gid == null || (r.guide === gid && r.step === sid)));
+  }
+  function sumCount(rs) { return rs.reduce((s, r) => s + (Number(r.count) || 1), 0); }
+  function day(iso) { return hm(iso).split(' ')[0]; }
+  function renderPlateParts(step) {
+    const parts = step.plate.parts;
+    P.pKit.el.hidden = !parts.length; P.pKit.body.textContent = '';
+    const pickable = parts.some((p) => p.p != null);
+    setTitle('pKit', '이 판의 부품', '· ' + parts.reduce((s, p) => s + p.count, 0) + (pickable ? ' · 누르면 3D' : ''));
+    const box = el('div', 'kit');
+    parts.forEach((p) => {
+      const tx = el('div', 'ki plate-part');
+      if (p.p != null) {
+        // 누르면 3D로 이 부품을 보인다. 한 번 더 누르면 판 그림으로 돌아간다
+        tx.classList.add('pick'); tx.classList.toggle('on', S.platePart === p.p);
+        tx.tabIndex = 0; tx.setAttribute('role', 'button'); tx.setAttribute('aria-pressed', S.platePart === p.p ? 'true' : 'false');
+        tx.addEventListener('click', (e) => { if (e.target.closest('.copy') || !noSelection()) return; selectPlatePart(step, p.p); });
+        tx.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); selectPlatePart(step, p.p); } });
+      }
+      const nm = el('div', 'nm', p.label); nm.appendChild(el('span', 'q', '× ' + p.count));
+      tx.appendChild(nm);
+      if (p.height != null) tx.appendChild(el('div', 'meta', '높이 ' + p.height + ' mm'));
+      tx.appendChild(fileLine(p.file));
+      const bad = badRecs(p.file, S.gid, step.id);
+      if (bad.length) tx.appendChild(el('div', 'pst need', '못 씀 ' + sumCount(bad) + '개' + bad.map((r) => (r.note ? ' · ' + r.note : '')).join('')));
+      box.appendChild(tx);
+    });
+    P.pKit.body.appendChild(box);
+  }
+  function renderPlateStatus(step) {
+    P.pCheck.el.hidden = false; P.pCheck.body.textContent = '';
+    const rec = printedRec(S.gid, step.id);
+    setTitle('pCheck', '상태', rec ? '· 뽑음' : '· 아직');
+    if (rec) {
+      P.pCheck.body.appendChild(el('p', 'pst ok', '✓ 뽑음' + (rec.at ? ' · ' + day(rec.at) : '') + (rec.note ? ' · ' + rec.note : '')));
+      const bad = S.records.filter((r) => r.kind === 'bad' && r.guide === S.gid && r.step === step.id);
+      if (bad.length) P.pCheck.body.appendChild(el('p', 'pst need', '못 쓰는 부품 ' + sumCount(bad) + '개 (이 판의 부품 칸에 표시)'));
+    } else {
+      P.pCheck.body.appendChild(el('p', 'pst wait', '아직 안 뽑았습니다.'));
+    }
+    P.pCheck.body.appendChild(el('p', 'sub', '다 뽑으면 대화창에 알려 주세요. 못 쓰는 부품이 있으면 무엇이 왜 그런지 같이 적어 주시면, ' +
+      'Claude가 여기에 적고 모자란 부품은 다시 뽑을 판을 만듭니다.'));
+  }
+  // 판 화면의 무대: 기본은 판 그림, 부품을 고르면 그 부품의 3D (뽑는 방향으로 놓은 지금 설계 형상)
+  function platePseudo(step, idx) {
+    return { id: step.id + '-p' + idx, kind: 'plate', show: [idx], hot: [], shell: [], cut: false, ghost: false, place: [], joint: 0,
+      moves: [], turn: null, spots: [], labels: [], tags: [], view: { up: [0, 0, 1], face: [0, -1, 0], el: 24, az: 32 } };
+  }
+  function showPlateStage(step) {
+    const three = S.platePart != null && init3d();
+    $('plateView').hidden = three; $('c').hidden = !three; $('tags').hidden = !three; $('tools3d').hidden = !three;
+    $('tPlate').hidden = !three; $('player').hidden = true; $('doneTag').hidden = true;
+    const img = $('plateImg');
+    if (step.plate.image) { img.src = step.plate.image; img.alt = '판 ' + step.no + ' 배치 그림'; img.hidden = false; } else { img.removeAttribute('src'); img.hidden = true; }
+    if (three) {
+      if (PHONE.matches && !app.classList.contains('with3d')) { app.classList.add('with3d'); $('show3d').textContent = '3D 닫기'; }
+      if (G.items.length !== S.guide.scene.length) buildItems();
+      G.resize(); apply3d(platePseudo(step, S.platePart), false);
+    } else if (G) G.step = null;
+    afterLayout();
+  }
+  function selectPlatePart(step, idx) {
+    S.platePart = S.platePart === idx ? null : idx;
+    showPlateStage(step);
+    renderPlateParts(step);
+  }
+
+  // 조립 안내의 출력 부품: 쓸 수 있는 개수와, 모자라면 뽑을 판
+  function partStatus(it, need) {
+    const refs = it.plates || [];
+    const made = refs.reduce((s, ref) => s + (printedRec(ref[0], ref[1]) ? ref[3] : 0), 0);
+    const ok = Math.max(0, made - sumCount(badRecs(it.file)));
+    if (ok >= need) return { ok: true, text: '✓ 뽑음 · 판 ' + refs.filter((ref) => printedRec(ref[0], ref[1])).map((ref) => ref[2]).join(', ') };
+    const next = refs.find((ref) => !printedRec(ref[0], ref[1]));
+    const short = need - ok;
+    if (next) return { ok: false, text: (made ? short + '개 모자람 · ' : '아직 안 뽑음 · ') + '판 ' + next[2], go: next };
+    return { ok: false, text: short + '개 모자람 · 대화창에 알려 주시면 Claude가 다시 뽑을 판을 만듭니다' };
+  }
+  function goStep(gid, sid) { const h = '#' + gid + '--' + sid; if (location.hash === h) route(); else location.hash = h; }
+
   function renderNotes() {
     const list = $('notesList'); const step = stepRef();
     if (!list || !step) return;
@@ -417,6 +512,17 @@
         card.appendChild(top);
         card.appendChild(el('div', 'meta', [it.meta, row[2]].filter(Boolean).join(' · ')));
         if (it.file) card.appendChild(fileLine(it.file));
+        if (it.kind === 'printed' && it.plates) {
+          // 뽑았는지는 보여 주기만 한다. 조립을 막지 않는다 (이미 뽑아 둔 부품이 있을 수 있다)
+          const st = partStatus(it, row[1] || 1);
+          const line = el('div', 'pst ' + (st.ok ? 'ok' : 'need'));
+          if (st.go) {
+            const b = el('button', 'linkbtn', st.text); b.type = 'button';
+            b.addEventListener('click', () => goStep(st.go[0], st.go[1]));
+            line.appendChild(b);
+          } else line.textContent = st.text;
+          card.appendChild(line);
+        }
         grid.appendChild(card);
       });
       sec.appendChild(grid);
@@ -425,20 +531,29 @@
   }
 
   // ---------- 진행 ----------
-  // 확인 칸을 다 누른 단계가 끝낸 단계다. 단계를 눌러 보기만 해서는 진행이 바뀌지 않는다
+  // 확인 칸을 다 누른 단계가 끝낸 단계다. 판 단계(확인 칸 0)는 Claude가 뽑았다고 적으면 끝난다.
+  // 단계를 눌러 보기만 해서는 진행이 바뀌지 않는다
   function marksOf(gid) { const c = S.checks[gid]; return (c && c.marks && typeof c.marks === 'object') ? c.marks : {}; }
-  function stepDone(gid, id, n) { const m = marksOf(gid)[id]; return n > 0 && Array.isArray(m) && m.length >= n && m.slice(0, n).every(Boolean); }
+  function stepDone(gid, id, n) {
+    if (!(n > 0)) return !!printedRec(gid, id);
+    const m = marksOf(gid)[id]; return Array.isArray(m) && m.length >= n && m.slice(0, n).every(Boolean);
+  }
   function trackOf(gid) {
-    // 확인 칸이 있는 단계마다 [id, 번호, 짧은 이름, 확인 칸 수]. 연 안내는 단계 데이터에서, 아니면 안내 목록에서 읽는다
-    if (S.guide && S.gid === gid) return S.guide.steps.filter((s) => s.check.length).map((s) => [s.id, s.no, s.short, s.check.length]);
+    // 끝이 정해지는 단계마다 [id, 번호, 짧은 이름, 확인 칸 수]. 연 안내는 단계 데이터에서, 아니면 안내 목록에서 읽는다
+    if (S.guide && S.gid === gid) return S.guide.steps.filter((s) => s.check.length || s.kind === 'plate').map((s) => [s.id, s.no, s.short, s.check.length]);
     const row = S.catalog && S.catalog.guides.find((r) => r.id === gid);
     return (row && row.track) || [];
+  }
+  function lastActivity(gid) {
+    let at = String((S.checks[gid] && S.checks[gid].at) || '');
+    S.records.forEach((r) => { if (r.guide === gid && typeof r.at === 'string' && r.at > at) at = r.at; });
+    return at;
   }
   function guideProgress(gid) {
     const tr = trackOf(gid), marks = marksOf(gid);
     const work = tr.filter((t) => t[1] !== '준비');
     const done = work.filter((t) => stepDone(gid, t[0], t[3])).length;
-    const started = tr.some((t) => Array.isArray(marks[t[0]]) && marks[t[0]].some(Boolean));
+    const started = tr.some((t) => (t[3] > 0 ? Array.isArray(marks[t[0]]) && marks[t[0]].some(Boolean) : !!printedRec(gid, t[0])));
     const next = tr.find((t) => !stepDone(gid, t[0], t[3])) || null;
     const text = !started ? '시작 전' : !next ? '다 함' : done + ' / ' + work.length;
     return { text: text, frac: work.length ? done / work.length : 0, done: done, work: work.length, started: started, next: next };
@@ -486,7 +601,7 @@
       const p = guideProgress(S.gid);
       $('gTitle').textContent = S.guide.title; $('gSub').textContent = S.guide.sub;
       $('prog').hidden = !p.work;
-      $('progText').textContent = '끝낸 단계 ' + p.done + ' / ' + p.work;
+      $('progText').textContent = (S.guide.kind === 'print' ? '뽑은 판 ' : '끝낸 단계 ') + p.done + ' / ' + p.work;
       $('pbarFill').style.width = (p.frac * 100) + '%';
     } else {
       $('gTitle').textContent = '작업 안내'; $('gSub').textContent = '조립, 출력, 재기, 배선, 설계 보기';
@@ -535,8 +650,8 @@
       });
       kinds.appendChild(sec);
     });
-    // 이어서 하기: 확인 칸을 마지막으로 누른 안내 가운데 아직 다 하지 않은 것
-    const cand = rows.map((r) => ({ r: r, p: guideProgress(r.id), at: String((S.checks[r.id] && S.checks[r.id].at) || '') }))
+    // 이어서 하기: 확인 칸이나 판 기록이 마지막으로 바뀐 안내 가운데 아직 다 하지 않은 것
+    const cand = rows.map((r) => ({ r: r, p: guideProgress(r.id), at: lastActivity(r.id) }))
       .filter((x) => x.p.started && x.p.next)
       .sort((a, b) => b.at.localeCompare(a.at));
     const top = cand[0] || null;
@@ -939,6 +1054,7 @@
   $('tGhost').addEventListener('click', () => { if (!G) return; G.ghostOn = !G.ghostOn; if (G.ghostOn) G.cutOn = false; styleAll(); updateTools(); });
   $('tUnhide').addEventListener('click', () => { if (!G) return; G.items.forEach((it) => { it.hidden = false; }); styleAll(); updateTools(); });
   $('tView').addEventListener('click', () => reframe(false));
+  $('tPlate').addEventListener('click', () => { const st = stepRef(); if (st && st.plate) { S.platePart = null; showPlateStage(st); renderPlateParts(st); } });
   $('tBare').addEventListener('click', toggleBare);
 
   // ---------- 작은 그림 (부품 목록의 그림을 이 안내의 형상으로 그린다) ----------
@@ -1040,7 +1156,17 @@
       if (S.view === 'home') renderHome(); else if (S.guide) { renderStrip(); renderBar(); }
     }, err);
     db.collection('notes').onSnapshot((snap) => { S.notes = snap.docs.map((d) => Object.assign({ id: d.id }, d.data())); renderNotes(); renderSaved(); }, err);
-    db.collection('records').onSnapshot((snap) => { S.records = snap.docs.map((d) => Object.assign({ id: d.id }, d.data())); renderNotes(); }, err);
+    db.collection('records').onSnapshot((snap) => {
+      S.records = snap.docs.map((d) => Object.assign({ id: d.id }, d.data()));
+      renderNotes();
+      // 판을 뽑았다는 기록이 오면 진행, 판 상태, 준비물의 출력 부품 상태가 바뀐다
+      const st = stepRef();
+      if (S.view === 'home') renderHome();
+      else if (S.guide && st) {
+        renderStrip(); renderBar();
+        if (st.plate) { renderPlateParts(st); renderPlateStatus(st); } else if (st.kind === 'prep') renderBoard();
+      }
+    }, err);
   }
 
   // ---------- 안내 열기, 단계 보이기 ----------
@@ -1068,7 +1194,7 @@
     const o = opts || {};
     const steps = S.guide.steps;
     i = Math.max(0, Math.min(steps.length - 1, i));
-    S.view = 'step'; S.cur = i;
+    S.view = 'step'; S.cur = i; S.platePart = null;
     app.dataset.view = 'step';
     $('home').hidden = true; $('screen').hidden = false; $('nav').hidden = false;
     const step = steps[i];
@@ -1076,12 +1202,15 @@
     renderPanels(step);
     renderStrip();
     renderBar();
-    const board = step.kind === 'prep';
-    $('board').hidden = !board; $('c').hidden = board; $('tags').hidden = board; $('tools3d').hidden = board;
-    if (board) { renderBoard(); $('doneTag').hidden = true; $('player').hidden = true; }
+    const board = step.kind === 'prep', plate = !!step.plate, flat = board || plate;
+    $('board').hidden = !board; $('plateView').hidden = !plate; $('tPlate').hidden = true;
+    $('c').hidden = flat; $('tags').hidden = flat; $('tools3d').hidden = flat;
+    if (board) renderBoard();
+    if (flat) { $('doneTag').hidden = true; $('player').hidden = true; }
     $('prevBtn').disabled = i === 0; $('nextBtn').disabled = i === steps.length - 1;
-    if (!board && (!PHONE.matches || app.classList.contains('with3d') || SELFTEST) && init3d()) apply3d(step, o.instant);
-    else if (G) G.step = board ? null : step;
+    if (!flat && (!PHONE.matches || app.classList.contains('with3d') || SELFTEST) && init3d()) apply3d(step, o.instant);
+    else if (G) G.step = flat ? null : step;
+    if (plate) showPlateStage(step);
     afterLayout();
   }
   function setHash(h) { try { history.replaceState(null, '', '#' + h); } catch (e) { /* 주소는 못 바꿔도 화면은 바뀐다 */ } }
@@ -1168,6 +1297,25 @@
             if (st.kind === 'prep') {
               const n = $('boardIn').querySelectorAll('.bi').length;
               if (!n) g.problems.push(st.id + ': 준비물 판이 비었다');
+              const printed = (S.guide.board.find((b) => b.kind === 'printed') || { items: [] }).items.filter((row) => itemOf(row[0]).plates).length;
+              if ($('boardIn').querySelectorAll('.pst').length !== printed) g.problems.push(st.id + ': 출력 부품의 판 상태가 ' + printed + '개가 아니다');
+            } else if (st.plate) {
+              if (st.plate.image && !$('plateImg').getAttribute('src')) g.problems.push(st.id + ': 판 그림이 없다');
+              if (!st.plate.parts.length || P.pKit.el.hidden) g.problems.push(st.id + ': 이 판의 부품이 비었다');
+              if (P.pCheck.el.hidden) g.problems.push(st.id + ': 판 상태 칸이 없다');
+              // 부품을 누르면 그 부품 하나만 3D로 보이고, 다시 누르면 판 그림으로 돌아간다
+              const pick = st.plate.parts.filter((p) => p.p != null);
+              if (!pick.length) g.problems.push(st.id + ': 3D로 볼 수 있는 부품이 없다');
+              if (pick.length && rep.three) {
+                pick.forEach((p) => {
+                  selectPlatePart(st, p.p); renderOnce();
+                  const shown = G.items.filter((it) => it.mesh.visible).length;
+                  if ($('c').hidden || shown !== 1) g.problems.push(st.id + ': ' + p.file + '를 눌렀는데 3D에 ' + shown + '개가 보인다');
+                  if (!P.pKit.body.querySelector('.pick.on')) g.problems.push(st.id + ': 고른 부품이 칸에 표시되지 않는다');
+                  selectPlatePart(st, p.p);
+                  if (!$('c').hidden || $('plateView').hidden) g.problems.push(st.id + ': 다시 눌러도 판 그림으로 돌아가지 않는다');
+                });
+              }
             } else if (rep.three) {
               if (G.tl) { G.clock = G.tl.end; animate(); }
               renderOnce();
@@ -1185,19 +1333,22 @@
         // 진행: 모든 단계를 넘겨 봤어도 끝낸 단계가 없고, 확인 칸을 다 누른 단계만 끝난다
         const tr = trackOf(row.id);
         if (JSON.stringify(row.track || []) !== JSON.stringify(tr)) g.problems.push('안내 목록의 track이 단계 데이터와 다르다');
-        const keep = S.checks[row.id];
-        delete S.checks[row.id];
+        const keep = S.checks[row.id], keepRec = S.records;
+        delete S.checks[row.id]; S.records = [];
         renderStrip();
-        if (guideProgress(row.id).started || $('strip').querySelector('.chip.done')) g.problems.push('확인 칸을 안 눌렀는데 진행이 있다');
+        if (guideProgress(row.id).started || $('strip').querySelector('.chip.done')) g.problems.push('확인 칸이나 판 기록이 없는데 진행이 있다');
         if (tr.length >= 2) {
-          const marks = {}; tr.slice(0, 2).forEach((t) => { marks[t[0]] = new Array(t[3]).fill(true); });
-          S.checks[row.id] = { marks: marks, at: new Date().toISOString() };
+          // 앞의 두 단계를 끝낸 것으로 꾸민다: 확인 칸은 다 누르고, 판은 Claude가 뽑았다고 적은 것처럼
+          const marks = {}, recs = [];
+          tr.slice(0, 2).forEach((t) => { if (t[3] > 0) marks[t[0]] = new Array(t[3]).fill(true); else recs.push({ guide: row.id, step: t[0], kind: 'printed', at: new Date().toISOString() }); });
+          S.checks[row.id] = { marks: marks, at: new Date().toISOString() }; S.records = recs;
           const want = tr[2] ? S.guide.steps.findIndex((s) => s.id === tr[2][0]) : S.guide.steps.length - 1;
-          if (resumeIndex(row.id) !== want) g.problems.push('이어서 할 단계가 확인 칸과 맞지 않는다');
+          if (resumeIndex(row.id) !== want) g.problems.push('이어서 할 단계가 확인 칸이나 판 기록과 맞지 않는다');
           renderStrip();
-          if ($('strip').querySelectorAll('.chip.done').length !== 2) g.problems.push('끝낸 단계 표시(✓)가 확인 칸과 맞지 않는다');
+          if ($('strip').querySelectorAll('.chip.done').length !== 2) g.problems.push('끝낸 단계 표시(✓)가 확인 칸이나 판 기록과 맞지 않는다');
         }
         if (keep) S.checks[row.id] = keep; else delete S.checks[row.id];
+        S.records = keepRec;
         renderStrip();
         rep.guides.push(g);
       }

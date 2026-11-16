@@ -162,7 +162,7 @@ class Step:
 @dataclass(frozen=True)
 class Guide:
     """안내 하나. scene은 장면 부품을 만드는 함수(설계 코드를 부른다), items는 공통 목록에 더할 이 안내의 출력
-    부품, bundle은 출력 묶음 이름(있으면 판 번호와 파일 이름을 그 plan.json과 맞춘다)."""
+    부품, bundle은 출력 묶음 이름(출력 부품마다 어느 판에서 나오는지와 뽑았는지를 그 묶음의 출력 안내에서 찾는다)."""
 
     id: str
     kind: str
@@ -172,3 +172,16 @@ class Guide:
     steps: tuple[Step, ...]
     items: dict[str, Item] = field(default_factory=dict)
     bundle: str = ""
+
+
+@dataclass(frozen=True)
+class PrintGuide:
+    """출력 안내 하나. 단계가 판 하나다. bundles는 출력 준비 도구가 낸 묶음 이름(data/prints/<묶음>/plan.json)을
+    뽑을 차례대로 둔 것이다. 첫 묶음 뒤에 다시 뽑기 묶음을 더한다. 판을 뽑았는지와 못 쓰는 부품은 사용자가 대화창에
+    알리면 Claude가 db의 records에 적는다 (화면에 누를 칸이 없다)."""
+
+    id: str
+    title: str
+    sub: str
+    bundles: tuple[str, ...]
+    kind: str = "print"

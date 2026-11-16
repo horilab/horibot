@@ -4,15 +4,18 @@
     build/guide/data/catalog.json       안내 목록
     build/guide/data/guides/<id>.json   안내 하나 (부품 목록, 장면, 단계, 준비물)
     build/guide/data/meshes/<id>.json   형상 하나 (meshes.py)
+    build/guide/data/prints/<묶음>/     판 그림 (data/prints/<묶음>/에서 옮긴다)
     build/guide/manifest.json           파일마다 sha256 (바뀐 파일만 다시 올린다)
 
 단계가 가리키는 부품은 만들 때 장면의 번호로 바꾼다. 보이는 부품, 이번 부품, 쓰는 것과 준비물의 개수는 여기서
-셈한다 (손으로 적지 않는다).
+셈한다 (손으로 적지 않는다). 출력 안내는 출력 준비 도구가 낸 판 계획(data/prints/<묶음>/plan.json)에서 판마다
+단계를 만들고, 조립 안내의 출력 부품마다 어느 출력 안내의 어느 판에서 나오는지를 잇는다.
 """
 
 from __future__ import annotations
 
 import hashlib
+import importlib
 import json
 import re
 import shutil
@@ -25,15 +28,17 @@ from typing import Any
 
 from horilab_design.guide import catalog
 from horilab_design.guide.meshes import Mesh, pack, tessellate
-from horilab_design.guide.model import Guide, Item, ScenePart, Step, Vec, View
+from horilab_design.guide.model import Guide, Item, PrintGuide, ScenePart, Step, Vec, View
+from horilab_design.slicing import PLANS_DIR, oriented
 from horilab_design.values import REPO_ROOT
 
 WEB = Path(__file__).resolve().parent / "web"
 OUT = REPO_ROOT / "build" / "guide"
-PRINT_DIR = REPO_ROOT / "build" / "print"
 ID = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 KIND_ORDER = ("printed", "bought", "hardware", "tool")
 STEP_KINDS = ("prep", "work", "end")
+BED_KO = {"Textured PEI Plate": "텍스처 PEI"}
+PLATE_STUCK = "첫 층이 안 붙거나, 뽑는 중에 부품이 떨어지거나, 다 뽑은 부품이 이상하면 사진을 찍어 대화창에 보내 주세요."
 GUIDE_KINDS = ("assembly", "print", "measure", "wiring", "view")
 
 
@@ -53,7 +58,7 @@ class Resolved:
     steps: list[dict[str, Any]]
     board: list[dict[str, Any]]
     totals: dict[str, int]
-    plates: dict[str, tuple[int, str]]
+    plates: dict[str, list[list[Any]]]  # STL 파일 이름 → [출력 안내 id, 판 단계 id, 판 번호, 개수]
     warnings: list[str] = field(default_factory=list)
 
 
@@ -111,16 +116,52 @@ class _Picker:
         return found[0]
 
 
-def _plates(bundle: str) -> dict[str, tuple[int, str]]:
-    """출력 묶음의 plan.json에서 STL 파일 이름 → (판 번호, 3MF 이름). 묶음이 없으면 빈 것."""
-    path = PRINT_DIR / bundle / "plan.json" if bundle else None
-    if path is None or not path.exists():
-        return {}
-    plan = json.loads(path.read_text(encoding="utf-8"))
-    out: dict[str, tuple[int, str]] = {}
-    for k, plate in enumerate(plan["plates"], start=1):
-        for part in plate["parts"]:
-            out.setdefault(str(part["file"]), (k, str(plate["file"])))
+def _hm(minutes: int) -> str:
+    return f"{minutes // 60}시간 {minutes % 60}분" if minutes >= 60 else f"{minutes}분"
+
+
+def read_plan(bundle: str, plans: Path = PLANS_DIR) -> dict[str, Any]:
+    """출력 준비 도구가 낸 판 계획. 없으면 GuideError (출력 안내가 빠진 채로 사이트를 올리지 않게)."""
+    path = plans / bundle / "plan.json"
+    if not path.exists():
+        raise GuideError(f"출력 묶음 '{bundle}'의 판 계획이 없다: {path}")
+    plan: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
+    return plan
+
+
+@dataclass(frozen=True)
+class Plate:
+    guide: str  # 출력 안내 id
+    id: str  # 판 단계 id (<묶음>-<묶음 안의 차례>)
+    no: int  # 출력 안내 안의 판 번호 (묶음을 이어 센다)
+    bundle: str
+    data: dict[str, Any]  # plan.json의 판 하나
+
+
+def plates_of(pg: PrintGuide, plans: Path = PLANS_DIR) -> list[Plate]:
+    out: list[Plate] = []
+    for bundle in pg.bundles:
+        for k, plate in enumerate(read_plan(bundle, plans)["plates"], start=1):
+            sid = f"{bundle}-{k}"
+            if not ID.match(sid):
+                raise GuideError(f"{pg.id}: 묶음 이름 '{bundle}'은 소문자, 숫자, 하이픈만 쓴다")
+            out.append(Plate(pg.id, sid, len(out) + 1, bundle, plate))
+    return out
+
+
+def plate_refs(
+    bundle: str, prints: Sequence[PrintGuide], plans: Path = PLANS_DIR
+) -> dict[str, list[list[Any]]]:
+    """bundle을 담은 출력 안내들에서 STL 파일 이름 → [출력 안내 id, 판 단계 id, 판 번호, 개수]."""
+    out: dict[str, list[list[Any]]] = {}
+    for pg in prints:
+        if bundle not in pg.bundles:
+            continue
+        for plate in plates_of(pg, plans):
+            for part in plate.data["parts"]:
+                out.setdefault(str(part["file"]), []).append(
+                    [pg.id, plate.id, plate.no, int(part["count"])]
+                )
     return out
 
 
@@ -143,8 +184,9 @@ def _check_step_text(gid: str, step: Step) -> None:
         raise GuideError(f"{where}: 끝 단계에도 손에 드는 방향(view)이 있어야 한다")
 
 
-def resolve(guide: Guide) -> Resolved:
-    """장면을 만들고(형상은 삼각형으로 바꾸지 않는다) 단계를 장면 번호로 바꿔 검사한다."""
+def resolve(guide: Guide, prints: Sequence[PrintGuide] = (), plans: Path = PLANS_DIR) -> Resolved:
+    """장면을 만들고(형상은 삼각형으로 바꾸지 않는다) 단계를 장면 번호로 바꿔 검사한다. prints는 출력 부품의 판을
+    찾을 출력 안내다."""
     if not ID.match(guide.id):
         raise GuideError(f"안내 id '{guide.id}'는 소문자, 숫자, 하이픈만 쓴다")
     if guide.kind not in GUIDE_KINDS:
@@ -158,23 +200,16 @@ def resolve(guide: Guide) -> Resolved:
     for p in parts:
         if p.key not in items:
             raise GuideError(f"{guide.id}: 장면 부품 '{p.name}'의 키 '{p.key}'가 부품 목록에 없다")
-    plates = _plates(guide.bundle)
+    plates = plate_refs(guide.bundle, prints, plans) if guide.bundle else {}
     warnings: list[str] = []
     used_printed = {p.key for p in parts if items[p.key].kind == "printed"}
     if guide.bundle and not plates:
-        warnings.append(f"출력 묶음 '{guide.bundle}'의 plan.json이 없어 판 번호를 넣지 않았다")
+        warnings.append(f"출력 묶음 '{guide.bundle}'을 담은 출력 안내가 없어 판을 잇지 않았다")
     for key in sorted(used_printed):
-        item = items[key]
-        if plates:
-            if item.file not in plates:
-                raise GuideError(
-                    f"{guide.id}: 출력 부품 '{item.file}'가 묶음 '{guide.bundle}'에 없다"
-                )
-            k, _f = plates[item.file]
-            items[key] = Item(
-                item.key, item.name, item.kind, f"{item.meta} · 판 {k}", item.file, item.color,
-                item.draw, item.icon, item.thumb,
-            )  # fmt: skip
+        if plates and items[key].file not in plates:
+            raise GuideError(
+                f"{guide.id}: 출력 부품 '{items[key].file}'가 묶음 '{guide.bundle}'의 판에 없다"
+            )
 
     pick = _Picker(guide, parts, boxes)
     ids: set[str] = set()
@@ -319,10 +354,14 @@ def resolve(guide: Guide) -> Resolved:
     return Resolved(guide, parts, boxes, items, steps, board, dict(totals), plates, warnings)
 
 
-def _item_json(item: Item, parts: list[ScenePart]) -> dict[str, Any]:
+def _item_json(
+    item: Item, parts: list[ScenePart], plates: dict[str, list[list[Any]]]
+) -> dict[str, Any]:
     out: dict[str, Any] = {"name": item.name, "kind": item.kind, "meta": item.meta}
     if item.file:
         out["file"] = item.file
+    if item.kind == "printed" and item.file in plates:
+        out["plates"] = plates[item.file]
     if item.color:
         out["color"] = item.color
     if item.draw:
@@ -363,12 +402,158 @@ def guide_json(r: Resolved, meshes: dict[str, Mesh]) -> dict[str, Any]:
         "title": g.title,
         "sub": g.sub,
         "bundle": f"build/print/{g.bundle}/" if g.bundle else "",
-        "items": {k: _item_json(r.items[k], r.parts) for k in sorted(used)},
+        "items": {k: _item_json(r.items[k], r.parts, r.plates) for k in sorted(used)},
         "scene": scene,
         "meshes": sorted({row["mesh"] for row in scene}),
         "steps": r.steps,
         "board": r.board,
         "work": sum(1 for s in r.steps if s["kind"] == "work"),
+    }
+
+
+def _printed_shape(module: str, name: str, cache: dict[str, Any]) -> Any:
+    """출력 준비 도구와 같이 뽑는 방향으로 놓은 형상. 지금 설계 코드로 만든다 (모르는 부품이면 None)."""
+    if module == "coupons":
+        from horilab_design import coupons
+
+        make = coupons.COUPONS.get(name)
+        return oriented(make(), (0.0, 0.0, 1.0)) if make else None
+    if module not in cache:
+        try:
+            cache[module] = importlib.import_module(f"horilab_design.parts.{module}").printed()
+        except (ImportError, AttributeError):
+            cache[module] = {}
+    entry = cache[module].get(name)
+    if entry is None:
+        return None
+    up = (float(entry[1][0]), float(entry[1][1]), float(entry[1][2]))
+    return oriented(entry[0], up)
+
+
+def _plate_scene(
+    plates: list[Plate], meshes: dict[str, Mesh], warnings: list[str]
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    """판의 부품마다 장면 하나 (부품을 누르면 화면이 3D로 보인다). STL 파일 이름 → 장면 번호도 준다."""
+    scene: list[dict[str, Any]] = []
+    index: dict[str, int] = {}
+    cache: dict[str, Any] = {}
+    for plate in plates:
+        for part in plate.data["parts"]:
+            file = str(part["file"])
+            if file in index:
+                continue
+            module = str(part.get("module") or "")
+            shape = _printed_shape(module, Path(file).stem, cache) if module else None
+            if shape is None:
+                warnings.append(f"{plate.guide}: {file}의 형상을 만들지 못해 3D로 보이지 않는다")
+                index[file] = -1
+                continue
+            m = pack(*tessellate(shape))
+            meshes.setdefault(m.id, m)
+            index[file] = len(scene)
+            color = "body" if plate.data["color"] == "white" else "cap"
+            scene.append(
+                {
+                    "n": part["label"],
+                    "k": Path(file).stem,
+                    "mesh": m.id,
+                    "t": _r(m.origin, 4),
+                    "c": color,
+                    "m": False,
+                }
+            )
+    return scene, index
+
+
+def _plate_step(plate: Plate, bed: str, scene_of: dict[str, int]) -> dict[str, Any]:
+    d = plate.data
+    color = catalog.COLOR_KO.get(str(d["color"]), str(d["color"]))
+    minutes = int(d["minutes"])
+    folder = f"build/print/{plate.bundle}/"
+    warn = ["슬라이스 뒤에 경고가 뜨면 보내지 않고 알립니다."]
+    if d.get("overnight"):
+        warn.append(f"{_hm(minutes)} 걸립니다. 밤에 돌리기 좋습니다.")
+    warn += [
+        f"{p['label']}은 높이에 비해 바닥이 좁아 넘어질 수 있습니다 (참고값)."
+        for p in d["parts"]
+        if p.get("slender")
+    ]
+    return {
+        "id": plate.id,
+        "no": str(plate.no),
+        "kind": "plate",
+        "short": f"{color} 판",
+        "title": f"{color} · {_hm(minutes)} · {d['grams']} g",
+        # 자르는 설정은 도구가 정해 두어 늘 같다. 판마다 다른 것만 적는다
+        "do": [
+            f"{color} 필라멘트, {BED_KO.get(bed, bed)} 판으로 {d['file']}을 뽑습니다.",
+            f"프린터 화면의 파일 이름 끝 6자리가 {Path(str(d['file'])).stem[-6:]}인지 봅니다.",
+            "다 뽑으면 대화창에 알립니다. 못 쓰는 부품이 있으면 무엇이 왜 그런지 같이 적습니다.",
+        ],
+        "warn": warn,
+        "check": [],
+        "stuck": PLATE_STUCK,
+        "kit": [],
+        "show": [],
+        "plate": {
+            "bundle": plate.bundle,
+            "file": d["file"],
+            "folder": folder,
+            "image": f"data/prints/{plate.bundle}/{d['image']}" if d.get("image") else None,
+            "color": d["color"],
+            "preset": d["preset"],
+            "minutes": minutes,
+            "grams": d["grams"],
+            "parts": [
+                {
+                    "file": p["file"],
+                    "label": p["label"],
+                    "count": int(p["count"]),
+                    "height": p.get("height_mm"),
+                    "p": scene_of[p["file"]] if scene_of.get(p["file"], -1) >= 0 else None,
+                }
+                for p in d["parts"]
+            ],
+        },
+    }
+
+
+def print_json(
+    pg: PrintGuide,
+    plans: Path = PLANS_DIR,
+    meshes: dict[str, Mesh] | None = None,
+    warnings: list[str] | None = None,
+) -> dict[str, Any]:
+    """출력 안내 하나의 JSON. 단계가 판 하나다 (뽑았는지와 못 쓰는 부품은 db의 records에서 화면이 읽는다).
+    meshes를 주면 판의 부품 형상을 지금 설계 코드로 만들어 담는다 (부품을 누르면 3D로 보인다)."""
+    if not ID.match(pg.id):
+        raise GuideError(f"안내 id '{pg.id}'는 소문자, 숫자, 하이픈만 쓴다")
+    if pg.kind != "print" or not pg.bundles:
+        raise GuideError(f"{pg.id}: 출력 안내는 종류가 print이고 묶음이 하나 이상 있어야 한다")
+    plates = plates_of(pg, plans)
+    beds = {b: str(read_plan(b, plans).get("bed_type", "")) for b in pg.bundles}
+    scene: list[dict[str, Any]] = []
+    scene_of: dict[str, int] = {}
+    if meshes is not None:
+        scene, scene_of = _plate_scene(plates, meshes, warnings if warnings is not None else [])
+    steps = [_plate_step(p, beds[p.bundle], scene_of) for p in plates]
+    return {
+        "id": pg.id,
+        "kind": pg.kind,
+        "title": pg.title,
+        "sub": pg.sub,
+        "bundle": "",
+        "items": {},
+        "scene": scene,
+        "meshes": sorted({row["mesh"] for row in scene}),
+        "steps": steps,
+        "board": [],
+        "work": len(steps),
+        "summary": {
+            "plates": len(steps),
+            "minutes": sum(int(p.data["minutes"]) for p in plates),
+            "grams": round(sum(float(p.data["grams"]) for p in plates), 1),
+        },
     }
 
 
@@ -403,21 +588,38 @@ class Summary:
     warnings: list[str]
 
 
-def write_site(out: Path = OUT, guides: Sequence[Guide] | None = None) -> Summary:
+def write_site(
+    out: Path = OUT,
+    guides: Sequence[Guide | PrintGuide] | None = None,
+    plans: Path = PLANS_DIR,
+) -> Summary:
     """모든 안내를 검사하고 out에 사이트를 쓴다. data/는 새로 쓴다 (지운 형상이 남지 않게)."""
     if guides is None:
         from horilab_design.guide.guides import ALL
 
         guides = ALL
+    ids = [g.id for g in guides]
+    if len(set(ids)) != len(ids):
+        raise GuideError(f"안내 id가 겹친다: {ids}")
+    prints = [g for g in guides if isinstance(g, PrintGuide)]
     if (out / "data").exists():
         shutil.rmtree(out / "data")
     meshes: dict[str, Mesh] = {}
     rows = []
     warnings: list[str] = []
     for g in guides:
-        r = resolve(g)
-        warnings += [f"{g.id}: {w}" for w in r.warnings]
-        data = guide_json(r, meshes)
+        if isinstance(g, PrintGuide):
+            data = print_json(g, plans, meshes, warnings)
+            for bundle in g.bundles:
+                for plate in read_plan(bundle, plans)["plates"]:
+                    if plate.get("image"):
+                        dest = out / "data" / "prints" / bundle / str(plate["image"])
+                        dest.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copyfile(plans / bundle / str(plate["image"]), dest)
+        else:
+            r = resolve(g, prints, plans)
+            warnings += [f"{g.id}: {w}" for w in r.warnings]
+            data = guide_json(r, meshes)
         _write(out / "data" / "guides" / f"{g.id}.json", _dump(data))
         rows.append(
             {
@@ -426,11 +628,12 @@ def write_site(out: Path = OUT, guides: Sequence[Guide] | None = None) -> Summar
                 "title": g.title,
                 "sub": g.sub,
                 "work": data["work"],
-                # 처음 화면이 안내를 열지 않고 진행을 셈한다: 확인 칸이 있는 단계마다 [id, 번호, 짧은 이름, 칸 수]
+                # 처음 화면이 안내를 열지 않고 진행을 셈한다. 끝이 정해지는 단계마다 [id, 번호, 짧은 이름, 칸 수]:
+                # 확인 칸이 있는 단계는 칸을 다 누르면, 판 단계(칸 수 0)는 Claude가 뽑았다고 적으면 끝난다
                 "track": [
                     [s["id"], s["no"], s["short"], len(s["check"])]
                     for s in data["steps"]
-                    if s["check"]
+                    if s["check"] or s["kind"] == "plate"
                 ],
                 "file": f"data/guides/{g.id}.json",
             }
