@@ -74,6 +74,7 @@ layer_height = "0.2"
 initial_layer_print_height = "0.2"
 line_width = "0.42"
 outer_wall_line_width = "0.42"
+inner_wall_line_width = "0.45" # 벽 선 자리 (printcheck.air_walls가 이 값과 벽 수로 공중 벽 선을 찾는다)
 wall_generator = "classic"
 sparse_infill_pattern = "grid"
 enable_support = "0"

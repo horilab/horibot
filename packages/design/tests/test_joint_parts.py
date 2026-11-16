@@ -9,7 +9,7 @@ import pytest
 from horilab_design.parts import joint as j
 from horilab_design.parts import links, wrist
 from horilab_design.parts.shapes import cyl_y
-from horilab_design.printcheck import LAYER, mid_layer_levels, overhangs
+from horilab_design.printcheck import LAYER, air_walls, mid_layer_levels, overhangs, wall_settings
 from horilab_design.values import ServoModel, load_measured
 
 BED = 256.0  # 출력 범위 [mm]
@@ -43,6 +43,28 @@ def test_printed_parts_have_no_steep_overhang() -> None:
         over = overhangs(shape, up)
         # 45°로 깎은 면은 삼각형으로 나눌 때 45°를 조금 넘는 조각이 생긴다 (누름 틀의 원뿔 면 70 mm²)
         assert over.total - over.flat < 80.0, (name, over.total, over.flat)
+
+
+@pytest.mark.slow
+def test_air_walls_are_where_the_first_joint_plates_sagged() -> None:
+    # 첫 관절 판(2026-11-15)에서 실이 처진 자리와 공중 벽 선 검사가 잡는 자리가 같다. 처진 곳: 출력 원판 귀의
+    # 나사 머리 자리, 서보 받침의 M2 머리 자리 둘과 먼 가로대 밑(선 홈, 끝에 나사 구멍 둘), 뒷덮개의 나사 머리
+    # 자리 둘. 손목 몸통의 멈춤 홈 천장은 다리 선으로 잘 뽑혔다. 다음 관절 부품에서 이 자리들의 모양을 고치면
+    # 이 시험의 기대값을 비운다 (docs/status.md)
+    blocking: dict[str, list[tuple[str, float, float]]] = {}
+    for name, (shape, up, _c, preset) in wrist.printed().items():
+        found = [a for a in air_walls(shape, up, wall_settings(preset)) if a.blocking]
+        blocking[name] = sorted((a.kind, a.height, round(a.where[0])) for a in found)
+    assert (
+        blocking["wrist_body"] == [] and blocking["hub_plate"] == [] and blocking["retainer"] == []
+    )
+    assert {k for k, _h, _x in blocking["out_disc"]} >= {"ring"}
+    assert {h for _k, h, _x in blocking["out_disc"]} == {1.8}  # 높이는 0.01 mm로 반올림해 낸다
+    assert [k for k, _h, _x in blocking["wrist_cover"]] == ["ring", "ring"]
+    carrier = blocking["carrier"]
+    assert {h for _k, h, _x in carrier} == {0.8}
+    assert sum(k == "ring" for k, _h, _x in carrier) == 4  # M2 머리 자리 둘 + 가로대 끝 구멍 둘
+    assert any(k == "span" for k, _h, _x in carrier)  # 가로대 밑을 벽 선만으로 건넌다
 
 
 @pytest.mark.slow

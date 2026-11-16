@@ -48,7 +48,7 @@ from typing import Any
 
 from build123d import Axis, Compound, GeomType, Pos, export_stl
 
-from horilab_design.printcheck import mid_layer_levels, overhangs
+from horilab_design.printcheck import AirWall, air_walls, mid_layer_levels, overhangs, wall_settings
 from horilab_design.values import REPO_ROOT
 
 PRINT_FILE = REPO_ROOT / "params" / "print.toml"
@@ -465,6 +465,7 @@ class Geometry:
     overhang: float  # 바닥에 닿지 않고 아래를 보는 면 [mm²] (printcheck)
     overhang_largest: float
     slender: bool  # 높이에 비해 바닥이 좁다 (참고값)
+    air: tuple[AirWall, ...] = ()  # 공중에 뽑히는 벽 선 (printcheck.air_walls)
 
 
 def _module_items(module: str, part: str | None, color: str | None, cfg: PrintConfig) -> list[Item]:
@@ -557,18 +558,27 @@ def geometry(item: Item) -> tuple[Compound, Geometry]:
     )
     over = overhangs(item.shape, item.up)
     slender = height > SLENDER * math.sqrt(max(base, 1e-9))
-    return placed, Geometry(height, base, over.total - over.flat, over.largest, slender)
+    air = air_walls(item.shape, item.up, wall_settings(item.preset))
+    return placed, Geometry(height, base, over.total - over.flat, over.largest, slender, air)
 
 
-def shape_problems(item: Item) -> list[str]:
-    """자르기 전에 형상에서 보는 것: 수평면이 층의 한가운데에 있으면 뽑힌 높이가 그린 값과 한 층 다를 수 있다."""
+def shape_problems(item: Item, geo: Geometry | None = None) -> list[str]:
+    """자르기 전에 형상에서 보는 것.
+
+    - 수평면이 층의 한가운데에 있으면 뽑힌 높이가 그린 값과 한 층 다를 수 있다.
+    - 벽 선이 공중에 뽑히는 자리(구멍을 둘러싼 고리, 뜬 섬, 벽 선만으로 길게 건너기)는 처진다. 시험편은 그
+      모양 그대로 뽑아 재는 것이라 막지 않고 보고에만 넣는다.
+    """
+    out: list[str] = []
     levels = mid_layer_levels(item.shape, item.up)
-    if not levels:
-        return []
-    where = ", ".join(f"{z:g}" for z in levels)
-    return [
-        f"{item.name}: 수평면이 층의 한가운데에 있다 (바닥에서 {where} mm). 한 층이 더 뽑힐지가 정해지지 않는다"
-    ]
+    if levels:
+        where = ", ".join(f"{z:g}" for z in levels)
+        out.append(
+            f"{item.name}: 수평면이 층의 한가운데에 있다 (바닥에서 {where} mm). 한 층이 더 뽑힐지가 정해지지 않는다"
+        )
+    if geo is not None and item.module != "coupons":
+        out += [f"{item.name}: {a.describe()}" for a in geo.air if a.blocking]
+    return out
 
 
 # ---- 판 나누기와 판마다 자르기 ------------------------------------------------------------------------------
@@ -653,7 +663,7 @@ def make_plan(specs: Sequence[str], name: str, out: Path = OUT_DIR, exe: Path = 
     for item in plan.items:
         placed, geo = geometry(item)
         plan.geometry[item.name] = geo
-        problems += shape_problems(item)
+        problems += shape_problems(item, geo)
         if geo.height > cfg.max_height_mm:
             problems.append(
                 f"{item.name}: 높이 {geo.height:.1f} mm가 출력 범위({cfg.max_height_mm:.0f} mm)를 넘는다"
@@ -777,6 +787,7 @@ def describe(plan: Plan, cfg: PrintConfig) -> str:
         f"출력 준비 {plan.name}: 스튜디오 {cfg.studio_version}, 프리셋 묶음 {cfg.profiles_version}, 판 {cfg.bed_type}"
     ]
     labels = {i.name: i.label for i in plan.items}
+    modules = {i.name: i.module for i in plan.items}
     for k, plate in enumerate(plan.plates, start=1):
         night = "  (밤에)" if plate.seconds > cfg.overnight_hours * 3600 else ""
         state = "통과" if not plate.problems else "막힘"
@@ -791,6 +802,12 @@ def describe(plan: Plan, cfg: PrintConfig) -> str:
                 f"  {labels[n]} ×{c} ({n}.stl)  높이 {g.height:.1f} mm, 바닥 {g.base_area:.0f} mm², "
                 f"걸침 {g.overhang:.0f} mm²{note}"
             )
+            coupon = modules[n] == "coupons"
+            lines += [
+                f"    {a.describe()}" + (" (시험편이라 막지 않는다)" if a.blocking else "")
+                for a in g.air
+                if coupon or not a.blocking
+            ]
         lines += [f"  - {p}" for p in plate.problems]
     lines += [f"- {p}" for p in plan.problems]
     total = sum(p.seconds for p in plan.plates)

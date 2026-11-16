@@ -7,11 +7,12 @@ import json
 import math
 import subprocess
 import zipfile
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import pytest
-from build123d import Box, Compound, Pos
+from build123d import Box, Compound, Cylinder, Pos
 
 from horilab_design import slicing as sl
 
@@ -223,6 +224,18 @@ def test_faces_in_the_middle_of_a_layer_block_the_plan() -> None:
     assert "2.5" in sl.shape_problems(_item("step", step))[0]
     flat = Compound([Pos(0, 0, 1.2) * Box(20, 20, 2.4) + Pos(0, 0, 4.0) * Box(6, 6, 8.0)])
     assert sl.shape_problems(_item("flat", flat)) == []
+
+
+def test_air_walls_block_parts_but_coupons_are_only_reported() -> None:
+    # 나사 머리 자리(지름 6.6, 깊이 1.8)에 구멍이 뚫린 판: 구멍을 둘러싼 벽 고리가 공중에 뜬다
+    plate = Pos(0, 0, 3) * Box(20, 20, 6) - Pos(0, 0, 0.9) * Cylinder(3.3, 1.8)
+    plate = Compound([plate - Pos(0, 0, 3) * Cylinder(1.7, 6)])
+    part = _item("plate", plate)
+    _, geo = sl.geometry(part)
+    assert [a.kind for a in geo.air] == ["ring"]
+    assert any("구멍을 둘러싼 벽 고리" in p for p in sl.shape_problems(part, geo))
+    coupon = replace(part, module="coupons")
+    assert sl.shape_problems(coupon, geo) == []
 
 
 def test_studio_is_asked_for_warning_level_logs(

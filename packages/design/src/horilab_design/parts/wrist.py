@@ -16,7 +16,12 @@ from build123d import Compound, Location, Pos, Rot
 
 from horilab_design.parts import joint as j
 from horilab_design.parts.shapes import box, cyl_x, cyl_y, cyl_z, far_apart, nut_trap, solid
-from horilab_design.printcheck import mid_layer_levels, overhangs, printed_mass_g
+from horilab_design.printcheck import (
+    air_wall_lines,
+    mid_layer_levels,
+    overhangs,
+    printed_mass_g,
+)
 from horilab_design.values import ServoModel
 
 # 서보 먼 끝과 앞 관절 출력 원판 사이: 혼 볼트 머리(1.65)가 들고, 그 양옆으로 선 둘(두께 1.5)이 지나간다
@@ -250,6 +255,7 @@ def report(model: ServoModel = "STS3215") -> None:
         "층 가운데에 걸친 수평면 (한 층이 더 뽑힐지가 정해지지 않는다): "
         + (", ".join(f"{n} {z}" for n, z in mid.items() if z) or "없음")
     )
+    print("\n".join(air_wall_lines(printed())))
     paths = {name: j.nut_entry_overlap(part, c, a, s) for name, part, c, a, s in j.side_nuts()}
     print(
         "옆 홈에 너트를 곧게 밀어 넣을 때 겹침 [mm³]: "

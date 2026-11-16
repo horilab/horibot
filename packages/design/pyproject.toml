@@ -11,6 +11,7 @@ dependencies = [
     "numpy>=2.5.4",
     "ocp-vscode>=4.2,<4.3",
     "pydantic>=2,<3",
+    "shapely>=2.2,<3",
     "tomlkit>=0.13",
 ]
 

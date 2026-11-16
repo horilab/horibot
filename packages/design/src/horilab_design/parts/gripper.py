@@ -29,7 +29,7 @@ from build123d import Axis, Compound, Cone, Polygon, Pos, Rot, extrude
 from horilab_design.parts import flange, wrist
 from horilab_design.parts import joint as j
 from horilab_design.parts.shapes import box, cyl_y, far_apart, nut_trap, solid
-from horilab_design.printcheck import overhangs, printed_mass_g
+from horilab_design.printcheck import air_wall_lines, overhangs, printed_mass_g
 from horilab_design.values import ServoModel
 
 MODEL: ServoModel = "STS3215"
@@ -789,6 +789,7 @@ def report() -> None:
             f"{printed_mass_g(shape, up, preset):5.1f} g  걸침 {over.total:5.0f} mm² (거의 수평 {over.flat:.0f}, "
             f"가장 넓은 한 자리 {over.largest:.0f})"
         )
+    print("\n".join(air_wall_lines(printed())))
     m = mass_g()
     print(
         "무게 [g]: "

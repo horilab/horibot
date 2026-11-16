@@ -19,7 +19,7 @@ from build123d import Compound
 from horilab_design.parts import joint as j
 from horilab_design.parts import shoulder as sh
 from horilab_design.parts.shapes import box, cyl_x, cyl_y, solid
-from horilab_design.printcheck import overhangs, printed_mass_g
+from horilab_design.printcheck import air_walls, overhangs, printed_mass_g, wall_settings
 
 WALL = 2.6  # 0.20mm Strength의 벽 6겹
 EMBED = 6.0  # 관을 납작하게 깎는 깊이: 바닥에서 45° 안으로 선다
@@ -176,6 +176,10 @@ def report() -> None:
             print(
                 f"    높이 {hgt:4.0f}  자리 ({u:6.1f}, {v:5.1f})  넓이 {a:6.1f}  {'수평' if flat else '비스듬'}"
             )
+        air = air_walls(part, up, wall_settings("strength"))
+        print(f"  공중에 뽑히는 벽 선: {'없음' if not air else ''}")
+        for wall in air:
+            print(f"    {wall.describe()}")
 
 
 if __name__ == "__main__":

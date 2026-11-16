@@ -28,7 +28,7 @@ from build123d import Compound, Rot
 from horilab_design.parts import joint as j
 from horilab_design.parts import wrist
 from horilab_design.parts.shapes import box, cyl_y, far_apart, solid
-from horilab_design.printcheck import overhangs, printed_mass_g
+from horilab_design.printcheck import air_wall_lines, overhangs, printed_mass_g
 from horilab_design.values import ServoModel
 
 TOOL_PIN_R = 11.5  # 도구 핀 둘이 축에서 떨어진 거리. 핀 구멍이 혼 볼트 머리와 3.7, 저널 바깥 면과 1.8 떨어진다
@@ -192,6 +192,7 @@ def report(model: ServoModel = "STS3215") -> None:
             f"{printed_mass_g(shape, up, preset):5.1f} g  걸침 {over.total:5.0f} mm² (거의 수평 {over.flat:.0f}, "
             f"가장 넓은 한 자리 {over.largest:.0f})"
         )
+    print("\n".join(air_wall_lines(printed())))
     hits = j.overlaps([p for p in parts if "핀" not in p.name and "손잡이" not in p.name])
     print(
         "\n겹침 [mm³]: " + (", ".join(f"{a} ∩ {b} {v:.2f}" for (a, b), v in hits.items()) or "없음")

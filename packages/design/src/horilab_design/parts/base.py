@@ -45,7 +45,7 @@ from horilab_design.parts.shapes import (
     solid,
     teardrop,
 )
-from horilab_design.printcheck import overhangs, printed_mass_g
+from horilab_design.printcheck import air_wall_lines, overhangs, printed_mass_g
 from horilab_design.values import ServoModel
 
 # ---- 축 방향 쌓임 (혼 윗면 j.SEAT에서 위로) ----
@@ -745,6 +745,7 @@ def report(model: ServoModel = "STS3215") -> None:
             f"{printed_mass_g(shape, up, preset):5.1f} g  걸침 {over.total:5.0f} mm² (거의 수평 {over.flat:.0f}, "
             f"가장 넓은 한 자리 {over.largest:.0f})"
         )
+    print("\n".join(air_wall_lines(printed())))
     metal = sum(p.mass_g for p in parts if p.density > 0 and "핀" not in p.name)
     print(f"나사와 너트 {metal:.1f} g")
     for name, value in screw_checks(model).items():

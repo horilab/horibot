@@ -29,7 +29,7 @@ from build123d import Compound, Cone, Pos, Rot
 
 from horilab_design.parts import joint as j
 from horilab_design.parts.shapes import box, cyl_x, cyl_y, cyl_z, far_apart, solid
-from horilab_design.printcheck import overhangs, printed_mass_g
+from horilab_design.printcheck import air_wall_lines, overhangs, printed_mass_g
 
 # ---- 서보 ST-3120 (공식 도면) ----
 NEAR, FAR = 15.9, 49.1
@@ -572,6 +572,7 @@ def report() -> None:
             f"{printed_mass_g(shape, up, preset):5.1f} g  걸침 {over.total:5.0f} mm² (거의 수평 {over.flat:.0f}, "
             f"가장 넓은 한 자리 {over.largest:.0f})"
         )
+    print("\n".join(air_wall_lines(printed())))
     metal = sum(p.mass_g for p in parts if p.density > 0 and "핀" not in p.name)
     print(f"나사와 너트 {metal:.1f} g")
     hits = j.overlaps([p for p in parts if "핀" not in p.name])

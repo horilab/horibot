@@ -23,7 +23,7 @@ from build123d import Compound, Location, Plane
 from horilab_design.parts import flange, wrist
 from horilab_design.parts import joint as j
 from horilab_design.parts.shapes import box, cyl_x, cyl_z, far_apart, solid
-from horilab_design.printcheck import overhangs, printed_mass_g
+from horilab_design.printcheck import air_wall_lines, overhangs, printed_mass_g
 from horilab_design.values import ServoModel, load_measured
 
 _MEASURED = load_measured()
@@ -338,6 +338,7 @@ def report(model: ServoModel = "STS3215") -> None:
             f"  {name:11s} {color:5s} {size.X:5.1f} × {size.Y:5.1f} × {size.Z:5.1f} mm  "
             f"{printed_mass_g(shape, up, preset):5.1f} g  걸침 {over.total:5.0f} mm² (거의 수평 {over.flat:.0f})"
         )
+    print("\n".join(air_wall_lines(printed())))
     for name, value in screw_checks().items():
         print(f"  {name}: {value:.2f}")
     print(
