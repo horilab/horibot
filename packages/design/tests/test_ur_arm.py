@@ -15,6 +15,7 @@ from horilab_design.printcheck import printed_mass_g
 from horilab_design.studies import packaging as pk
 from horilab_design.studies import ur_arm
 from horilab_design.studies.packaging import DEG, MM
+from horilab_design.values import load_measured
 
 UP = (0.0, -1.0, 0.0)  # 몸통은 원통 앞 끝을 바닥에 두고 뽑는다
 
@@ -226,6 +227,21 @@ def test_mass_constants_match_the_cad() -> None:
         assert printed_mass_g(links.link(length, tube_r, foot), UP) == pytest.approx(
             model * 1000, abs=2.0
         )
+
+
+def test_first_joint_weighs_what_the_arm_model_says() -> None:
+    # 조립한 첫 관절(J5: 손목 몸통 둘, 서보, 6806, 속 부품과 나사)을 서보 선과 영점 핀이 꽂힌 채로 쟀다
+    measured = load_measured()
+    wire = 3.5  # 20 cm 서보 선 (실측, studies/wiring.py)
+    pin = math.pi * 1.5**2 * 20.0 * 7.85e-3  # 영점 핀 MSH3-20 (강철, 크기로 어림한 1.1 g)
+    net = measured.assembly_mass_g["first_joint"] - wire - pin
+    model = (
+        2 * ur_arm.WRIST_BODY_MASS
+        + ur_arm.INNER_MASS
+        + ur_arm.OUT_MASS
+        + ur_arm.BEARING_MASS["STS3215"]
+    ) * 1000 + measured.servo_mass_g["STS3215"]
+    assert net == pytest.approx(model, rel=0.03)
 
 
 @pytest.mark.slow

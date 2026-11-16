@@ -214,6 +214,8 @@ class Measured(_Values):
     servo_plug: ServoPlug | None = None
     servo_back_screw: BackScrew | None = None
     bearing_mass_g: dict[str, float] = {}  # 베어링 하나의 무게 (호칭 번호마다, 예: "6806")
+    # 조립한 무게 (조립 이름 → g). 팔 모델의 무게와 맞춰 본다
+    assembly_mass_g: dict[str, float] = {}
     fit: dict[Filament, PrintFit] = {}
 
 
