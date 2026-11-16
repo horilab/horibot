@@ -6,9 +6,12 @@
 
 from __future__ import annotations
 
-from horilab_design.guide.catalog import printed_items
+from build123d import Box, Compound, Plane, Vector
+
+from horilab_design.guide.catalog import ITEMS, printed_items
 from horilab_design.guide.model import (
     Guide,
+    Item,
     Label,
     Move,
     Place,
@@ -21,10 +24,52 @@ from horilab_design.guide.model import (
 )
 from horilab_design.parts import joint as j
 from horilab_design.parts import wrist
+from horilab_design.parts.shapes import box, solid
 from horilab_design.values import ServoModel
 
 MODEL: ServoModel = "STS3215"
 DY = j.servo_dy(MODEL)  # 서보와 거기 달린 서보 받침, 뒷덮개가 축 방향으로 옮겨진 값
+# 이 관절은 팔의 J5다: 서보가 든 손목 몸통이 J5의 집(손목 1)이고, 자식은 J6의 집이 될 손목 2다 (0029). 서보 ID는
+# 관절 번호다 (servo-setup.md)
+SERVO_ID = 5
+SERVO_ITEM = Item(
+    "servo_sts3215",
+    f"서보 STS3215 · ID {SERVO_ID}",
+    "bought",
+    f"혼이 달린 것. ID {SERVO_ID} 이름표가 붙은 서보 (이 관절은 J{SERVO_ID})",
+    thumb=ITEMS["servo_sts3215"].thumb,
+)
+
+# 서보 선이 지나는 길 (0031): +z 쪽 커넥터에 꽂아 서보 받침 판 위에 눕히고, 서보 먼 끝을 따라 앞쪽으로 내려 앞벽
+# 가운데 홈으로 뺀다. 홈을 나온 뒤는 발 쪽으로 늘어뜨린 모습이다 (출력 원판 둘레에 감는 길은 300 mm 선으로 감아
+# 돌려 볼 때 그린다)
+_W, _T = j.WIRE_W, j.WIRE_T
+_PLUG_Z = (0.45, 9.46)  # +z 쪽 커넥터에 꽂은 플러그 (parts/joint.py의 servo())
+_ZC = sum(_PLUG_Z) / 2
+_WY = (j.WIRE_TOP + DY, j.PLUG_TOP + DY)  # 판 위에 눕힌 선의 두께 범위
+_XD = -(j.FAR + 0.3 + _T / 2)  # 서보 먼 끝 앞으로 내리는 선의 가운데 (먼 끝 면에서 0.3 띄운다)
+
+
+def _slant(a: tuple[float, float], b: tuple[float, float]) -> Compound:
+    """판 위에서 비스듬히 가는 선 한 토막: (x, z) a에서 b까지, 두께는 y 방향. 이음매를 덮게 양 끝을 늘린다."""
+    va, vb = Vector(a[0], 0.0, a[1]), Vector(b[0], 0.0, b[1])
+    d = vb - va
+    x = d.normalized()
+    mid = (va + vb) * 0.5 + Vector(0.0, sum(_WY) / 2, 0.0)
+    plane = Plane(origin=mid, x_dir=x, z_dir=x.cross(Vector(0.0, 1.0, 0.0)))
+    return solid(plane * Box(d.length + _W, _T, _W))
+
+
+def _cable() -> tuple[Compound, Compound]:
+    """서보 선: (꽂은 플러그, 선)."""
+    plug = box(-16.6, -11.85, j.PLUG_TOP + DY, j.L1 + 0.5 + DY, *_PLUG_Z)
+    wire = box(-26.0, -12.6, *_WY, _ZC - _W / 2, _ZC + _W / 2)  # 판 위, 발 쪽으로
+    wire += _slant((-26.0, _ZC), (-33.0, 0.0))  # 가운데로 모으며
+    wire += box(_XD - _T / 2, -33.0, *_WY, -_W / 2, _W / 2)
+    wire += box(_XD - _T / 2, _XD + _T / 2, _WY[0], j.FRONT + _T, -_W / 2, _W / 2)  # 먼 끝 앞으로
+    wire += box(-45.0, _XD + _T / 2, j.FRONT, j.FRONT + _T, -_W / 2, _W / 2)  # 홈을 나와 발 쪽으로
+    return solid(plug), solid(wire)
+
 
 # 장면 부품 이름(설계 코드) → 부품 목록 키. 앞에서부터 이름의 앞부분이 맞는 것을 쓴다. 세 번째는 개수에 넣는지
 _KEYS: tuple[tuple[str, str, bool], ...] = (
@@ -58,6 +103,9 @@ def scene() -> list[ScenePart]:
             continue
         key, count = next((k, c) for prefix, k, c in _KEYS if p.name.startswith(prefix))
         out.append(ScenePart(p.name, p.shape, key, p.color, p.moving, count))
+    plug, wire = _cable()
+    out.append(ScenePart("서보 선 플러그", plug, "servo_cable", "plug", False, False))
+    out.append(ScenePart("서보 선", wire, "servo_cable", "wire", False, False))
     return out
 
 
@@ -108,7 +156,7 @@ STEPS: tuple[Step, ...] = (
         ),
         check=(
             "출력 부품 7개: 흰색 손목 몸통 둘, 검정 다섯",
-            "베어링, 서보, 영점 핀, 선 둘",
+            f"베어링, 서보(ID {SERVO_ID}), 영점 핀, 서보 선",
             "나사와 너트를 개수대로",
             "공구",
         ),
@@ -351,7 +399,7 @@ STEPS: tuple[Step, ...] = (
         "받침 달기",
         "서보에 서보 받침 달기",
         do=(
-            "서보를 혼이 아래로 가게 엎어 놓습니다.",
+            f"ID {SERVO_ID} 이름표가 붙은 서보를 혼이 아래로 가게 엎어 놓습니다.",
             "서보 받침을 날개가 아래(혼 쪽)로 가게 들고, 판을 서보 뒷면에 얹습니다. 판의 작은 구멍 넷이 서보 "
             "뒷면의 나사 구멍 넷과 맞아야 합니다. 거꾸로 놓으면 구멍이 맞지 않습니다.",
             "서보 뒷면 나사 4개를 작은 십자 드라이버로 조입니다.",
@@ -439,7 +487,8 @@ STEPS: tuple[Step, ...] = (
             "손끝이나 육각렌치 끝으로 돌려 맞춥니다.",
             "출력 원판을 윗면(매끈한 면)이 위로, 귀가 발 반대쪽에 오게 듭니다. 가운데 볼록한 곳을 베어링 안쪽 "
             "링에 끼웁니다.",
-            "원판을 조금씩 돌려, 원판의 구멍 넷으로 혼의 나사 구멍이 보이게 맞춥니다.",
+            "원판을 조금씩 돌려, 원판의 구멍 넷으로 혼의 나사 구멍이 보이게 맞춥니다. 속이 어두우면 휴대폰 "
+            "불빛을 비춥니다.",
         ),
         warn=(
             "뒤집는 동안 서보 받침에서 손을 떼면 서보와 허브 판이 빠집니다.",
@@ -510,29 +559,32 @@ STEPS: tuple[Step, ...] = (
         "서보 선 꽂기",
         do=(
             "손목 몸통을 뒤쪽(열린 쪽)이 위로 오게 놓습니다.",
-            "서보 선(20 cm)의 한쪽 플러그를 서보 뒷면의 커넥터 둘 가운데 하나에 꽂습니다. 서보 받침 판의 터진 "
-            "쪽으로 플러그 옆면을 잡고 끝까지 밉니다.",
-            "선을 서보 받침 판 위로 눕혀 발 쪽(서보 먼 끝)으로 보내고, 서보 먼 끝 밑의 틈을 지나 앞벽 가운데 "
-            "홈으로 뺍니다.",
+            "서보 선(20 cm)의 한쪽 플러그를 서보 뒷면의 커넥터 둘 가운데 아무 쪽에나 꽂습니다 (①). 서보 받침 "
+            "판의 터진 쪽으로 플러그 옆면을 잡고 끝까지 밉니다.",
+            "선을 서보 받침 판 위에 눕혀 발 쪽(서보 먼 끝)으로 보냅니다 (②).",
+            "판 끝에서 선을 앞쪽(출력 원판 쪽)으로 꺾어 서보 먼 끝의 검은 면을 따라 내리고 (③), 앞벽 가운데 "
+            "홈으로 뺍니다. 남는 선은 발 쪽으로 늘어뜨립니다.",
         ),
         warn=(
             "선이 비틀리거나 꺾이지 않게 눕힙니다. 뒷덮개를 달면 선은 판 위 좁은 틈(약 2 mm)을 지나갑니다.",
+            "선을 열린 쪽 가장자리나 옆벽 위로 빼지 않습니다. 그러면 뒷덮개가 선 위에 떠서 들뜹니다.",
         ),
         check=(
             "플러그가 끝까지 꽂혀 살짝 당겨도 빠지지 않는다.",
-            "선이 앞벽 가운데 홈으로 나와 있다.",
+            "선이 서보 먼 끝을 따라 내려와 앞벽 가운데 홈으로 나와 있다.",
         ),
-        stuck="선의 길은 3D에 아직 그리지 않았습니다 (배선 안내에서 그립니다). 길이 헷갈리면 사진을 보내 주세요.",
+        stuck="그림은 한쪽 커넥터에 꽂은 모습입니다. 다른 쪽에 꽂아도 길은 같습니다. 헷갈리면 사진을 보내 주세요.",
+        adds=("서보 선",),
         uses=(Use("servo_cable", 1),),
-        view=View((0, -1, 0), (1, 0, 0), 55, 20),
-        spots=(
-            Spot(
-                "서보 몸통",
-                "커넥터",
-                ((-14.2, j.L1 + DY - 1.0, 4.95), (-14.2, j.L1 + DY - 1.0, -4.95)),
-            ),
+        view=View((0, -1, 0), (-1, 0, 1.1), 22, 0),
+        shell=(HOUSE,),
+        ghost=True,
+        labels=(
+            Label("서보 선 플러그", "① 플러그", (-14.2, _WY[0] - 8.0, _ZC)),
+            Label("서보 선$", "② 판 위에 눕혀", (-31.0, _WY[0], 1.5)),
+            Label("서보 선$", "③ 먼 끝 면 따라 앞쪽으로", (_XD, 10.0, 0.0)),
         ),
-        tags=(BACK_TAG, EXIT_TAG),
+        tags=(EXIT_TAG,),
     ),
     Step(
         "cover",
@@ -585,25 +637,27 @@ STEPS: tuple[Step, ...] = (
         tags=(EAR_TAG,),
     ),
     Step(
-        "wrap",
-        "선 감기",
-        "선 감고 끝까지 돌려 보기",
+        "turn",
+        "돌려 보기",
+        "끝까지 돌려 보기",
         do=(
-            "앞벽 가운데 홈으로 나온 서보 선을 살 위로 건너, 두 몸통 사이 층(출력 원판의 테)에 놓습니다.",
-            "D405 선을 서보 선 위에 겹쳐 같은 길로 놓습니다.",
-            "선 끝을 자식 몸통 쪽(멈춤 귀의 반대쪽)에서 테이프로 잡습니다.",
-            "자식 몸통을 손으로 천천히 돌려, 양쪽 끝(멈춤 기둥이 살에 닿는 데)까지 가 봅니다.",
+            "서보 선은 앞벽 가운데 홈에서 나온 채 발 쪽으로 늘어뜨립니다. 선을 출력 원판 둘레에 감아 돌려 보는 "
+            "일은 300 mm 선이 오면 따로 합니다.",
+            "한 손으로 아래 몸통(집)을 책상에 눌러 잡고, 다른 손으로 위 몸통(자식)을 천천히 한쪽 끝까지 돌립니다.",
+            "반대쪽 끝까지 천천히 돌립니다.",
         ),
-        warn=("돌릴 때 걸리면 억지로 돌리지 않습니다. 걸린 자리를 사진으로 보내 주세요.",),
+        warn=(
+            "천천히 돌립니다. 서보는 기어비가 커서 손으로 돌리면 뻑뻑한 것이 정상이고, 빨리 돌리면 기어에 무리가 "
+            "갈 수 있습니다.",
+            "끝에서 멈춤 기둥이 살에 닿으면 더 밀지 않습니다. 걸리면 억지로 돌리지 말고 사진을 보내 주세요.",
+        ),
         check=(
             "양쪽 끝까지 걸리는 곳 없이 돈다.",
-            "선이 끼이거나 팽팽히 당겨지지 않는다.",
             "양쪽 끝에서 멈춤 기둥이 살에 닿아 멈춘다.",
         ),
-        uses=(Use("d405_cable", 1), Use("tape")),
+        uses=(Use("servo_cable", note="홈에서 나온 채 발 쪽으로 늘어뜨린다", count=False),),
         turn=(-j.STOP_DEG, j.STOP_DEG),
         view=View((0, 1, 0), (1, 0, 0), 30, 35),
-        tags=(EXIT_TAG,),
     ),
     Step(
         "pin",
@@ -613,9 +667,13 @@ STEPS: tuple[Step, ...] = (
             "자식 몸통을 돌려, 자식의 핀 귀(구멍 난 귀)가 집 목의 살 위에 오게 합니다. 가운데에서 90° 돌린 "
             "자리입니다.",
             "영점 핀을 자식의 귀 구멍으로 넣어 살의 구멍까지 밉니다.",
-            "끝까지 들어가는지 본 뒤 핀을 뺍니다. 영점을 잴 때 다시 씁니다.",
+            "끝까지 들어가는지 본 뒤 핀을 뺍니다. 영점을 잴 때 다시 씁니다. 손으로 안 빠지면 펜치로 나온 끝을 "
+            "잡고, 핀을 제자리에서 살짝 비틀며 곧게 당깁니다.",
         ),
-        warn=("핀이 안 들어가면 억지로 밀지 않습니다. 사진을 보내 주세요.",),
+        warn=(
+            "핀이 안 들어가면 억지로 밀지 않습니다. 사진을 보내 주세요.",
+            "핀이 꽂힌 채로 관절을 돌리지 않습니다.",
+        ),
         check=("핀이 두 구멍을 지나 걸림 없이 들어간다.",),
         adds=("영점 핀",),
         moves=(Move(("영점 핀",), (0.0, 24.0, 0.0)),),
@@ -642,9 +700,9 @@ GUIDE = Guide(
     id="first-joint",
     kind="assembly",
     title="첫 관절 조립",
-    sub="STS 관절 · 손목 몸통 둘 · STS3215",
+    sub=f"J5 · 손목 몸통 둘 · STS3215 ID {SERVO_ID}",
     scene=scene,
     steps=STEPS,
-    items=printed_items(wrist.LABELS, wrist.PRINT_SPEC),
+    items={**printed_items(wrist.LABELS, wrist.PRINT_SPEC), SERVO_ITEM.key: SERVO_ITEM},
     bundle="first-joint",
 )

@@ -200,6 +200,19 @@ def resolve(guide: Guide, prints: Sequence[PrintGuide] = (), plans: Path = PLANS
     for p in parts:
         if p.key not in items:
             raise GuideError(f"{guide.id}: 장면 부품 '{p.name}'의 키 '{p.key}'가 부품 목록에 없다")
+    # 서보는 어느 서보인지(ID)를 이름에 쓴다 (서보마다 ID 이름표가 붙어 있다). 서보 선은 서보가 아니다
+    keys = {p.key for p in parts} | {u.key for s in guide.steps for u in s.uses}
+    for key in sorted(keys):
+        it = items.get(key)
+        if (
+            it is not None
+            and key.startswith("servo_")
+            and it.icon != "wire"
+            and "ID" not in it.name
+        ):
+            raise GuideError(
+                f"{guide.id}: 서보 '{it.name}'에 ID가 없다. 안내의 items에서 이름에 ID를 쓴다"
+            )
     plates = plate_refs(guide.bundle, prints, plans) if guide.bundle else {}
     warnings: list[str] = []
     used_printed = {p.key for p in parts if items[p.key].kind == "printed"}

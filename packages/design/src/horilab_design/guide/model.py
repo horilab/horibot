@@ -17,7 +17,7 @@ from build123d import Compound
 Vec = tuple[float, float, float]
 
 # 장면 부품의 색 구실 (화면의 색과 같은 이름)
-COLORS = ("body", "cap", "frame", "metal", "servo", "plug", "pin")
+COLORS = ("body", "cap", "frame", "metal", "servo", "plug", "pin", "wire")
 
 
 @dataclass(frozen=True)

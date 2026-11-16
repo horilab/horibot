@@ -291,6 +291,13 @@
     $('tBare').setAttribute('aria-pressed', on ? 'true' : 'false');
     afterLayout();
   }
+  // 이름표 끄기: 3D 위의 부품 이름표와 방향 이름표를 숨긴다 (손볼 자리 번호는 글에서 가리키므로 둔다). 이 기기에 기억한다
+  function setLabels(off) {
+    app.classList.toggle('nolabels', off);
+    $('tLabels').textContent = off ? '이름표 켜기 (L)' : '이름표 끄기 (L)';
+    $('tLabels').setAttribute('aria-pressed', off ? 'true' : 'false');
+  }
+  function toggleLabels() { const off = !app.classList.contains('nolabels'); setLabels(off); store('nolabels', off); }
 
   // ---------- 칸 채우기 ----------
   function stepRef() { return S.guide ? S.guide.steps[S.cur] : null; }
@@ -664,7 +671,7 @@
   // ---------- 3D ----------
   let G = null;
   const MESH = {};
-  const COLORS = { body: 0xf1f1ee, cap: 0x2b2e33, frame: 0x3a4250, metal: 0xb7bec7, servo: 0x30343a, plug: 0xf3efe4, pin: 0xe0a030 };
+  const COLORS = { body: 0xf1f1ee, cap: 0x2b2e33, frame: 0x3a4250, metal: 0xb7bec7, servo: 0x30343a, plug: 0xf3efe4, pin: 0xe0a030, wire: 0xd4372c };
   function b64(s) { const bin = atob(s); const out = new Uint8Array(bin.length); for (let k = 0; k < bin.length; k += 1) out[k] = bin.charCodeAt(k); return out; }
   function decodeMesh(m) {
     const T = window.THREE;
@@ -1056,6 +1063,8 @@
   $('tView').addEventListener('click', () => reframe(false));
   $('tPlate').addEventListener('click', () => { const st = stepRef(); if (st && st.plate) { S.platePart = null; showPlateStage(st); renderPlateParts(st); } });
   $('tBare').addEventListener('click', toggleBare);
+  $('tLabels').addEventListener('click', toggleLabels);
+  setLabels(recall('nolabels') === true);
 
   // ---------- 작은 그림 (부품 목록의 그림을 이 안내의 형상으로 그린다) ----------
   function makeThumbs() {
@@ -1262,7 +1271,7 @@
     if (app.classList.contains('bare')) toggleBare(); else afterLayout();
     toast('칸을 처음 자리로 돌렸습니다.');
   });
-  // 키: 스페이스, → 다음 단계 / ← 이전 단계 / 쉼표(,) 마침표(.) 움직임 한 칸씩 / H 칸 숨기기 / Esc 닫기
+  // 키: 스페이스, → 다음 단계 / ← 이전 단계 / 쉼표(,) 마침표(.) 움직임 한 칸씩 / H 칸 숨기기 / L 이름표 끄기 / Esc 닫기
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') { if (drag) dragCancel(); closeMenu(); return; }
     if (S.view !== 'step' || e.altKey || e.ctrlKey || e.metaKey || e.isComposing || !$('gMenu').hidden) return;
@@ -1271,6 +1280,7 @@
     if (e.key === ',' || e.key === '<') { e.preventDefault(); stepFrame(-1); return; }
     if (e.key === '.' || e.key === '>') { e.preventDefault(); stepFrame(1); return; }
     if (e.code === 'KeyH') { e.preventDefault(); toggleBare(); return; }
+    if (e.code === 'KeyL') { e.preventDefault(); toggleLabels(); return; }
     const onRange = tag === 'INPUT' && t.type === 'range';
     if (e.key === ' ' || (!onRange && (e.key === 'ArrowRight' || e.key === 'PageDown'))) { e.preventDefault(); if (S.cur < S.guide.steps.length - 1) go(S.gid, S.cur + 1); }
     else if (!onRange && (e.key === 'ArrowLeft' || e.key === 'PageUp')) { e.preventDefault(); if (S.cur > 0) go(S.gid, S.cur - 1); }

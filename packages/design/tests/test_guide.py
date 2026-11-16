@@ -82,6 +82,25 @@ def test_resolve_counts_once_and_rejects_bad_steps() -> None:
         resolve(_tiny_guide((Step("a", "a", "a", ("한다",), view=UP, adds=("집", "너트")),)))
 
 
+def test_servo_without_id_is_rejected() -> None:
+    def scene() -> list[ScenePart]:
+        return [ScenePart("서보", solid(Box(20.0, 20.0, 20.0)), "servo_sts3215", "servo")]
+
+    guide = Guide("noid", "assembly", "서보", "시험", scene, (_work("s", adds=("서보",)),))
+    with pytest.raises(GuideError, match="ID가 없다"):
+        resolve(guide)
+    named = Guide(
+        "named",
+        "assembly",
+        "서보",
+        "시험",
+        scene,
+        (_work("s", adds=("서보",)),),
+        items={"servo_sts3215": first_joint.SERVO_ITEM},
+    )
+    assert resolve(named).totals == {"servo_sts3215": 1}
+
+
 @pytest.mark.slow
 def test_first_joint_guide_counts_match_the_parts_list() -> None:
     r = resolve(first_joint.GUIDE)
@@ -102,9 +121,10 @@ def test_first_joint_guide_counts_match_the_parts_list() -> None:
         "servo_cable": 1,
         "wrist_cover": 1,
         "m3x12": 2,
-        "d405_cable": 1,
         "pin_msh3_20": 1,
     }
+    # 서보는 어느 서보인지(ID) 이름에 보인다
+    assert "ID 5" in first_joint.GUIDE.items["servo_sts3215"].name
     kinds = [s["kind"] for s in r.steps]
     assert kinds[0] == "prep" and kinds[-1] == "end" and kinds.count("work") == 19
     # 옆 홈의 너트는 설계 코드의 입구 쪽에서 들어온다
