@@ -94,6 +94,10 @@ def _fit(value: float | None) -> float:
 
 PIN_HOLE = _fit(_WHITE.pin_hole_mm)  # 세로 구멍 (몸통의 살)
 PIN_HOLE_H = _fit(_WHITE.pin_hole_horizontal_mm)  # 가로 구멍 (손목 몸통의 귀는 뽑을 때 눕는다)
+# 검정, 세로 핀 구멍 (흰색과 같은 3.35): 플랜지 원판의 영점 핀과 어댑터 판의 도구 핀
+K_PIN_HOLE = _fit(_BLACK.pin_hole_mm)
+# 검정, 도구 핀을 눌러 박는 세로 구멍 (3.30): 손끝으로 들어가고 손으로 안 빠진다
+K_PIN_PRESS = _fit(_BLACK.pin_press_mm)
 M3_FREE = _fit(_WHITE.m3_hole_mm) + HOLE_SLACK  # 흰색, 볼트가 지나가는 세로 구멍 (3.4)
 M3_FREE_H = _fit(_WHITE.m3_hole_horizontal_mm) + HOLE_SLACK  # 흰색, 가로 구멍 (3.4)
 K_M3_FREE = _fit(_BLACK.m3_hole_mm) + HOLE_SLACK  # 검정, 세로 구멍 (3.4)
@@ -108,6 +112,11 @@ K_NUT_AF = _fit(_BLACK.m3_nut_pocket_mm)
 K_NUT_SLOT = (
     _fit(_BLACK.m3_nut_upright_width_mm),
     _fit(_BLACK.m3_nut_upright_thickness_mm),
+)
+# 검정, 너트가 누워 옆에서 밀려 들어가는 홈 (폭 5.9, 높이 2.8): 뽑을 때 너트의 축이 세로다
+K_NUT_LYING = (
+    _fit(_BLACK.m3_nut_slot_width_mm),
+    _fit(_BLACK.m3_nut_slot_height_mm),
 )
 # 너트가 서는 홈을 옛 방식(안쪽 면에서 판 육각 자리)으로 둔 부품이 쓰는 임시 값 (어깨, 베이스). 그 부품의 뽑을
 # 파일을 낼 때 위의 옆 홈으로 바꾼다

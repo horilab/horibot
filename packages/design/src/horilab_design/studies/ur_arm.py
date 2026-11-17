@@ -112,7 +112,8 @@ LINK_TUBE: dict[
     "upper": (0.320, 22.4 * G, 0.0128),
     "fore": (0.287, 16.7 * G, 0.0133),
 }
-D405_PLATE_MASS = 13.4 * G  # D405 받침 9.8 (parts/camera_mount.py)과 나사 넷, 너트 둘 3.6
+# D405 받침 9.8과 선을 무는 클립 0.3 (parts/camera_mount.py), 나사 넷과 너트 둘 3.6
+D405_PLATE_MASS = 13.7 * G
 # J6의 자식 쪽 (uv run python -m horilab_design.parts.flange): 플랜지 원판 12.6, 허브 판 1.3, 혼 2.0, 혼 볼트 넷 5.4,
 # 너트 둘 0.7, 멈춤 나사와 너트 1.2, 도구 핀 둘 2.2. 손나사 둘과 손잡이는 도구의 무게에 들어 있다
 FLANGE_MASS = 25.4 * G
@@ -369,7 +370,7 @@ def draw_gripper(b: Builder, link: int, yf: float, opening: float) -> None:
     lug = [(x0, gp.LUG_H0 - (gp.HOUSE_HL + x0)), (x0, top), (-gp.HOUSE_HL, top)]
     tprism("gripper_lug", [*lug, (-gp.HOUSE_HL, gp.LUG_H0)], "z", gp.LUG_HW)
     boss = [(x1, gp.BOSS_H0 - (gp.BOSS_X1 - x1)), (x1, top), (gp.BOSS_X1, top)]
-    tprism("gripper_boss", [*boss, (gp.BOSS_X1, gp.BOSS_H0)], "z", gp.FS[1] + 3.6)
+    tprism("gripper_boss", [*boss, (gp.BOSS_X1, gp.BOSS_H0)], "z", gp.FS[1] + gp.BOSS_HW)
     # 바닥판과 랙 집: 밑의 긴 모서리 둘은 깎여 있다 (단면은 (H, z))
     hw, cut, bottom = gp.HOUSE_HW, gp.TUB_CHAMFER, gp.H_BOTTOM
     house = [(top, -hw), (top, hw), (bottom - cut, hw), (bottom, hw - cut)]

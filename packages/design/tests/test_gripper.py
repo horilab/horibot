@@ -9,7 +9,8 @@ import pytest
 from horilab_design.parts import flange
 from horilab_design.parts import gripper as g
 from horilab_design.parts import joint as j
-from horilab_design.printcheck import overhangs
+from horilab_design.parts.shapes import COMB_PITCH
+from horilab_design.printcheck import LAYER, air_walls, mid_layer_levels, overhangs, wall_settings
 
 
 @pytest.mark.slow
@@ -159,3 +160,38 @@ def test_weight_stays_under_the_cap() -> None:
     total = sum(grams for grams, _ in lumps.values())
     assert total == pytest.approx(sum(m.values()), abs=0.01)
     assert sum(grams * at[1] for grams, at in lumps.values()) / total < 35.0
+
+
+@pytest.mark.slow
+def test_no_air_walls_or_mid_layer_faces_block_the_printed_parts() -> None:
+    # 구멍이 뚫린 천장(귀와 피니언의 나사 머리 자리, 돋움의 너트 홈)은 첫 층을 구멍까지 덮는 막으로 했다. 귀와
+    # 피니언은 막 그대로이고(벽 선이 살 위에서 꺾인다), 좁은 돋움은 막을 틈 셋으로 갈랐다. 수평면은 층 경계에 있다
+    for name, (shape, up, _color, preset, _n) in g.printed().items():
+        found = air_walls(shape, up, wall_settings(preset))
+        assert [a.describe() for a in found if a.blocking] == [], name
+        assert mid_layer_levels(shape, up) == [], name
+
+
+def test_ceilings_keep_their_walls_and_seats() -> None:
+    # 귀: 머리 자리 바깥 옆의 살이 벽 띠(Strength 6겹 2.45)보다 넓어 벽 선이 살 위에서 꺾인다
+    assert g.LUG_HW - (g.TS[1] + g.LUG_POCKET_R) >= 2.6
+    # 돋움: 너트 홈 옆 벽이 1.5 넘고(손목 몸통 돋움과 같은 기준), 천장의 틈이 벽 속에서 끝난 뒤로 벽 선 둘이 남는다
+    wall = g.BOSS_HW - g.SLOT_NUT[0] / 2
+    assert wall >= 1.5 and wall - 0.5 >= 0.85
+    # 너트(꼭짓점 3.18)가 홈 입구 안에 있고, 맨 앞 빗살의 폭이 다른 빗살과 같다
+    assert g.BOSS_X1 - g.FS[0] > 5.5 / math.sqrt(3)
+    assert g.BOSS_X1 - g.FS[0] == pytest.approx(2 * COMB_PITCH)
+    # 홈의 바닥과 천장, 나사 끝이 드는 구멍의 바닥, 머리 자리가 층 경계에 온다
+    for h in (
+        g.BOSS_NUT_H - g.SLOT_NUT[1] / 2,
+        g.BOSS_NUT_H + g.SLOT_NUT[1] / 2,
+        g.BOSS_NUT_H - 2.6,
+        g.LUG_H0,
+        g.HEAD_REC,
+    ):
+        assert abs(h / LAYER - round(h / LAYER)) < 1e-6, h
+    c = g.screw_checks()
+    assert c["바닥판 나사 끝과 구멍 바닥 사이"] >= 0.5
+    assert c["바닥판 나사의 너트 위 살 (돋움)"] >= 2.0
+    # 손가락의 너트 홈 폭은 검정 시험편이 가둔 범위 안이다: 육각 홈에서 저절로 드는 5.6 이상, 선 홈에서 안 도는 5.8 이하
+    assert j.K_NUT_AF + 0.1 - 1e-9 <= g.FINGER_NUT_W <= j.K_NUT_SLOT[0] + 1e-9

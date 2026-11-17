@@ -7,7 +7,14 @@ import pytest
 from horilab_design.parts import camera_mount as cm
 from horilab_design.parts import joint as j
 from horilab_design.parts import wrist
-from horilab_design.printcheck import overhangs, printed_mass_g
+from horilab_design.printcheck import (
+    LAYER,
+    air_walls,
+    mid_layer_levels,
+    overhangs,
+    printed_mass_g,
+    wall_settings,
+)
 from horilab_design.studies import ur_arm
 
 
@@ -99,3 +106,41 @@ def test_arm_model_uses_the_mount_masses() -> None:
     shape, up, _color, preset = cm.printed()["d405_mount"]
     total = printed_mass_g(shape, up, preset) + sum(p.mass_g for p in cm.hardware())
     assert total == pytest.approx(ur_arm.D405_PLATE_MASS * 1000, abs=0.5)
+
+
+@pytest.mark.slow
+def test_clip_holds_the_wire_just_below_the_plug(parts: list[j.Part]) -> None:
+    start, full, end = cm.clip_span()
+    plug_end = cm.CAM_H / 2 - cm.PLUG_TOP - cm.PLUG_LEN
+    # 클립은 플러그 몸통 밑에서 시작해 고무 끝을 지나 솟고, 고무 끝에서 15 mm 안에서 끝난다
+    assert start > plug_end > full > end
+    assert plug_end - end <= 15.0
+    assert cm.clip_grip()["갈래가 선의 옆에 닿는 길이 [mm]"] >= 6.0
+    # 끝 면은 뽑을 때 층 경계에 온다 (+x 쪽 옆면이 바닥이다)
+    height = cm.MOUNT_W / 2 - end
+    assert abs(height / LAYER - round(height / LAYER)) < 1e-6
+    # 두 갈래 사이가 선 지름보다 좁고(문다), 입구는 그보다 더 좁다 (선이 저절로 빠지지 않는다)
+    outline = cm.clip_outline()
+    grip = min(abs(q) for q, p in outline if abs(p - cm.CONN_BACK) < 0.75 and abs(q) > 1.0)
+    mouth = min(abs(q) for q, p in outline if p > cm.CONN_BACK + 0.8)
+    assert cm.WIRE_D / 2 - 0.25 <= grip < cm.WIRE_D / 2
+    assert mouth < grip
+    # 끼울 때 갈래 뿌리의 변형률이 2% 안이다 (PLA가 금 가지 않는다)
+    assert cm.clip_grip()["그때 갈래 뿌리의 변형률 [%]"] < 2.0
+    # 클립은 카메라, 플러그, 손목 몸통과 떨어져 있다
+    around = cm.clip_clearance(parts)
+    assert min(around.values()) >= cm.PLUG_GAP, around
+    # 받침은 +x 쪽 옆면을 바닥에 두고 뽑아 클립이 맨 위에 온다. 막는 공중 벽 선과 층 가운데의 수평면이 없다
+    shape, up, _color, preset = cm.printed()["d405_mount"]
+    assert up == (-1.0, 0.0, 0.0)
+    assert [a for a in air_walls(shape, up, wall_settings(preset)) if a.blocking] == []
+    assert mid_layer_levels(shape, up) == []
+
+
+def test_clip_follows_the_plug(monkeypatch: pytest.MonkeyPatch) -> None:
+    # 플러그가 붙는 자리(PLUG_TOP, 사진 어림 ±2)를 재서 바꾸면 클립이 그만큼 따라간다
+    base = cm.clip_span()
+    monkeypatch.setattr(cm, "PLUG_TOP", cm.PLUG_TOP + 2.0)
+    moved = cm.clip_span()
+    assert moved[0] == pytest.approx(base[0] - 2.0) and moved[1] == pytest.approx(base[1] - 2.0)
+    assert moved[2] == pytest.approx(base[2] - 2.0, abs=LAYER)

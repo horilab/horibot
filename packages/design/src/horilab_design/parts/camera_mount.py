@@ -9,6 +9,10 @@ D405는 J6 원통 옆(-z 쪽, 영점 핀 귀의 반대쪽)에 있고, 광축을 
 카메라의 치수는 공식 사양서와 CAD에서 읽은 값이고(docs/hardware.md의 D405), 플러그는 잰 값이다
 (data/measured.toml의 d405_usb2_plug). 몸통이 옆면의 어디에 붙는지는 사진으로 어림한 값이다 (PLUG_TOP, ±2).
 
+플러그의 고무 끝 바로 밑에는 선을 무는 클립이 있다 (0031의 "D405 선": 선의 고리가 흔들리거나 당겨져도 플러그에
+힘이 가지 않게 한다). 판의 앞면에서 솟은 가운데 받침과 두 갈래이고, 선을 앞(도구 쪽)에서 눌러 끼운다. 클립의
+자리는 플러그의 값(PLUG_TOP 등)을 따라간다.
+
 좌표는 joint.py의 서보 좌표다 (y가 J6 축, 플랜지 면이 y = ATOP, -x가 J5 쪽).
 
     uv run python -m horilab_design.parts.camera_mount
@@ -18,12 +22,18 @@ from __future__ import annotations
 
 import math
 
-from build123d import Compound, Location, Plane
+from build123d import Compound, Location, Plane, Polygon, Pos, Rot, extrude
 
 from horilab_design.parts import flange, wrist
 from horilab_design.parts import joint as j
 from horilab_design.parts.shapes import box, cyl_x, cyl_z, far_apart, solid
-from horilab_design.printcheck import air_wall_lines, overhangs, printed_mass_g
+from horilab_design.printcheck import (
+    LAYER,
+    air_wall_lines,
+    mid_layer_levels,
+    overhangs,
+    printed_mass_g,
+)
 from horilab_design.values import ServoModel, load_measured
 
 _MEASURED = load_measured()
@@ -80,7 +90,26 @@ FILLET = 1.5  # 발과 판이 만나는 안쪽 모서리를 메운 길이
 HEAD_RELIEF_R = (
     3.3  # 발 나사 머리(반지름 2.85)가 앉는 자리의 반지름: 판의 뿌리와 메운 자리를 이만큼 판다
 )
-PROVISIONAL = ("PLUG_TOP (플러그 몸통이 옆면에 붙는 자리, 사진 어림)",)
+# ---- 클립: 플러그의 고무 끝 바로 밑에서 선을 문다 (0031) ----
+# 단면은 카메라의 (가로 y, 광축 z) 평면에 그리고 선 방향(카메라의 세로 x)으로 뽑은 기둥이다. 받침을 눕혀 뽑을 때 이
+# 단면이 층마다 그려져서 치수가 정확하고, 갈래가 휘는 힘이 층을 따라 걸린다. 높이 p는 판 앞면에서 잰다 (선의
+# 가운데가 p = CONN_BACK). 판 앞면에서 솟은 가운데 받침이 선의 밑을 받치고, 받침과 0.6 mm 틈으로 갈라진 두 갈래가
+# 선을 양옆에서 물며, 갈래 끝의 턱이 선을 위에서 막는다. 갈래는 판 가까이에서 갈라져 길고(선의 가운데까지 5.4 mm)
+# 얇아서, 선을 누르면 갈래가 벌어진다 (선이 가늘어 세게 누르면 상한다)
+CLIP_PINCH = 0.15  # 갈래가 선을 무는 양 (한쪽). 두 갈래 사이가 선 지름보다 0.3 좁다 (지름의 10%)
+CLIP_T = 1.2  # 갈래의 두께
+CLIP_POST_HW = 0.75  # 가운데 받침의 반폭
+CLIP_ROOT = 1.4  # 갈래가 갈라지기 시작하는 높이 (틈의 바닥). 그 밑은 한 덩어리다
+# 덩어리가 판 앞면 뒤로 들어간 깊이 (판 밖으로 나온 구간에서 덩어리의 두께가 2.0이다)
+CLIP_BACK = 0.6
+CLIP_LIP = 0.3  # 턱이 선의 반지름보다 안으로 들어온 양 (입구의 폭이 선 지름 - 0.6)
+CLIP_LIP_DEG = 30.0  # 턱이 선에 닿는 자리: 선의 가장 넓은 곳에서 위로 잰 각
+# 갈래 끝이 선의 가운데보다 높은 양. 갈래 끝 사이가 3.3으로 선 지름보다 넓어서 선이 저절로 자리를 잡는다
+CLIP_TIP = 1.6
+CLIP_LEN = 5.0  # 단면이 다 있는 길이 (선 방향)
+# 플러그 몸통의 J5 쪽 아래 모서리와 클립의 비스듬한 면 사이 (PLUG_GAP보다 넓다)
+CLIP_PLUG_GAP = 1.2
+PROVISIONAL = ("PLUG_TOP (플러그 몸통이 옆면에 붙는 자리, 사진 어림. 클립의 자리가 따라간다)",)
 
 
 def _yz(p: tuple[float, float, float]) -> tuple[float, float]:
@@ -144,8 +173,11 @@ def wire_run() -> list[tuple[float, float, float]]:
     """플러그에서 나온 선이 손목 2 몸통을 따라 뒷덮개 가운데까지 가는 길 (서보 좌표의 꺾은선, 어림).
 
     플러그 끝에서 J5 쪽으로 곧게 나와 받침의 발 밑에서 뒤로 돌고, 목의 뒤 모서리를 돌아 뒷덮개의 가운데에서
-    끝난다. 거기서 선을 잡고(받침에 낼 클립, 손목 끝의 뽑을 파일을 낼 때 그린다), 그 밑으로는 J5를 넘는
-    느슨한 구간이다 (studies/wiring.py).
+    끝난다. 그 밑으로는 J5를 넘는 느슨한 구간이다 (studies/wiring.py).
+
+    선을 두 몸통 사이의 층으로 넘기던 때의 길이다. 배선 계산(studies/wiring.py)과 팔 전체 모델(studies/ur_arm.py)이
+    아직 이 길을 쓴다. 지금은 선이 관절 밖으로 넘고(0031), 플러그 밑에서는 받침의 클립이 문다 (clip, wire_stub).
+    클립 밑으로 가는 길은 그 둘을 고칠 때 그린다.
     """
     ex, ey, ez = to_servo(wire_exit())
     side = -(j.NECK_HW + WIRE_D / 2 + 4.0)  # 목의 옆벽에서 조금 뜬 자리
@@ -159,10 +191,99 @@ def wire_run() -> list[tuple[float, float, float]]:
     ]
 
 
-def wire_stub(length: float = 15.0) -> Compound:
-    """플러그에서 나와 J5 쪽(-x)으로 곧게 가는 선의 첫 구간 (틈 검사와 그림에 쓴다)."""
+def clip_span() -> tuple[float, float, float]:
+    """클립의 선 방향 자리 (카메라의 x): (솟기 시작하는 곳, 단면이 다 차는 곳, 끝).
+
+    클립은 판 앞면에서 J5 쪽으로 가며 45°로 솟는다 (받침을 눕혀 뽑을 때 서포트 없이 뽑히는 각). 그 비스듬한 면이
+    플러그 몸통의 J5 쪽 아래 모서리와 CLIP_PLUG_GAP을 띄우고 지나간다. 그래서 고무 끝을 지나야 선에 닿고, 갈래
+    끝까지 다 솟은 곳부터 CLIP_LEN만큼이 온 단면이다. 끝 면은 뽑을 때 층 경계에 오게 맞춘다. 플러그의
+    자리(PLUG_TOP)가 바뀌면 그대로 따라간다.
+    """
+    plug_end = CAM_H / 2 - PLUG_TOP - PLUG_LEN
+    start = plug_end + (CONN_BACK - PLUG_ACROSS / 2) - CLIP_PLUG_GAP * math.sqrt(2)
+    full = start - (CONN_BACK + CLIP_TIP)
+    bed = MOUNT_W / 2  # 뽑을 때 바닥에 닿는 면 (+x 쪽)
+    end = bed - math.ceil((bed - (full - CLIP_LEN)) / LAYER - 1e-6) * LAYER
+    return start, full, end
+
+
+def clip_outline() -> list[tuple[float, float]]:
+    """클립의 단면 (q, p): q는 선의 가운데에서 카메라의 가로(y) 쪽, p는 판 앞면에서 광축 쪽. q = 0에 대칭이다.
+
+    가운데 받침의 윗면 → 틈(바닥이 둥글다) → 갈래의 안쪽 면 → 턱 → 들어가는 비탈 → 갈래 끝 → 갈래의 바깥 면 차례다.
+    받침의 윗면과 턱은 선(반지름 r)에 닿는 자리에서 0.02 띄워 그린다. 갈래의 안쪽 면만 선을 CLIP_PINCH씩 문다.
+    """
+    r = WIRE_D / 2
+    touch = r + 0.02
+    p_w = CONN_BACK
+    q_in = r - CLIP_PINCH
+    q_out = q_in + CLIP_T
+    slit = q_in - CLIP_POST_HW
+    half: list[tuple[float, float]] = []
+    for k in range(7):  # 받침의 윗면: 선의 밑을 따라 오목하다
+        q = CLIP_POST_HW * k / 6
+        half.append((q, p_w - math.sqrt(touch * touch - q * q)))
+    cq, cp = CLIP_POST_HW + slit / 2, CLIP_ROOT + slit / 2
+    for k in range(9):  # 틈의 둥근 바닥
+        a = math.pi * (1 + k / 8)
+        half.append((cq + slit / 2 * math.cos(a), cp + slit / 2 * math.sin(a)))
+    t = math.radians(CLIP_LIP_DEG)
+    tq, tp = touch * math.cos(t), p_w + touch * math.sin(t)  # 턱이 선에 닿는 곳
+    q_lip = r - CLIP_LIP
+    p_lip = tp + (tq - q_lip) / math.tan(t)
+    p_tip = p_w + CLIP_TIP
+    half += [
+        (q_in, tp - (q_in - tq) / math.tan(t)),  # 턱의 밑 (선의 둘레에 접하는 비탈)
+        (q_lip, p_lip),
+        (q_lip, p_lip + 0.2),
+        (q_lip + (p_tip - p_lip - 0.2), p_tip),  # 들어가는 비탈 45°
+        (q_out, p_tip),
+        (q_out, -CLIP_BACK),
+    ]
+    return half + [(-q, p) for q, p in reversed(half[1:])]
+
+
+def _prism_y(pts: list[tuple[float, float]], y0: float, y1: float) -> Compound:
+    """(x, z) 다각형을 y0 ~ y1로 뽑은 기둥."""
+    area = sum(a[0] * b[1] - b[0] * a[1] for a, b in zip(pts, pts[1:] + pts[:1], strict=True))
+    if area < 0:
+        pts = pts[::-1]  # 반시계 방향으로 맞춘다
+    body = extrude(Polygon(*pts, align=None), amount=y1 - y0)
+    return solid(Pos(0, y1, 0) * (Rot(90, 0, 0) * body))
+
+
+def clip() -> Compound:
+    """선을 무는 클립 (받침의 한 부분, 서보 좌표). 단면 기둥을 45° 면으로 깎은 것이다 (clip_span)."""
+    start, _full, end = clip_span()
+    _x, yw, _z = wire_exit()
+    pts = [(yw + q, -CAM_D + p) for q, p in clip_outline()]
+    body = j.prism_x(pts, end, start + CLIP_BACK)
+    # 45° 면의 위쪽을 깎는다: 판 앞면에서 잰 높이 p가 start - x보다 높은 곳
+    far = start - end + 1.0
+    over = [
+        (start + 1.0, -CAM_D - 1.0),
+        (start + 1.0, -CAM_D + far + 20.0),
+        (end - 1.0, -CAM_D + far + 20.0),
+        (end - 1.0, -CAM_D + far),
+    ]
+    half = WIRE_D / 2 + CLIP_T + 1.0
+    body = solid(body - _prism_y(over, yw - half, yw + half))
+    return solid(body.moved(FRAME))
+
+
+def wire_stub() -> Compound:
+    """플러그의 고무 끝에서 J5 쪽(-x)으로 곧게 나와 클립의 끝까지 가는 선 (틈 검사와 그림에 쓴다).
+
+    클립 속에서는 두 갈래에 눌려 양옆이 CLIP_PINCH씩 납작하다. 클립 밑으로 관절 밖의 고리로 가는 길은 그리지 않는다.
+    """
     x, y, z = wire_exit()
-    return solid(cyl_x(WIRE_D / 2, x - length, x, y, z).moved(FRAME))
+    start, _full, end = clip_span()
+    r = WIRE_D / 2
+    wire = cyl_x(r, end, x, y, z)
+    for s in (1, -1):
+        ya, yb = sorted((y + s * (r - CLIP_PINCH), y + s * (r + 1.0)))
+        wire = solid(wire - box(end - 1.0, start - CONN_BACK, ya, yb, z - r - 1.0, z + r + 1.0))
+    return solid(wire.moved(FRAME))
 
 
 def profile() -> list[tuple[float, float]]:
@@ -191,8 +312,9 @@ def profile() -> list[tuple[float, float]]:
 
 
 def mount() -> Compound:
-    """D405 받침 (검정). 옆으로 눕혀(x가 위) 뽑는다: 꺾인 단면이 바닥에 그려져 각도가 정확하고, 층이 판의 길이
-    방향으로 이어져 카메라 무게가 층을 떼는 쪽으로 걸리지 않는다."""
+    """D405 받침 (검정). 옆으로 눕혀 뽑는다: 꺾인 단면이 바닥에 그려져 각도가 정확하고, 층이 판의 길이
+    방향으로 이어져 카메라 무게가 층을 떼는 쪽으로 걸리지 않는다. +x 쪽 옆면을 바닥에 두어, J5 쪽(-x)으로 나온
+    클립이 맨 위에서 뽑힌다."""
     z_in, z_out = -wrist.MOUNT_Z, -(wrist.MOUNT_Z + FOOT_T)
     m = j.prism_x(profile(), -MOUNT_W / 2, MOUNT_W / 2)
     for x, y in wrist.mount_xy():  # 발 나사
@@ -204,7 +326,8 @@ def mount() -> Compound:
         hole = cyl_z(r, -CAM_D - PLATE_T - 1, -CAM_D + 1, 0.0, sy * CAM_HOLE_X)
         hole += cyl_z(3.1, -CAM_D - PLATE_T - 1, -CAM_D - PLATE_T + HEAD_REC, 0.0, sy * CAM_HOLE_X)
         m = solid(m - solid(hole).moved(FRAME))
-    if not m.is_valid:
+    m = solid(m + clip())
+    if not m.is_valid or len(m.solids()) != 1:
         raise RuntimeError("D405 받침 형상이 깨졌다")
     return m
 
@@ -231,7 +354,7 @@ def hardware() -> list[j.Part]:
 
 
 def assembly(model: ServoModel = "STS3215") -> list[j.Part]:
-    """J6 조립(parts/flange.py)에 D405와 받침, 얇은 USB 2 선의 ㄱ자 플러그와 선의 첫 구간을 더한 것."""
+    """J6 조립(parts/flange.py)에 D405와 받침, 얇은 USB 2 선의 ㄱ자 플러그와 클립까지의 선을 더한 것."""
     parts = flange.assembly(model)
     parts += [
         j.Part("D405 받침", mount(), color="cap"),
@@ -243,7 +366,10 @@ def assembly(model: ServoModel = "STS3215") -> list[j.Part]:
 
 
 def plug_clearance(parts: list[j.Part]) -> dict[str, float]:
-    """플러그와 선의 첫 구간에서 손목 몸통, 벽 나사, 받침까지의 틈 [mm] (가까운 것만)."""
+    """플러그와 클립까지의 선에서 손목 몸통, 벽 나사, 받침까지의 틈 [mm] (가까운 것만).
+
+    받침과의 틈은 플러그에서만 잰다 (선은 받침의 클립이 물고 있다).
+    """
     mine = [p for p in parts if p.name in ("D405 플러그", "D405 선")]
     out: dict[str, float] = {}
     for other in parts:
@@ -251,10 +377,59 @@ def plug_clearance(parts: list[j.Part]) -> dict[str, float]:
             continue
         key = other.name.rstrip("0123456789 ").strip()
         for p in mine:
+            if other.name == "D405 받침" and p.name == "D405 선":
+                continue
             if far_apart(p.shape, other.shape, 8.0):
                 continue
             out[key] = min(out.get(key, 8.0), p.shape.distance_to(other.shape))
     return out
+
+
+def clip_clearance(parts: list[j.Part]) -> dict[str, float]:
+    """클립에서 둘레의 것(손목 몸통, 벽 나사, 뒷덮개, 받침 나사, 카메라, 플러그)까지의 틈 [mm] (10 안쪽만)."""
+    shape = clip()
+    out: dict[str, float] = {}
+    for other in parts:
+        if (
+            not other.name.startswith(
+                ("손목 몸통", "벽 나사", "뒷덮개", "받침 나사", "D405 플러그")
+            )
+            and other.name != "D405"
+        ):
+            continue
+        if far_apart(shape, other.shape, 10.0):
+            continue
+        key = other.name if other.name == "D405" else other.name.rstrip("0123456789 ").strip()
+        d = shape.distance_to(other.shape)
+        if d < out.get(key, 10.0):
+            out[key] = d
+    return out
+
+
+def clip_grip(e_gpa: float = 2.0) -> dict[str, float]:
+    """클립이 선을 무는 정도 (어림). 갈래를 틈의 바닥에 박힌 외팔보로 본다. 선은 눌리지 않는다고 보아서, 실제 힘은
+    이보다 작다 (선의 겉이 먼저 눌린다). 탄성 계수는 PLA의 낮은 쪽 값이 기본이다 (0029의 범위 2.0 ~ 2.75 GPa)."""
+    start, full, end = clip_span()
+    r = WIRE_D / 2
+    e = e_gpa * 1000
+    length = (
+        full - end + CLIP_TIP
+    )  # 갈래가 선의 옆에 닿는 길이 (45°로 솟는 구간에서 선의 가운데 높이부터)
+    inertia = length * CLIP_T**3 / 12
+    arm_w = CONN_BACK - CLIP_ROOT  # 틈의 바닥에서 선의 가운데까지
+    arm_lip = arm_w + r * math.sin(math.radians(CLIP_LIP_DEG))  # 턱까지
+    k_w = 3 * e * inertia / arm_w**3
+    k_lip = 3 * e * (full - end) * CLIP_T**3 / 12 / arm_lip**3
+    return {
+        "갈래가 선의 옆에 닿는 길이 [mm]": length,
+        "고무 끝에서 받침이 선의 밑에 닿는 곳까지 [mm]": (CAM_H / 2 - PLUG_TOP - PLUG_LEN)
+        - (start - (CONN_BACK - r)),
+        "고무 끝에서 클립 끝까지 [mm]": (CAM_H / 2 - PLUG_TOP - PLUG_LEN) - end,
+        "갈래 하나가 선을 무는 힘 [N]": k_w * CLIP_PINCH,
+        "끼울 때 갈래가 가장 많이 벌어지는 양 (한쪽) [mm]": CLIP_LIP,
+        "그때 갈래 뿌리의 변형률 [%]": 150 * CLIP_T * CLIP_LIP / arm_lip**2,
+        "그때 갈래 하나를 미는 힘 [N]": k_lip * CLIP_LIP,
+    }
 
 
 def screw_checks() -> dict[str, float]:
@@ -314,7 +489,8 @@ LABELS = {"d405_mount": "D405 받침"}  # 출력 안내의 한글 이름
 
 
 def printed() -> dict[str, tuple[Compound, tuple[float, float, float], str, str]]:
-    return {"d405_mount": (mount(), (1.0, 0.0, 0.0), "black", "strength")}
+    # +x 쪽 옆면이 바닥이다: 클립이 J5 쪽(-x)으로 받침 밖까지 나와 있어 맨 위에서 뽑힌다
+    return {"d405_mount": (mount(), (-1.0, 0.0, 0.0), "black", "strength")}
 
 
 def report(model: ServoModel = "STS3215") -> None:
@@ -339,6 +515,19 @@ def report(model: ServoModel = "STS3215") -> None:
             f"{printed_mass_g(shape, up, preset):5.1f} g  걸침 {over.total:5.0f} mm² (거의 수평 {over.flat:.0f})"
         )
     print("\n".join(air_wall_lines(printed())))
+    mid = {n: mid_layer_levels(s, up) for n, (s, up, _c, _p) in printed().items()}
+    print(
+        "층 가운데에 걸친 수평면 [mm]: "
+        + (", ".join(f"{n} {v}" for n, v in mid.items() if v) or "없음")
+    )
+    start, full, end = clip_span()
+    clip_g = printed_mass_g(clip(), (-1.0, 0.0, 0.0))
+    print(
+        f"클립: 카메라의 세로로 {start:.2f}에서 솟기 시작해 {full:.2f}부터 {end:.2f}까지 온 단면 "
+        f"(받침의 J5 쪽 면 {-MOUNT_W / 2:.1f}, 카메라의 바닥면 {-CAM_H / 2:.1f}), 무게 약 {clip_g:.2f} g"
+    )
+    for name, value in clip_grip().items():
+        print(f"  {name}: {value:.2f}")
     for name, value in screw_checks().items():
         print(f"  {name}: {value:.2f}")
     print(
@@ -349,6 +538,11 @@ def report(model: ServoModel = "STS3215") -> None:
     print(
         "  플러그와 선에서 가까운 것까지: "
         + ", ".join(f"{k} {v:.2f}" for k, v in sorted(near.items(), key=lambda kv: kv[1]))
+    )
+    around = clip_clearance(parts)
+    print(
+        "  클립에서 가까운 것까지: "
+        + ", ".join(f"{k} {v:.2f}" for k, v in sorted(around.items(), key=lambda kv: kv[1]))
     )
     solids = [p for p in parts if "핀" not in p.name and "손잡이" not in p.name]
     hits = j.overlaps(solids)

@@ -28,8 +28,22 @@ from build123d import Axis, Compound, Cone, Polygon, Pos, Rot, extrude
 
 from horilab_design.parts import flange, wrist
 from horilab_design.parts import joint as j
-from horilab_design.parts.shapes import box, cyl_y, far_apart, nut_trap, solid
-from horilab_design.printcheck import air_wall_lines, overhangs, printed_mass_g
+from horilab_design.parts.shapes import (
+    COMB_PITCH,
+    box,
+    comb_ceiling,
+    cyl_y,
+    far_apart,
+    nut_trap,
+    solid,
+)
+from horilab_design.printcheck import (
+    LAYER,
+    air_wall_lines,
+    mid_layer_levels,
+    overhangs,
+    printed_mass_g,
+)
 from horilab_design.values import ServoModel
 
 MODEL: ServoModel = "STS3215"
@@ -71,11 +85,16 @@ H_ARM1 = H_PLATE0 + PLATE_T  # 받침 밑면 52.9
 H_COVER = H_ARM1 + SLIDE_GAP  # 덮개 윗면 53.0
 COVER_T = 2.4
 H_BOTTOM = H_COVER + COVER_T  # 몸통 밑면 55.4
-PIN_FACE = (H_FLOOR + 0.4, H_PLATE0 - 0.4)  # 피니언 이의 높이 범위 43.0 ~ 48.5
+# 피니언 이의 높이 범위 43.1 ~ 48.5. 이의 폭 5.4가 뽑을 때 층 경계에 온다 (5.5면 이의 끝 면이 층의 한가운데다).
+# 바닥판 밑면과 0.5, 받침의 판과 0.4 뜬다
+PIN_FACE = (H_FLOOR + 0.5, H_PLATE0 - 0.4)
 HUB_R = 10.0  # 피니언이 혼에 앉는 목 (혼 볼트 구멍 둘레를 덮는다)
 PINION_SCREWS = (8.0, 6.0)  # 혼 볼트로 쓸 길이 후보 (가진 것)
-HEAD_REC = 1.95  # 나사 머리(높이 1.65)가 면 밑으로 들어가는 깊이
-# 피니언 밑의 혼 가운데 나사 머리 자리: 반지름과 깊이 (머리는 지름 5.15, 혼 윗면 위로 2.0까지)
+# 나사 머리(높이 1.65)가 면 밑으로 들어가는 깊이: 뽑을 때 열 층이다 (피니언은 머리 자리의 천장이, 받침은 바닥이
+# 층 경계에 온다)
+HEAD_REC = 2.0
+# 피니언 밑의 혼 가운데 나사 머리 자리: 반지름과 가장 얕은 깊이 (머리는 지름 5.15, 혼 윗면 위로 2.0까지). 자리의
+# 바닥이 뽑을 때 층 경계에 오게 이보다 조금 더 판다 (pinion)
 HORN_HEAD_REC = (3.3, j.HEAD_H + 0.5)
 
 # ---- 손가락 ----
@@ -134,26 +153,40 @@ RELIEF_X = 31.0
 NOTCH_X = -10.8  # 판을 튼 자리의 안쪽 끝 (커넥터 구멍은 x -16.3 ~ -11.7)
 NOTCH_HW = 10.5
 PAD_X = (-18.5, -6.3)  # 서보 뒷면(두께 32인 면)을 누르는 자리
-BOSS_REC = (3.7, 2.7)  # 서보 뒷면 보스가 드는 자리: 반지름, 깊이
+# 서보 뒷면 보스가 드는 자리: 반지름, 깊이. 자리의 바닥(플랜지 면에서 3.4)이 뽑을 때 층 경계에 온다 (2.7이면 층의
+# 한가운데다). 보스 끝과 0.7 뜬다
+BOSS_REC = (3.7, 2.8)
 PLUG_Z = (0.45, 9.46)  # 꽂는 커넥터 (+z 쪽 것)
 # 몸통과 바닥판, 랙 집을 묶는 나사
 FS = (17.2, 7.5)  # +x 쪽 바닥판 나사 (밑에서, M3 × 8): 머리가 통로 위층의 빈 가운데에 있다
-BOSS_X1 = 21.2  # 그 너트를 품는 돋움의 바깥 끝
-BOSS_H0 = 33.2
-BOSS_NUT_H = 36.5  # 너트 홈의 가운데 높이
+# 몸통 돋움의 너트 홈: 너트가 누워 옆에서 밀려 들어간다 (검정 시험편, 5.9 × 2.8)
+SLOT_NUT = j.K_NUT_LYING
+# 그 너트를 품는 돋움의 바깥 끝 (홈의 입구). 나사에서 빗살 간격의 두 배(3.4)라서 홈 천장의 맨 앞 빗살도 폭이 1.45다.
+# 너트의 꼭짓점(나사에서 3.18)은 입구 안에 있다
+BOSS_X1 = FS[0] + 2 * COMB_PITCH  # 20.6
+# 돋움의 반폭: 홈 옆 벽이 1.55다 (손목 몸통 돋움의 너트 홈과 같은 기준 1.5 이상). 천장 첫 층의 틈이 벽 속으로
+# 0.5 들어가고도 벽 선 둘이 남는다
+BOSS_HW = SLOT_NUT[0] / 2 + 1.55  # 4.5
+# 돋움의 곧은 앞면이 시작하는 높이 (그 밑은 45° 받침). 홈 바닥 밑의 살이 입구에서 1.2다
+BOSS_H0 = 34.0
+# 너트 홈의 가운데 높이. 홈의 바닥(35.2)과 천장(38.0), 나사 끝이 드는 구멍의 바닥(34.0)이 뽑을 때 층 경계에 온다
+BOSS_NUT_H = 36.6
 END_T = 4.0  # 랙 집의 끝벽
 IN_HL = STROKE + LC + 0.3  # 통로 안쪽 반 길이 40.3
 HOUSE_HL = IN_HL + END_T  # 랙 집의 반 길이 44.3
 TS = (IN_HL + END_T / 2, 7.5)  # 끝벽 나사 (위에서, 끝벽의 플라스틱에 조인다)
 LUG_H0 = H_FRONT - 4.0  # -x 쪽 귀의 윗면 (나사 머리가 앉는다)
-LUG_HW = 11.5
+LUG_POCKET_R = 3.2  # 귀 나사의 머리 자리 (귀 밑의 받침을 지나는 길)
+# 귀의 반폭: 머리 자리 바깥 옆의 살이 2.7이다. 벽 띠(Strength 6겹, 2.45)보다 넓어야 머리 자리 천장 첫 층의 벽 선이
+# 살 위에서 꺾이고, 천장은 곧은 선으로만 건넌다 (살이 0.8이던 11.5에서는 벽 선 넷이 공중에서 꺾였다)
+LUG_HW = TS[1] + LUG_POCKET_R + 2.7  # 13.4
 TUB_CHAMFER = 2.0  # 랙 집 밑 긴 모서리를 깎은 길이 (D405가 그 모서리 너머로 본다)
-SLOT_NUT = (5.6, 2.8)  # 옆에서 밀어 넣는 너트 홈 (임시: 검정 시험편 값으로 바꾼다)
-PROVISIONAL = (
-    "SLOT_NUT (검정 fit1 너트 홈)",
-    "가진 M3 × 12 (손가락, 귀)와 M3 × 8 수량",
-    "검정 부품의 구멍과 너트 홈 (흰색 값을 씀)",
-)
+# 손가락의 너트 홈 폭: 너트가 서서 위에서 떨어진다 (폭과 두께를 모두 세로 벽이 정한다). 검정으로 뽑은 떨어뜨리는
+# 시험편은 없지만 검정 값 셋이 5.6을 양쪽에서 가둔다: 사방이 막힌 육각 홈도 5.6이면 너트가 저절로 들어가고(5.5는
+# 눌러야 든다), 두 벽이 맞변을 잡는 홈은 누운 것 5.9, 선 것 5.8까지 조여도 너트가 돌지 않는다 (6.0부터 돈다).
+# 흰색 떨어뜨리는 홈도 5.6에서 저절로 내려가고 돌지 않았다 (data/measured.toml)
+FINGER_NUT_W = 5.6
+PROVISIONAL = ("가진 M3 × 12 (손가락, 귀)와 M3 × 8 수량",)
 
 
 def _y(h: float) -> float:
@@ -285,7 +318,7 @@ def frame() -> Compound:
         half = math.ceil(half * 10) / 10
         f = solid(f - box(x - half, x + half, yd, yd + flange.KNOB[1] + 1.4, za, zb))
     for wx0, wx1 in ((-31.0, -20.5), (-18.0, -7.5), (-5.0, 5.5)):
-        h0, h1, c = 16.5, 35.0, 3.0
+        h0, h1, c = 16.4, 35.0, 3.0  # 창의 밑변과 윗변은 뽑을 때 층 경계에 온다
         win = [(wx0, _y(h0)), (wx1, _y(h0)), (wx1, _y(h1 - c)), (wx1 - c, _y(h1))]
         win += [(wx0 + c, _y(h1)), (wx0, _y(h1 - c))]
         f = solid(f - _prism_z(win, -zo - 1, zo + 1))
@@ -302,13 +335,21 @@ def frame() -> Compound:
         LUG_HW,
     )
     f = solid(f + solid(lug))
+    # 귀 나사의 머리 자리. 천장(머리가 앉는 면) 첫 층은 구멍까지 덮는 막이다: 구멍이 뚫려 있으면 구멍을 둘러싼 벽
+    # 고리가 공중에 뜬다. 머리 자리는 귀 끝으로 터져 있어서, 끝 면을 따라 도는 벽 선 여섯이 머리 자리를 곧게 건너고
+    # 그 안쪽은 다리 선이 덮는다 (스튜디오로 잘라 G-code에서 확인했다). 나사를 꽂기 전에 구멍 자리의 막을 뚫는다
     for sz in (1, -1):
-        f = solid(f - cyl_y(j.M3_FREE / 2, _y(LUG_H0 - run - 1), yf + 1, -TS[0], sz * TS[1]))
-        f = solid(f - cyl_y(3.2, _y(LUG_H0 - run - 1), _y(LUG_H0), -TS[0], sz * TS[1]))
-    # +x 쪽 돋움 둘: 밑에서 올라온 바닥판 나사의 너트를 품는다
+        f = solid(f - cyl_y(j.K_M3_FREE / 2, _y(LUG_H0 + LAYER), yf + 1, -TS[0], sz * TS[1]))
+        f = solid(f - cyl_y(LUG_POCKET_R, _y(LUG_H0 - run - 1), _y(LUG_H0), -TS[0], sz * TS[1]))
+    # +x 쪽 돋움 둘: 밑에서 올라온 바닥판 나사의 너트를 품는다. 너트가 붙는 홈 천장의 첫 층은 구멍까지 덮는 막이고,
+    # 홈을 가로지르는 틈 셋으로 갈라 선이 홈의 한 옆 벽에서 다른 옆 벽으로 곧게 건넌다 (틈이 없으면 옆 벽을 따라
+    # 도는 벽 선이 홈 위 공중에서 꺾인다). 틈은 돋움의 바깥 옆면으로 터져 있고(출력 원판 귀와 같다. 그 층에서만
+    # 폭 0.25다), 안쪽 옆 벽 속으로는 0.5 들어가 끝난다. 너트를 넣기 전에 바닥판 쪽에서 구멍 자리의 막을 뚫는다
     bx0 = x1 - 0.01
+    roof = _y(BOSS_NUT_H + SLOT_NUT[1] / 2)  # 조인 너트가 붙는 홈 천장
+    reach = SLOT_NUT[0] / 2 + 0.5
     for sz in (1, -1):
-        za, zb = sorted((sz * (FS[1] - 3.6), sz * (FS[1] + 3.6)))
+        za, zb = sorted((sz * (FS[1] - BOSS_HW), sz * (FS[1] + BOSS_HW)))
         boss = box(bx0, BOSS_X1, _y(BOSS_H0), yf, za, zb)
         boss += _prism_z(
             [
@@ -320,7 +361,9 @@ def frame() -> Compound:
             zb,
         )
         f = solid(f + solid(boss))
-        f = solid(f - cyl_y(j.M3_FREE / 2, _y(BOSS_NUT_H - 2.6), yf + 1, FS[0], sz * FS[1]))
+        r = j.K_M3_FREE / 2
+        f = solid(f - cyl_y(r, _y(BOSS_NUT_H - 2.6), roof, FS[0], sz * FS[1]))
+        f = solid(f - cyl_y(r, roof + LAYER, yf + 1, FS[0], sz * FS[1]))
         f = solid(
             f
             - nut_trap(
@@ -330,6 +373,17 @@ def frame() -> Compound:
                 BOSS_X1 - FS[0] + 0.5,
                 SLOT_NUT[0],
                 SLOT_NUT[1],
+            )
+        )
+        f = solid(
+            f
+            - comb_ceiling(
+                (FS[0], roof, sz * FS[1]),
+                (0.0, 1.0, 0.0),
+                (0.0, 0.0, float(sz)),
+                2 * (BOSS_X1 - FS[0]),
+                back=reach,
+                front=BOSS_HW + 0.5,
             )
         )
     if not f.is_valid or len(f.solids()) != 1:
@@ -344,7 +398,7 @@ def floor() -> Compound:
     f = solid(f - cyl_y(HUB_R + 0.3, y0 - 1, y1 + 1))  # 혼과 피니언의 목
     f = solid(f - box(-34.5, -8.8, y0 - 1, y1 + 1, -7.4, 7.4))  # 서보 앞면의 라벨 판
     for x, z in screw_xz():
-        f = solid(f - cyl_y(j.M3_FREE / 2, y0 - 1, y1 + 1, x, z))
+        f = solid(f - cyl_y(j.K_M3_FREE / 2, y0 - 1, y1 + 1, x, z))
     return f
 
 
@@ -381,11 +435,19 @@ def pinion() -> Compound:
     y0, y1 = _y(PIN_FACE[0]), _y(PIN_FACE[1])
     p = _prism_y(pinion_outline(), y0, y1) + cyl_y(HUB_R, _y(H_HORN), y0 + 0.01)
     p = solid(p)
+    # 혼 볼트의 머리 자리. 천장(머리가 앉는 면) 첫 층은 구멍까지 덮는 막이다: 구멍이 뚫려 있으면 구멍을 둘러싼 벽
+    # 고리가 공중에 뜬다. 막의 첫 층은 이의 윤곽을 따라 도는 벽 선이 머리 자리를 짧게 건너고 그 안쪽을 다리 선이
+    # 덮는다 (스튜디오로 잘라 G-code에서 확인했다). 머리가 고리 전체에 앉는다: 이 나사 넷이 누르는 마찰로 혼의
+    # 토크가 피니언으로 간다. 나사를 꽂기 전에 구멍 자리의 막을 뚫는다
+    seat = y1 - HEAD_REC
     for x, z in j.bolt_xz():
-        p = solid(p - cyl_y(j.M3_FREE / 2, _y(H_HORN) - 1, y1 + 1, x, z))
-        p = solid(p - cyl_y(3.1, y1 - HEAD_REC, y1 + 1, x, z))
-    r_head, d_head = HORN_HEAD_REC
-    p = solid(p - cyl_y(r_head, _y(H_HORN) - 1, _y(H_HORN) + d_head))  # 혼 가운데 나사 머리
+        p = solid(p - cyl_y(j.K_M3_FREE / 2, _y(H_HORN) - 1, seat - LAYER, x, z))
+        p = solid(p - cyl_y(3.1, seat, y1 + 1, x, z))
+    r_head, d_min = HORN_HEAD_REC
+    length = PIN_FACE[1] - H_HORN
+    # 혼 가운데 나사 머리의 자리: 바닥이 뽑을 때 층 경계(바닥에서 3.0)에 온다
+    floor_h = math.floor((length - d_min) / LAYER + 1e-6) * LAYER
+    p = solid(p - cyl_y(r_head, _y(H_HORN) - 1, y1 - floor_h))
     return p
 
 
@@ -395,7 +457,7 @@ def carriage(x_in: float = 0.0) -> Compound:
     u0, u1 = ARM_U
     c = box(u0, u1, ym, yb, ARM_LOW_Z, ARM_BACK_Z) + box(0.0, LC, ym, yb, -PLATE_EDGE, ARM_BACK_Z)
     c = solid(c + _prism_y(rack_outline(u0, u1), yt, ym + 0.01))
-    c = solid(c - cyl_y(j.M3_FREE / 2, ym - 1, yb + 1, FINGER_SCREW_U, 0.0))
+    c = solid(c - cyl_y(j.K_M3_FREE / 2, ym - 1, yb + 1, FINGER_SCREW_U, 0.0))
     c = solid(c - cyl_y(3.1, ym - 1, ym + HEAD_REC, FINGER_SCREW_U, 0.0))
     return solid(Pos(x_in, 0, 0) * c)
 
@@ -431,11 +493,13 @@ def finger(x_in: float = 0.0) -> Compound:
         lead.append((_y(H_TIP) + 0.01, s * (TIP_HW - 1.5)))
         f = solid(f - j.prism_x(lead, -1, LC + 1))
     f = solid(
-        f - cyl_y(j.M3_FREE_H / 2, _y(H_ARM1) - 1, _y(FINGER_NUT[1] + 2.4), FINGER_SCREW_U, 0.0)
+        f - cyl_y(j.K_M3_FREE_H / 2, _y(H_ARM1) - 1, _y(FINGER_NUT[1] + 2.4), FINGER_SCREW_U, 0.0)
     )
-    half = SLOT_NUT[0] / 2
+    # 너트 홈: 바깥 면(뽑을 때 위)에서 너트를 세워 떨어뜨린다. 홈 바닥은 안쪽 면에서 1.6이라 뽑을 때 층 경계에 오고
+    # (1.7이면 층의 한가운데다), 꼭짓점을 아래로 한 너트(나사 축에서 3.18)보다 0.2 깊다
+    half = FINGER_NUT_W / 2
     f = solid(
-        f - box(FINGER_SCREW_U - 3.3, LC + 1, _y(FINGER_NUT[0]), _y(FINGER_NUT[1]), -half, half)
+        f - box(FINGER_SCREW_U - 3.4, LC + 1, _y(FINGER_NUT[0]), _y(FINGER_NUT[1]), -half, half)
     )
     if not f.is_valid or len(f.solids()) != 1:
         raise RuntimeError("손가락 형상이 깨졌다")
@@ -506,7 +570,7 @@ def hardware(opening: float = 0.0) -> list[j.Part]:
     for k, sz in enumerate((1, -1), start=1):
         s = _screw(FS[0], sz * FS[1], _y(H_FLOOR), 8.0, False)
         out.append(j.Part(f"바닥판 나사 M3x8 {k}", s, j.STEEL, True, "metal"))
-        n = _nut(FS[0], sz * FS[1], _y(BOSS_NUT_H) - j.NUT_T / 2)
+        n = _nut(FS[0], sz * FS[1], _y(BOSS_NUT_H + SLOT_NUT[1] / 2) - j.NUT_T)  # 홈 천장에 붙는다
         out.append(j.Part(f"너트 (몸통 돋움) {k}", n, j.STEEL, True, "metal"))
         s = _screw(TS[0], sz * TS[1], _y(H_FRONT), 8.0, True)
         out.append(j.Part(f"끝벽 나사 M3x8 {k}", s, j.STEEL, True, "metal"))
@@ -673,7 +737,11 @@ def screw_checks() -> dict[str, float]:
         f"피니언 나사 M3 × {length:.0f}이 혼에 물린 길이 (테 2.5)": bite,
         "피니언 나사 끝과 서보 앞면 사이": 2.5 + 1.7 - bite,
         "피니언 나사 머리 밑의 살": PIN_FACE[1] - HEAD_REC - H_HORN,
-        "바닥판 나사가 너트(2.4)를 지나간 길이": (BOSS_NUT_H - j.NUT_T / 2) - (H_FLOOR - 8.0),
+        # 조인 너트는 홈 천장에 붙는다
+        "바닥판 나사가 너트(2.4)를 지나간 길이": (BOSS_NUT_H + SLOT_NUT[1] / 2 - j.NUT_T)
+        - (H_FLOOR - 8.0),
+        "바닥판 나사 끝과 구멍 바닥 사이": (H_FLOOR - 8.0) - (BOSS_NUT_H - 2.6),
+        "바닥판 나사의 너트 위 살 (돋움)": H_FRONT - (BOSS_NUT_H + SLOT_NUT[1] / 2),
         "귀 나사가 끝벽에 물린 길이": lug_tip - H_FLOOR,
         "끝벽 나사가 끝벽에 물린 길이": end_tip - H_FLOOR,
         "끝벽 나사 끝과 구멍 바닥 사이": (H_ARM1 - 1.5) - max(lug_tip, end_tip),
@@ -790,6 +858,11 @@ def report() -> None:
             f"가장 넓은 한 자리 {over.largest:.0f})"
         )
     print("\n".join(air_wall_lines(printed())))
+    mid = {n: mid_layer_levels(s, up) for n, (s, up, _c, _p, _n) in printed().items()}
+    print(
+        "층 가운데에 걸친 수평면 [mm]: "
+        + (", ".join(f"{n} {v}" for n, v in mid.items() if v) or "없음")
+    )
     m = mass_g()
     print(
         "무게 [g]: "

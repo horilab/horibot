@@ -40,7 +40,7 @@ TOOL_PINS = (
 )  # (x, z): 앞의 것이 둥근 구멍, 뒤의 것이 긴 구멍
 TOOL_PIN_DEPTH = 14.0  # 핀을 박는 깊이 (테 3.8 + 단 3.8 + 저널 속 6.4)
 TOOL_PIN_UP = 20.0 - TOOL_PIN_DEPTH  # 윗면 위로 나온 길이 6.0 (어댑터 판 윗면보다 0.2 낮다)
-PIN_PRESS = 3.30  # 핀을 눌러 박는 세로 구멍 (임시: 흰색에서 뻑뻑했던 값. 검정 시험편 값으로 바꾼다)
+PIN_PRESS = j.K_PIN_PRESS  # 핀을 눌러 박는 세로 구멍 (검정 시험편, 3.30)
 EAR_HW = 4.4  # 영점 핀 귀의 반폭
 ADAPTER_R = 22.0  # 어댑터 판의 반지름 (원판 23.6 안)
 ADAPTER_T = j.EAR_T  # 6.2: 손나사 M3 × 10이 원판 밑면의 너트에 다 물리는 두께
@@ -53,7 +53,7 @@ TOOL_SCREWS = (
 # 손나사 머리에 씌우는 손잡이: 반지름, 높이. 반지름 5.6이면 평행 그리퍼의 서보 옆면과 0.9 mm 뜬다 (손나사가
 # 축에서 19.5 mm일 때. 6.0이면 0.5 mm다)
 KNOB = (5.6, 7.0)
-PROVISIONAL = ("PIN_PRESS (검정 핀 구멍 시험편)", "검정 부품의 구멍 (흰색 값을 씀)")
+PROVISIONAL: tuple[str, ...] = ()
 
 
 def flange_disc() -> Compound:
@@ -62,7 +62,7 @@ def flange_disc() -> Compound:
     ear = box(-j.R_PIN, -20.0, j.SEAM, j.ATOP, -EAR_HW, EAR_HW)
     ear += cyl_y(EAR_HW, j.SEAM, j.ATOP, -j.R_PIN, 0.0)
     a = solid(a + ear)
-    a = solid(a - cyl_y(j.PIN_HOLE / 2, j.SEAM - 1, j.ATOP + 1, -j.R_PIN, 0.0))
+    a = solid(a - cyl_y(j.K_PIN_HOLE / 2, j.SEAM - 1, j.ATOP + 1, -j.R_PIN, 0.0))
     for x, z in TOOL_PINS:
         a = solid(a - cyl_y(PIN_PRESS / 2, j.ATOP - TOOL_PIN_DEPTH, j.ATOP + 1, x, z))
     if not a.is_valid:
@@ -76,7 +76,7 @@ def adapter_cuts(t: Compound) -> Compound:
     도구마다 판의 윤곽이 달라서(평행 그리퍼는 판이 몸통의 윗부분이다) 구멍만 따로 낸다.
     """
     y0, y1 = j.ATOP, j.ATOP + ADAPTER_T
-    r = j.PIN_HOLE / 2
+    r = j.K_PIN_HOLE / 2
     (x0, z0), (x1, z1) = TOOL_PINS
     t = solid(t - cyl_y(r, y0 - 1, y1 + 1, x0, z0))  # 둥근 구멍: 자리를 잡는다
     slot = cyl_y(r, y0 - 1, y1 + 1, x1, z1 - SLOT_HALF) + cyl_y(
@@ -85,7 +85,7 @@ def adapter_cuts(t: Compound) -> Compound:
     slot += box(x1 - r, x1 + r, y0 - 1, y1 + 1, z1 - SLOT_HALF, z1 + SLOT_HALF)
     t = solid(t - solid(slot))  # 긴 구멍: 돌림만 잡는다
     for x, z in TOOL_SCREWS:
-        t = solid(t - cyl_y(j.M3_FREE / 2, y0 - 1, y1 + 1, x, z))
+        t = solid(t - cyl_y(j.K_M3_FREE / 2, y0 - 1, y1 + 1, x, z))
     for x, z in j.bolt_xz():
         t = solid(t - cyl_y(HEAD_POCKET[0], y0 - 1, y0 + HEAD_POCKET[1], x, z))
     return t
@@ -182,7 +182,7 @@ def report(model: ServoModel = "STS3215") -> None:
         f"J6 플랜지 ({model}): 플랜지 면 y {j.ATOP:.1f}, 어댑터 판 윗면 {j.ATOP + ADAPTER_T:.1f}, "
         f"도구 핀 z ±{TOOL_PIN_R} (윗면 위로 {TOOL_PIN_UP:.1f}), 영점 핀 귀 축에서 {j.R_PIN:.0f}"
     )
-    print(f"임시 값: {', '.join(PROVISIONAL)}")
+    print(f"임시 값: {', '.join(PROVISIONAL) or '없음'}")
     print("\n뽑는 부품 (무게는 뽑아서 잰 부품에 맞춘 어림, 걸침은 바닥에 닿지 않고 아래를 보는 면)")
     for name, (shape, up, color, preset) in printed().items():
         bb = shape.bounding_box()
