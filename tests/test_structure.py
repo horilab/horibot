@@ -19,6 +19,8 @@ from typing import Any
 
 import pytest
 
+from tools import sync
+
 ROOT = Path(__file__).resolve().parents[1]
 
 # 패키지마다 불러와도 되는 다른 horilab 패키지. 아직 없는 패키지(client)도 미리 적어 둔다.
@@ -51,7 +53,8 @@ CRATE_ALLOWED_INTERNAL: dict[str, set[str]] = {
 # 시리얼 포트를 여는 크레이트. 서보에 닿는 길이라 horilab-servo만 쓴다.
 SERIAL_CRATES = {"serialport", "serial2", "tokio-serial", "mio-serial", "rustypot"}
 
-# 검사하지 않는 폴더 (생성물, 받은 도구, 가상환경)
+# 검사하지 않는 폴더 (생성물, 받은 도구, 가상환경). git에서 뺀 데이터 폴더(tools/sync.py의 SYNC_DIRS)도
+# 보지 않는다: 시험 기록에 같이 남긴 스크립트 사본은 레포 코드가 아니다.
 SKIP_DIRS = {".venv", ".git", "build", "target", "node_modules", "__pycache__"}
 
 
@@ -93,6 +96,8 @@ def _repo_python_files() -> list[Path]:
     for path in ROOT.rglob("*.py"):
         parts = path.relative_to(ROOT).parts
         if SKIP_DIRS.intersection(parts) or parts[:2] == ("tools", "local"):
+            continue
+        if parts[0] in sync.SYNC_DIRS:
             continue
         files.append(path)
     return sorted(files)
