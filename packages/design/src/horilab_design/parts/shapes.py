@@ -27,6 +27,8 @@ from build123d import (
     extrude,
 )
 
+from horilab_design.printcheck import LAYER
+
 Point = tuple[float, float, float]
 
 # ISO 4032 M3 육각너트 두께. 홈 높이는 1차 시험편에서 고른 값을 쓴다.
@@ -136,6 +138,68 @@ def teardrop_y(diameter: float, y0: float, y1: float, x: float, z: float, roof: 
     rx, _, rz = roof
     x_dir = (-rz, 0.0, rx)  # roof × (0, 1, 0): 이 틀에서 지역 y가 roof, 지역 z가 세계 y다
     return solid(body.moved(Location(Plane(origin=(x, y0, z), x_dir=x_dir, z_dir=(0.0, 1.0, 0.0)))))
+
+
+# ---- 바닥 쪽 머리 자리의 천장 ------------------------------------------------------------------------------
+#
+# 바닥에 닿는 면에서 판 나사 머리 자리(너트 자리)는 그 천장이 허공에 뽑힌다. 천장에 나사 구멍이 뚫려 있으면
+# 슬라이서가 구멍을 둘러싼 벽 고리를 공중에 뽑고, 폭이 좁은 자리에서는 윤곽을 따라 도는 벽 선이 공중에서 꺾여
+# 돈다. 둘 다 처진다 (docs/decisions/0035-slicer-automation.md의 공중 벽 선 검사). 천장 첫 층의 선이 모두 곧고
+# 양 끝이 붙게 하는 따냄 둘이다. 스튜디오 2.9.1로 잘라 G-code에서 확인했다 (Strength 벽 6겹, Standard 벽 2겹):
+# - slot_ceiling: 구멍 폭의 긴 구멍 한 층 + 네모 구멍 한 층. 뚫을 것이 없다. 머리는 긴 구멍 양옆의 두 띠에만 앉는다
+#   (M3 둥근머리 5.7, 구멍 3.4면 고리 16.4 mm² 중 7.4 mm²). 힘을 받지 않는 덮개 나사에 쓴다.
+# - comb_ceiling: 천장 첫 층이 구멍까지 덮는 막이고, 그 막을 좁은 틈으로 갈라 빗살로 만든다. 머리가 고리 전체에
+#   앉는다 (틈만큼만 빠진다). 조립할 때 구멍 자리의 막을 뚫는다. 힘을 받는 머리 자리에 쓰고, 벽 띠(Strength
+#   2.45 mm)보다 윤곽에 가까운 좁은 자리에서도 선이 곧다. 윤곽에서 벽 띠보다 먼 넓은 자리는 틈 없이 막만 두어도
+#   다리 선으로 덮인다 (Standard 덮개에서 확인).
+# 빗살의 틈: 폭 0.25 mm면 슬라이서가 틈으로 보고(닫는 반지름 0.049 mm) 틈 양옆에 곧은 벽 선을 낸다. 간격 1.7 mm면
+# 빗살 폭이 1.45 mm라 선 서넛이 든다. 빗살 폭이 2.2 mm면 빗살 끝에서 벽 선이 다시 꺾여 돈다 (출력 원판 귀에 틈
+# 둘을 ±1.0에 두고 잘라 본 것)
+COMB_SLIT = 0.25
+COMB_PITCH = 1.7
+
+
+def slot_ceiling(
+    seat: Point, up: Point, along: Point, hole_d: float, pocket_d: float, layer: float = LAYER
+) -> Compound:
+    """구멍 뚫린 머리 자리의 천장 위 두 층에서 따낼 것: 첫 층은 구멍 폭의 긴 구멍(along 방향, 머리 자리 지름까지),
+    둘째 층은 구멍 폭의 네모다. 벽 선이 첫 층에서는 긴 구멍을 따라, 둘째 층에서는 그 위를 가로질러 곧게 건넌다.
+
+    seat는 천장(머리가 앉는 면)의 구멍 가운데, up은 뽑을 때 위, along은 긴 구멍의 방향이다 (up과 직각인 단위 벡터).
+    둥근 구멍은 부르는 쪽이 seat에서 두 층 위부터 낸다. seat는 층 경계에 둔다.
+    """
+    over = 0.01  # 아래 것과 겹쳐 한 덩어리로 따낸다
+    first = Pos(0, 0, (layer - over) / 2) * Box(pocket_d, hole_d, layer + over)
+    first &= Pos(0, 0, -over) * _up(pocket_d / 2, layer + over)
+    second = Pos(0, 0, layer + (layer - over) / 2) * Box(hole_d, hole_d, layer + over)
+    return solid((first + second).moved(Location(Plane(origin=seat, x_dir=along, z_dir=up))))
+
+
+def comb_ceiling(
+    seat: Point,
+    up: Point,
+    along: Point,
+    pocket_d: float,
+    back: float,
+    front: float,
+    layer: float = LAYER,
+) -> Compound:
+    """머리 자리의 천장 첫 층(구멍까지 덮는 막)을 빗살로 가르는 틈들: along 방향으로 나란하고 가운데 틈이 구멍
+    가운데를 지난다. 벽 선이 틈을 따라 곧게 놓여, 양 끝(머리 자리 밖의 살)에 붙은 채로 머리 자리를 건넌다.
+
+    seat는 천장의 구멍 가운데, up은 뽑을 때 위다. 틈은 seat에서 along 반대쪽으로 back, along 쪽으로 front까지다.
+    둘 다 머리 자리 벽을 0.5 mm 넘게 지나야 선이 살 위에서 돈다. 구멍은 부르는 쪽이 seat에서 한 층 위부터 낸다.
+    """
+    over = 0.01
+    n = int((pocket_d / 2 - 0.6) / COMB_PITCH)
+    slits: Compound | None = None
+    for k in range(-n, n + 1):
+        one = Pos((front - back) / 2, k * COMB_PITCH, (layer - over) / 2) * Box(
+            front + back, COMB_SLIT, layer + over
+        )
+        slits = solid(one) if slits is None else solid(slits + one)
+    assert slits is not None
+    return slits.moved(Location(Plane(origin=seat, x_dir=along, z_dir=up)))
 
 
 # 바깥 상자는 빠른 어림이라 곡면에서 실제보다 조금 작을 수 있다. 이만큼 더 떨어진 쌍만 건너뛴다

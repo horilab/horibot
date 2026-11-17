@@ -46,25 +46,35 @@ def test_printed_parts_have_no_steep_overhang() -> None:
 
 
 @pytest.mark.slow
-def test_air_walls_are_where_the_first_joint_plates_sagged() -> None:
-    # 첫 관절 판(2026-11-15)에서 실이 처진 자리와 공중 벽 선 검사가 잡는 자리가 같다. 처진 곳: 출력 원판 귀의
-    # 나사 머리 자리, 서보 받침의 M2 머리 자리 둘과 먼 가로대 밑(선 홈, 끝에 나사 구멍 둘), 뒷덮개의 나사 머리
-    # 자리 둘. 손목 몸통의 멈춤 홈 천장은 다리 선으로 잘 뽑혔다. 다음 관절 부품에서 이 자리들의 모양을 고치면
-    # 이 시험의 기대값을 비운다 (docs/status.md)
-    blocking: dict[str, list[tuple[str, float, float]]] = {}
+def test_no_air_walls_block_the_first_joint_parts() -> None:
+    # 첫 관절 판(2026-11-15)에서 실이 처진 자리는 모두 공중 벽 선 검사가 막던 자리였다: 출력 원판 귀의 나사 머리
+    # 자리, 서보 받침의 M2 머리 자리와 먼 가로대 밑, 뒷덮개의 나사 머리 자리 둘. 그 자리들의 모양을 고쳐서 이제
+    # 막는 자리가 없다: 귀는 빗살로 가른 막, 뒷덮개는 긴 구멍과 네모, 받침은 파인 자리 없는 한 두께의 판이다
     for name, (shape, up, _c, preset) in wrist.printed().items():
-        found = [a for a in air_walls(shape, up, wall_settings(preset)) if a.blocking]
-        blocking[name] = sorted((a.kind, a.height, round(a.where[0])) for a in found)
-    assert (
-        blocking["wrist_body"] == [] and blocking["hub_plate"] == [] and blocking["retainer"] == []
+        found = air_walls(shape, up, wall_settings(preset))
+        assert [a.describe() for a in found if a.blocking] == [], name
+        if name == "carrier":
+            assert found == (), name  # 뒷면 전체가 바닥에 닿아 참고로 나오는 자리도 없다
+
+
+def test_head_pockets_keep_their_seat_and_thread() -> None:
+    # 출력 원판 귀: 천장 첫 층이 구멍을 덮는 막이고(틈 몫만 빠진다), 머리(반지름 2.85)가 앉는 고리 16.4 mm² 가운데
+    # 13 mm² 넘게 살이 있다. 긴 구멍이면 7.4 mm²다
+    disc = j.out_disc()
+    seat = j.ATOP - j.POST_HEAD_SINK
+    lo, hi = seat - LAYER + 0.02, seat - 0.02
+    hole = cyl_y(j.K_M3_FREE / 2, lo, hi, j.R_POST, 0.0)
+    assert (disc & hole).volume / hole.volume > 0.85
+    ring = cyl_y(2.85, lo, hi, j.R_POST, 0.0) - cyl_y(
+        j.K_M3_FREE / 2, lo - 1, hi + 1, j.R_POST, 0.0
     )
-    assert {k for k, _h, _x in blocking["out_disc"]} >= {"ring"}
-    assert {h for _k, h, _x in blocking["out_disc"]} == {1.8}  # 높이는 0.01 mm로 반올림해 낸다
-    assert [k for k, _h, _x in blocking["wrist_cover"]] == ["ring", "ring"]
-    carrier = blocking["carrier"]
-    assert {h for _k, h, _x in carrier} == {0.8}
-    assert sum(k == "ring" for k, _h, _x in carrier) == 4  # M2 머리 자리 둘 + 가로대 끝 구멍 둘
-    assert any(k == "span" for k, _h, _x in carrier)  # 가로대 밑을 벽 선만으로 건넌다
+    assert (disc & ring).volume / (hi - lo) > 13.0
+    # 뒷덮개: 나사 기둥이 머리 자리보다 굵어 둘레의 판에 얹히고, 받침의 날개(반지름 R_SLIDE - 0.4) 안에 앉는다
+    assert j.COVER_BOSS_R - j.HEAD_POCKET_R >= 0.6
+    assert math.hypot(*j.COVER_BOSS[0]) + j.COVER_BOSS_R <= j.R_SLIDE - 0.4
+    # 뒷덮개 나사 M3 × 12가 받침에 물리는 길이 (받침 판의 뒷면에서 나사 끝까지)
+    tip = j.BACK_OUT + j.COVER_HEAD_SINK + j.COVER_SCREW
+    assert tip - (j.L1 - j.PLATE_T) == pytest.approx(8.78, abs=0.01)
 
 
 @pytest.mark.slow
@@ -123,24 +133,26 @@ def test_horn_screw_head_and_back_side_fit() -> None:
     # 뒷면: 꽂은 플러그는 커넥터가 있는 뒷면에서 2.6 나오고, 눕힌 선의 윗면은 잰 값이다
     assert j.L1 - j.PLUG_TOP == pytest.approx(2.62, abs=0.01)
     assert j.PLUG_TOP - j.WIRE_TOP == pytest.approx(j.WIRE_T)
-    # 서보 받침: 먼 가로대의 선 자리는 눕힌 선 밑보다 낮고, 그 밑에 판이 2 mm 넘게 남는다
-    groove = j.L1 - j.PLATE_T + j.WIRE_GROOVE
-    assert groove - j.PLUG_TOP >= 0.3 and j.PLATE_T - j.WIRE_GROOVE >= 2.0
-    # 서보 뒷면 나사: 둥근머리(높이 1.6)가 판 속 자리에 0.8 들고, 나온 머리가 뒷덮개 안쪽 면과 1.0 넘게 뜬다
-    head_top = j.L1 - j.PLATE_T + j.M2_SINK - 1.6
-    assert head_top - j.BACK_IN >= 1.0
-    # 머리 밑의 살 2.2 mm: STS3250의 M2 × 5는 서보에 2.8 mm 물리고, STS3215의 자가탭 나사(전체 7.16 mm, 머리 밑
-    # 5.5 ~ 6.0으로 본다)는 3.3 ~ 3.8 mm 물린다
-    web = j.PLATE_T - j.M2_SINK
-    assert web == pytest.approx(2.2)
-    assert j.M2_SCREW - web == pytest.approx(2.8)
+    # 서보 받침: 판 뒷면이 눕힌 선 밑보다 낮아서 선이 홈 없이 판 위를 지나간다
+    back = j.L1 - j.PLATE_T
+    assert back - j.PLUG_TOP >= 0.3
+    # 서보 뒷면 나사: 둥근머리(높이 1.6)가 판 뒷면에 바로 앉고, 뒷덮개 안쪽 면과 1.0 넘게 뜬다
+    assert (back - 1.6) - j.BACK_IN >= 1.0
+    # 머리 밑의 살(판 두께) 2.2 mm: STS3250의 M2 × 5는 서보에 2.8 mm 물리고, STS3215의 자가탭 나사(전체 7.16 mm,
+    # 머리 밑 5.5 ~ 6.0으로 본다)는 3.3 ~ 3.8 mm 물린다
+    assert j.PLATE_T == pytest.approx(2.2)
+    assert j.M2_SCREW - j.PLATE_T == pytest.approx(2.8)
     measured = load_measured()
     assert measured.servo_back_screw is not None
     assert measured.servo_back_screw.total_length_mm == pytest.approx(7.16)
-    # 머리 자리와 구멍: 흔한 M2·ST2.2 둥근머리(머리 지름 4.0, 나사산 2.2까지)가 검정 세로 구멍의 줄어듦까지 넣어 든다
-    assert 2 * j.M2_HEAD_R - 4.0 >= 0.6 and 2 * j.M2_HOLE_R - 2.2 >= 0.4
+    # 구멍: 흔한 M2·ST2.2 둥근머리(머리 지름 4.0, 나사산 2.2까지)의 나사산이 검정 세로 구멍의 줄어듦까지 넣어 지나간다.
+    # 머리는 판 안에 앉는다 (먼 구멍의 머리 가장자리가 판 옆 끝보다 안이다)
+    assert 2 * j.M2_HOLE_R - 2.2 >= 0.4
+    assert max(abs(z) for _x, z in j.BACK_HOLES) + 2.0 <= j.HW - 0.06
+    # 서보 밖의 날개는 3.0 mm이고 서보 옆면과 0.5 넘게 뜬다
+    assert j.WING_T == pytest.approx(3.0) and j.WING_IN - j.HW >= 0.5
     # 판 위를 지나는 선(두께 1.5)과 뒷덮개 사이
-    assert (j.L1 - j.PLATE_T - j.WIRE_T) - j.BACK_IN >= 0.5
+    assert (back - j.WIRE_T) - j.BACK_IN >= 0.5
     # 뒷덮개 나사 M3 × 12의 끝이 받침의 기둥 속에서 끝난다
     tip = j.BACK_OUT + 1.2 + j.COVER_SCREW
     assert j.L1 + 6.0 < tip < j.L1 + 7.0

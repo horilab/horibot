@@ -583,7 +583,7 @@ def hardware(model: ServoModel) -> list[j.Part]:
     nut_x = j.hex_x(j.RET_SCREW_Y, 0.0, leg_in, leg_in + j.NUT_T, 5.4)
     out.append(j.Part("너트 (누름 틀)", nut_x, j.STEEL * 0.72, False, "metal"))
     for k, (x, z) in enumerate(j.BACK_HOLES):
-        y = j.L1 - j.PLATE_T + j.M2_SINK + dy  # 머리 밑면 (받침 판 속 자리의 바닥)
+        y = j.L1 - j.PLATE_T + dy  # 머리 밑면 (받침 판의 뒷면)
         shape = cyl_y(1.0, y, y + j.M2_SCREW, x, z) + cyl_y(2.0, y - 1.6, y, x, z)
         out.append(j.Part(f"서보 뒷면 나사 {k + 1}", solid(shape), j.STEEL, False, "metal"))
     return out

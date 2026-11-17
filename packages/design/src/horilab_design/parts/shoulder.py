@@ -93,9 +93,11 @@ R_STEP = 21.5  # 허브 판의 테와 출력 원판의 단: 안쪽 링 앞뒤 �
 R_JOURNAL = JOURNAL_D / 2
 BOLT_R = 12.0  # 혼 볼트 여덟
 HEAD_HOLE_R = 4.0  # 허브 판 가운데 구멍 (혼 가운데 나사 머리가 들어온다)
+# 서보 받침 판의 두께. M2.5 머리는 판 뒷면에 바로 앉는다 (STS 관절의 받침은 2.2다, parts/joint.py)
+PLATE_T = 3.0
 COVER_T = 2.0
 # 뒷덮개 안쪽 면: 뒷면 보스 끝과 받침 나사 머리 중 더 나온 것에서 COVER_GAP
-BACK_IN = min(BOSS_TIP, -HT - j.PLATE_T - M25_HEAD) - j.COVER_GAP
+BACK_IN = min(BOSS_TIP, -HT - PLATE_T - M25_HEAD) - j.COVER_GAP
 BACK_END = BACK_IN + 0.8  # 원통 뒤 끝. 덮개는 서보 받침을 따라 앉으므로 0.8 띄운다
 COVER_SKIRT = 2.5
 COVER_R = R_DRUM + 0.4 + 1.6
@@ -319,7 +321,7 @@ def retainer() -> Compound:
 
 def carrier() -> Compound:
     """서보 받침: 서보 뒷면 M2.5 여섯에 다는 판과 벽을 따라 선 날개 셋. 판 뒷면을 바닥에 두고 뽑는다."""
-    y0, y1 = -HT - j.PLATE_T, -HT
+    y0, y1 = -HT - PLATE_T, -HT
     r_out = R_BORE - 0.15
     # 원기둥 면의 이음선(0°)을 날개와 나사 구멍 자리에서 45° 돌려 둔다 (이음선 위에서 자르면 형상이 깨진다)
     arc = solid(Rot(0, 45, 0) * cyl_y(r_out - 0.4, y0, y1))
@@ -389,8 +391,8 @@ def back_cover(neck_x: float = NECK_X) -> Compound:
     inner += box(neck_x - 1, NECK_TOP_X, BACK_IN, y_skirt + 1, -NECK_HW - 0.4, NECK_HW + 0.4)
     c = solid(outline - inner)
     for x, z in COVER_BOSS:
-        c = solid(c + cyl_y(3.2, BACK_IN - 0.01, -HT - j.PLATE_T, x, z))
-        c = solid(c - cyl_y(j.M3_FREE_H / 2, BACK_OUT - 1, -HT - j.PLATE_T + 1, x, z))
+        c = solid(c + cyl_y(3.2, BACK_IN - 0.01, -HT - PLATE_T, x, z))
+        c = solid(c - cyl_y(j.M3_FREE_H / 2, BACK_OUT - 1, -HT - PLATE_T + 1, x, z))
         c = solid(c - cyl_y(3.1, BACK_OUT - 0.01, BACK_OUT + 1.2, x, z))  # 나사 머리 자리
     return c
 
@@ -433,7 +435,7 @@ def hardware() -> list[j.Part]:
             1.5, SEAM - 1, SEAM + j.NUT_T + 1, x, z
         )
         out.append(j.Part(f"너트 (출력 원판) {k + 1}", solid(nut), j.STEEL, True, "metal"))
-    y = -HT - j.PLATE_T
+    y = -HT - PLATE_T
     for k, (x, z) in enumerate(BACK_HOLES):
         shape = cyl_y(1.25, y, y + 6.0, x, z) + cyl_y(2.25, y - M25_HEAD, y, x, z)
         out.append(j.Part(f"M2.5x6 {k + 1}", solid(shape), j.STEEL, False, "metal"))
