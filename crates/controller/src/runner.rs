@@ -21,7 +21,8 @@
 //! ```
 //!
 //! 움직이거나 버티는 동안 Enter를 누르면 감속해 서고 순서를 끝낸다. 고장이 나면 순서를 끝낸다 (서보는 마지막
-//! 목표를 잡고 있다).
+//! 목표를 잡고 있다). 움직이기는 목표에 닿아야 끝난다: 서보가 뜨거워 쉬느라 목표 전에 서면 순서를 끝낸다.
+//! 목표는 읽을 때 실행 루프와 같은 검사로 거른다 (소프트 한계와 같은 각은 받는다).
 
 use std::collections::BTreeMap;
 
@@ -29,6 +30,7 @@ use horilab_servo::feetech::ServoBus;
 use serde::Deserialize;
 
 use crate::check::Console;
+use crate::joints::Servo;
 use crate::plan::{MotionLimits, move_joints};
 use crate::runloop::{Mode, RunLoop};
 use crate::settings::{LoopSettings, Settings};
@@ -78,8 +80,8 @@ pub struct Script {
 }
 
 impl Script {
-    /// 시험 순서를 읽고 로봇 설정과 맞춰 본다. 관절은 영점이 있어야 하고, 목표는 소프트 한계 안이어야 하고,
-    /// 토크 끄기는 마지막 단계여야 한다. 잘못된 곳은 모두 모아 알린다.
+    /// 시험 순서를 읽고 로봇 설정과 맞춰 본다. 관절은 영점이 있어야 하고, 목표는 소프트 한계 안이어야 하고(실행
+    /// 루프와 같은 검사: [`Servo::reaches`]), 토크 끄기는 마지막 단계여야 한다. 잘못된 곳은 모두 모아 알린다.
     pub fn parse(text: &str, settings: &Settings) -> Result<Self, String> {
         let file: ScriptFile =
             toml::from_str(text).map_err(|e| format!("시험 순서를 읽지 못했다: {e}"))?;
@@ -131,9 +133,9 @@ impl Script {
                         Some(index) => {
                             let joint = joints[index];
                             let angle = degrees.to_radians();
-                            if !(degrees.is_finite()
-                                && (joint.lower..=joint.upper).contains(&angle))
-                            {
+                            let reaches =
+                                Servo::from_joint(joint).is_ok_and(|servo| servo.reaches(angle));
+                            if !reaches {
                                 problems.push(format!(
                                     "{at}: {name} {degrees}°는 소프트 한계({:.1}°~{:.1}°) 밖이다",
                                     joint.lower.to_degrees(),
@@ -233,6 +235,8 @@ pub struct Runner {
     temperature_warn: f64,
     index: usize,
     phase: Phase,
+    /// 지금 움직이기 단계의 목표 [rad] (실행 루프의 관절 순서)
+    goal: Vec<f64>,
     events: Vec<String>,
     released: bool,
 }
@@ -253,6 +257,7 @@ impl Runner {
             temperature_warn: settings.temperature_warn,
             index: 0,
             phase: Phase::Begin,
+            goal: Vec::new(),
             events: Vec::new(),
             released: false,
         }
@@ -336,6 +341,7 @@ impl Runner {
                         Ok(seconds) => {
                             let text = format!("[{}] 움직인다 ({seconds:.1} s)", self.label());
                             self.note(console, text);
+                            self.goal = goal;
                             self.phase = Phase::Moving;
                             return Status::Running;
                         }
@@ -356,6 +362,24 @@ impl Runner {
                     if *run.mode() != Mode::Holding {
                         return Status::Running;
                     }
+                    // 목표에 닿아야 끝난다. 서보가 뜨거워 쉬느라 목표 전에 섰으면 끊긴 움직임을 마친 것으로 치지 않고
+                    // 순서를 끝낸다 (팔은 선 자리에서 버틴다)
+                    let reached = run
+                        .targets()
+                        .iter()
+                        .zip(&self.goal)
+                        .all(|(now, goal)| (now - goal).abs() <= 1e-9);
+                    if !reached {
+                        let why = run
+                            .resting()
+                            .map_or_else(String::new, |reason| format!(": {reason}"));
+                        let text = format!(
+                            "[{}] 목표에 닿기 전에 서서 순서를 끝낸다{why}",
+                            self.label()
+                        );
+                        self.note(console, text.clone());
+                        return Status::Stopped(text);
+                    }
                     self.next();
                 }
                 (Phase::Begin, Step::Hold(seconds)) => {
@@ -372,12 +396,7 @@ impl Runner {
                         self.note(console, text.clone());
                         return Status::Stopped(text);
                     }
-                    let hottest = run
-                        .states()
-                        .iter()
-                        .map(|(_, state)| state.temperature)
-                        .max()
-                        .unwrap_or(0);
+                    let hottest = run.hottest().map_or(0, |(_, temperature)| temperature);
                     if f64::from(hottest) >= self.temperature_warn {
                         let text = format!(
                             "[{}] 온도 {hottest}°C가 알림 기준 {}°C에 닿아 버티기를 끝낸다",
@@ -589,6 +608,60 @@ mod tests {
             run.targets()[0] < 60f64.to_radians() - 0.1,
             "{}",
             run.targets()[0]
+        );
+    }
+
+    #[test]
+    fn moves_to_exactly_the_soft_limits_run() {
+        // 소프트 한계 -30°~118°는 1706.7칸과 3390.6칸이다. 한계를 안쪽으로 반올림하던 때는 118°(반올림하면
+        // 3391칸)로 가는 움직임을 순서는 받고 실행 루프는 움직이기 직전에 거부했다 (2026-11-18 첫 실물 실행)
+        let settings = settings();
+        let text = "name = \"t\"\njoints = [\"j3\"]\n\
+                    [[steps]]\nmove = { j3 = 118.0 }\n\
+                    [[steps]]\nmove = { j3 = -30.0 }\n";
+        let script = Script::parse(text, &settings).unwrap();
+        let mut run = run_loop(&settings);
+        let mut runner = Runner::new(script, &settings.run_loop, DT);
+        let mut keys = Keys::default();
+        let mut peak = 0.0_f64;
+        let status = drive(&mut run, &mut runner, &mut keys, 5000, |run, _| {
+            peak = peak.max(run.targets()[0]);
+        });
+        assert_eq!(status, Status::Done, "{:?}", keys.said);
+        assert!((peak - 118f64.to_radians()).abs() < 1e-9, "{peak}");
+        assert!((run.targets()[0] - (-30f64).to_radians()).abs() < 1e-9);
+        // 한계를 넘는 목표는 읽을 때 거른다
+        let error = Script::parse(&text.replace("118.0", "118.1"), &settings).unwrap_err();
+        assert!(error.contains("소프트 한계"), "{error}");
+    }
+
+    #[test]
+    fn a_move_cut_short_by_a_hot_servo_ends_the_script() {
+        let settings = settings();
+        let text = "name = \"t\"\njoints = [\"j3\"]\n\
+                    [[steps]]\nmove = { j3 = 60.0 }\n\
+                    [[steps]]\nmove = { j3 = 0.0 }\n";
+        let script = Script::parse(text, &settings).unwrap();
+        let mut run = run_loop(&settings);
+        let mut runner = Runner::new(script, &settings.run_loop, DT);
+        let mut keys = Keys::default();
+        let hot = settings.run_loop.temperature_rest as i32 + 1;
+        let status = drive(&mut run, &mut runner, &mut keys, 5000, |run, now| {
+            if now > 0.5 {
+                run.joints_for_test().wire().servos[0].set(reg::PRESENT_TEMPERATURE, hot);
+            }
+        });
+        assert!(
+            matches!(&status, Status::Stopped(text)
+                if text.contains("목표에 닿기 전에") && text.contains("쉬는 기준")),
+            "{status:?}"
+        );
+        // 선 자리에서 버티고, 다음 단계(0°로 움직이기)는 하지 않았다
+        assert_eq!(run.mode(), &Mode::Holding);
+        let stopped = run.targets()[0];
+        assert!(
+            stopped > 0.1 && stopped < 60f64.to_radians() - 0.1,
+            "{stopped}"
         );
     }
 

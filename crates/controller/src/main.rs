@@ -859,23 +859,27 @@ fn run_row<B: ServoBus>(run: &RunLoop<B>) -> Vec<i32> {
     row
 }
 
-/// 사람이 볼 한 줄: 관절마다 각, 부하, 온도.
+/// 사람이 볼 한 줄: 관절마다 각, 부하, 온도 (실행 루프가 판단에 쓰는 값. 기록에는 읽은 값 그대로 남는다).
 fn run_status<B: ServoBus>(run: &RunLoop<B>, settings: &Settings, names: &[&str]) -> String {
     let parts: Vec<String> = run
         .states()
         .iter()
         .zip(names)
-        .map(|((_, state), name)| {
+        .map(|((id, state), name)| {
             let angle = settings
                 .joint(name)
                 .and_then(|joint| joint.calibration)
                 .map_or(f64::NAN, |c| {
                     c.angle_at(f64::from(state.position)).to_degrees()
                 });
+            let temperature = run
+                .temperatures()
+                .iter()
+                .find(|(known, _)| known == id)
+                .map_or(state.temperature, |&(_, temperature)| temperature);
             format!(
-                "{name} {angle:.1}° 부하 {:.1}% {}°C",
-                f64::from(state.load) / 10.0,
-                state.temperature
+                "{name} {angle:.1}° 부하 {:.1}% {temperature}°C",
+                f64::from(state.load) / 10.0
             )
         })
         .collect();

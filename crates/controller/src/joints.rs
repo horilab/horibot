@@ -104,7 +104,9 @@ impl Servo {
         }
     }
 
-    /// 로봇 관절. 영점과 방향을 재기 전에는 움직이지 않는다. 한계는 소프트 한계를 안쪽으로 반올림한 서보 값이다.
+    /// 로봇 관절. 영점과 방향을 재기 전에는 움직이지 않는다. 한계는 소프트 한계를 가장 가까운 서보 값으로
+    /// 반올림한 값이다: 소프트 한계 안의 각(한계와 같은 각도 포함)은 반올림해도 이 안에 들고, 한계를 넘는 양은 반
+    /// 칸(0.044°) 안이다. 서보에 굽는 각도 한계는 바깥쪽으로 반올림해서 늘 이 한계와 같거나 그 밖이다 (0024).
     pub fn from_joint(joint: &Joint) -> Result<Self, String> {
         let calibration = joint
             .calibration
@@ -134,8 +136,8 @@ impl Servo {
             name: joint.name.to_owned(),
             id: joint.id,
             model_number: joint.model_number,
-            min_raw: a.min(b).ceil() as i32,
-            max_raw: a.max(b).floor() as i32,
+            min_raw: a.min(b).round() as i32,
+            max_raw: a.max(b).round() as i32,
             torque_limit: joint.torque_limit,
             eeprom,
             calibration: Some(calibration),
@@ -158,6 +160,13 @@ impl Servo {
     /// 서보 값의 관절 각 [rad]. 맨 서보는 없다.
     pub fn angle_at(&self, raw: i32) -> Option<f64> {
         self.calibration.map(|c| c.angle_at(f64::from(raw)))
+    }
+
+    /// 관절 각 [rad]의 서보 값이 이 서보의 한계 안인가. 실행 루프가 궤적과 목표를 이것으로 거르고, 시험 순서도
+    /// 읽을 때 같은 검사를 쓴다 (순서를 읽을 때 통과한 목표는 실행 루프도 받는다). 맨 서보는 늘 아니다.
+    pub fn reaches(&self, angle: f64) -> bool {
+        self.raw_at(angle)
+            .is_some_and(|raw| (self.min_raw..=self.max_raw).contains(&raw))
     }
 }
 
@@ -710,10 +719,14 @@ mod tests {
             position_offset: 0,
         });
         let servo = Servo::from_joint(&joint).unwrap();
-        // 각도 한계는 이 서보의 영점과 소프트 한계로 계산한 값이다
+        // 각도 한계는 이 서보의 영점과 소프트 한계로 계산한 값이다: 소프트 한계(-30°는 1706.7칸, 118°는
+        // 3390.6칸)를 바깥쪽으로 반올림해서, 가장 가까운 칸으로 반올림한 실행 루프의 한계와 같거나 그 밖이다
         let limit = |register| servo.eeprom.iter().find(|(r, _)| *r == register).unwrap().1;
-        assert_eq!(limit(reg::MIN_ANGLE_LIMIT), servo.min_raw - 1);
-        assert_eq!(limit(reg::MAX_ANGLE_LIMIT), servo.max_raw + 1);
+        assert_eq!(
+            (limit(reg::MIN_ANGLE_LIMIT), limit(reg::MAX_ANGLE_LIMIT)),
+            (1706, 3391)
+        );
+        assert_eq!((servo.min_raw, servo.max_raw), (1707, 3391));
         // 예비 서보를 갈아 끼우고 값 적용을 빠뜨렸다: 각도 한계와 과부하 보호가 다르다
         let mut fake = programmed(FakeServo::with(3, 2825, 2048), &servo);
         fake.set(reg::MAX_ANGLE_LIMIT, 4095);
@@ -725,6 +738,34 @@ mod tests {
             "{message}"
         );
         assert!(!joints.snapshot(3).unwrap().torque_on());
+    }
+
+    #[test]
+    fn a_joint_reaches_its_soft_limits_exactly() {
+        // 첫 실물 실행(2026-11-18)의 J5: 소프트 한계 ±155°, 핀 자리 -90°, 영점 1024. 소프트 한계가 284.4칸과
+        // 3811.6칸이라, 안쪽으로 반올림한 한계(285, 3811)로는 한계와 같은 목표(반올림하면 284, 3812)를 거부했다
+        let mut joint = Settings::parse(TEST_J3)
+            .unwrap()
+            .joint("j3")
+            .unwrap()
+            .clone();
+        joint.lower = (-155f64).to_radians();
+        joint.upper = 155f64.to_radians();
+        for (zero_raw, direction) in [(1024, Direction::Same), (3072, Direction::Reversed)] {
+            joint.calibration = Some(Calibration {
+                pin: (-90f64).to_radians(),
+                zero_raw,
+                direction,
+                position_offset: 147,
+            });
+            let servo = Servo::from_joint(&joint).unwrap();
+            assert_eq!((servo.min_raw, servo.max_raw), (284, 3812), "{direction:?}");
+            assert!(servo.reaches(joint.lower), "{direction:?}");
+            assert!(servo.reaches(joint.upper), "{direction:?}");
+            assert!(!servo.reaches(155.1f64.to_radians()), "{direction:?}");
+            assert!(!servo.reaches((-155.1f64).to_radians()), "{direction:?}");
+            assert!(!servo.reaches(f64::NAN));
+        }
     }
 
     #[test]

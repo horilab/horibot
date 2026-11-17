@@ -12,7 +12,8 @@
 //! - 서보 보호 비트, 꺼진 토크(서보 전원이 꺼졌다 켜짐), 잇단 통신 실패는 고장이다: 새 목표를 쓰지 않고
 //!   (서보는 마지막 목표를 잡고 있다) 까닭을 남긴다. 사람이 [`RunLoop::resume`]으로 푼다.
 //! - 서보 온도가 쉬는 기준에 닿으면 정지해 버티고, 알림 기준 아래로 식을 때까지 새 궤적을 받지 않는다 (쉬는
-//!   자세가 정해지면 그리로 내린다, 0028). 알림 기준을 넘은 온도와 기준보다 낮은 전압은 알린다.
+//!   자세가 정해지면 그리로 내린다, 0028). 알림 기준을 넘은 온도와 기준보다 낮은 전압은 알린다. 온도는 최근
+//!   [`TEMPERATURE_TICKS`]박자에 읽은 값의 가운데 값으로 본다 (움직이는 동안 한두 박자씩 튀어 읽힌다).
 //! - 처짐 보정: 붙잡고 있는 동안 서보가 읽은 위치와 목표의 차이를 쌓아 쓰는 목표를 고친다 (0012). 움직이는
 //!   동안에는 쌓은 값을 그대로 쓰고, 이득이 0이면 끈다.
 //! - 그리퍼 서보는 관절과 같은 박자로 읽고 쓴다. 명령은 열림 폭이고, 정한 빠르기로 그 폭까지 간다. 목표 폭에
@@ -21,6 +22,8 @@
 //!   계산해서 속도가 바뀌어도 매끄럽다. 명령이 [`JOG_TIMEOUT`] 안에 다시 오지 않으면 멈추고(명령이 끊기면 멈춘다,
 //!   0023), 소프트 한계 앞에서 멈출 수 있는 거리를 남기고 선다.
 //! - 시간은 부르는 쪽이 준다. 실물에서는 주기마다, 시험에서는 가짜 시계로 [`RunLoop::tick`]을 부른다.
+
+use std::collections::VecDeque;
 
 use horilab_servo::feetech::ServoBus;
 use rsruckig::prelude::*;
@@ -44,6 +47,12 @@ const STEP_ALLOWANCE: f64 = 1.5;
 const SPEED_TOLERANCE: f64 = 1e-9;
 /// 그리퍼가 막혀 멈췄다고 보는 박자 수 (위치가 한 칸 안에서 그대로)
 const GRIP_STILL_TICKS: u32 = 3;
+/// 서보 온도는 최근 이만큼의 박자(100 Hz에서 약 1초)에 읽은 값의 가운데 값으로 본다. 서보가 움직이는 동안 온도만
+/// 한두 박자씩 튀어 읽힌다 (2026-11-18 실물 J5: 실제 35~38°C인데 많게는 76°C로, 움직인 박자의 약 3 %, 잇달아
+/// 많아야 3박자, 이만큼의 박자 안에 많아야 13번. 같은 박자의 위치, 전압, 전류, 상태 바이트는 멀쩡했다. 2026-11-13
+/// 맨 서보 확인 기록에도 움직이는 동안 34°C가 많게는 128°C로 읽힌 줄이 있다). 실제 온도는 몇 분에 걸쳐 오르므로,
+/// 오른 온도를 창의 반(약 0.5초)만큼 늦게 알아도 된다
+pub const TEMPERATURE_TICKS: usize = 101;
 
 /// 시간이 붙은 관절 궤적: 점마다 시작에서의 시각 [s]과 관절 각 [rad] (루프의 관절 순서).
 #[derive(Debug, Clone, PartialEq)]
@@ -151,6 +160,10 @@ pub struct RunLoop<B: ServoBus> {
     corrections: Vec<f64>,
     /// 마지막 박자에 읽은 상태
     states: Vec<(u8, Snapshot)>,
+    /// 서보마다 최근에 읽은 온도 [°C] (오래된 것부터 [`TEMPERATURE_TICKS`]개까지)
+    heat_history: Vec<(u8, VecDeque<i32>)>,
+    /// 서보마다 판단에 쓰는 온도 [°C]: 최근 온도의 가운데 값 (읽은 상태와 같은 순서)
+    temperatures: Vec<(u8, i32)>,
     playing: Option<Playing>,
     mode: Mode,
     /// 서보가 뜨거워 쉬는 까닭. 있으면 새 궤적을 받지 않는다
@@ -226,6 +239,8 @@ impl<B: ServoBus> RunLoop<B> {
             targets: Vec::new(),
             corrections: Vec::new(),
             states: Vec::new(),
+            heat_history: Vec::new(),
+            temperatures: Vec::new(),
             playing: None,
             mode: Mode::Holding,
             hot: None,
@@ -275,6 +290,25 @@ impl<B: ServoBus> RunLoop<B> {
         &self.states
     }
 
+    /// 서보마다 판단에 쓰는 온도 [°C] (읽은 상태와 같은 순서): 최근 [`TEMPERATURE_TICKS`]박자에 읽은 값의 가운데
+    /// 값이다. 한두 박자씩 튀어 읽힌 값으로는 알리거나 쉬지 않는다.
+    pub fn temperatures(&self) -> &[(u8, i32)] {
+        &self.temperatures
+    }
+
+    /// 가장 뜨거운 서보와 판단에 쓰는 그 온도 [°C].
+    pub fn hottest(&self) -> Option<(u8, i32)> {
+        self.temperatures
+            .iter()
+            .copied()
+            .max_by_key(|&(_, temperature)| temperature)
+    }
+
+    /// 서보가 뜨거워 쉬는 까닭. 쉬는 동안에는 새 궤적과 조그를 받지 않는다.
+    pub fn resting(&self) -> Option<&str> {
+        self.hot.as_deref()
+    }
+
     /// 그리퍼의 열림 폭 [mm](마지막에 읽은 위치)과 상태. 그리퍼가 없으면 없다.
     pub fn gripper(&self) -> Option<(f64, Grip)> {
         let gripper = self.gripper.as_ref()?;
@@ -308,8 +342,14 @@ impl<B: ServoBus> RunLoop<B> {
             found.push(format!("{reason} (조그 명령을 한 번 뗀 뒤에 다시 받는다)"));
         }
         for (id, state) in &self.states {
-            let temperature = f64::from(state.temperature);
-            if temperature >= self.settings.temperature_warn {
+            let judged = self
+                .temperatures
+                .iter()
+                .find(|(known, _)| known == id)
+                .map(|&(_, temperature)| f64::from(temperature));
+            if let Some(temperature) = judged
+                && temperature >= self.settings.temperature_warn
+            {
                 found.push(format!(
                     "{}: 온도 {temperature}°C가 알림 기준 {}°C에 닿았다",
                     self.name(*id),
@@ -341,6 +381,7 @@ impl<B: ServoBus> RunLoop<B> {
             Ok(states) => {
                 self.missed = 0;
                 self.states = states;
+                self.remember_heat();
             }
             Err(e) => {
                 // 이번 박자는 쓰지 않는다: 서보는 마지막 목표를 잡고 있다
@@ -656,6 +697,7 @@ impl<B: ServoBus> RunLoop<B> {
         self.corrections = corrections;
         self.targets = targets;
         self.states = states;
+        self.remember_heat();
         self.playing = None;
         self.jog = None;
         self.mode = Mode::Holding;
@@ -765,14 +807,31 @@ impl<B: ServoBus> RunLoop<B> {
         }
     }
 
-    /// 가장 뜨거운 서보가 쉬는 기준에 닿으면 정지해 쉬고, 알림 기준 아래로 식으면 쉬기를 푼다.
+    /// 새로 읽은 상태의 온도를 쌓고, 서보마다 판단에 쓸 온도(최근 값의 가운데 값)를 다시 낸다. 처음 본 서보는
+    /// 창을 첫 값으로 채운다: 시작하자마자 움직여도 몇 안 되는 값의 가운데가 튄 값이 되지 않는다 (첫 값은 루프가
+    /// 붙잡고 있을 때 읽는다).
+    fn remember_heat(&mut self) {
+        let mut temperatures = Vec::with_capacity(self.states.len());
+        for (id, state) in &self.states {
+            let index = match self.heat_history.iter().position(|(known, _)| known == id) {
+                Some(index) => index,
+                None => {
+                    let first = VecDeque::from(vec![state.temperature; TEMPERATURE_TICKS]);
+                    self.heat_history.push((*id, first));
+                    self.heat_history.len() - 1
+                }
+            };
+            let history = &mut self.heat_history[index].1;
+            history.pop_front();
+            history.push_back(state.temperature);
+            temperatures.push((*id, median(history)));
+        }
+        self.temperatures = temperatures;
+    }
+
+    /// 가장 뜨거운 서보(판단에 쓰는 온도)가 쉬는 기준에 닿으면 정지해 쉬고, 알림 기준 아래로 식으면 쉬기를 푼다.
     fn watch_heat(&mut self) {
-        let Some((id, temperature)) = self
-            .states
-            .iter()
-            .map(|(id, state)| (*id, state.temperature))
-            .max_by_key(|&(_, temperature)| temperature)
-        else {
+        let Some((id, temperature)) = self.hottest() else {
             return;
         };
         let temperature = f64::from(temperature);
@@ -937,10 +996,7 @@ impl<B: ServoBus> RunLoop<B> {
             .zip(self.targets.iter().zip(&self.corrections))
         {
             let servo = self.joints.servo(id)?;
-            let inside = servo
-                .raw_at(angle)
-                .is_some_and(|raw| (servo.min_raw..=servo.max_raw).contains(&raw));
-            if !inside {
+            if !servo.reaches(angle) {
                 return Err(format!(
                     "{}: 목표 {angle} rad가 소프트 한계 밖이거나 수가 아니다",
                     servo.name
@@ -1134,10 +1190,7 @@ impl<B: ServoBus> RunLoop<B> {
         for (time, angles) in points {
             for (index, &angle) in angles.iter().enumerate() {
                 let servo = self.joints.servo(self.ids[index])?;
-                let inside = servo
-                    .raw_at(angle)
-                    .is_some_and(|raw| (servo.min_raw..=servo.max_raw).contains(&raw));
-                if !inside {
+                if !servo.reaches(angle) {
                     return Err(format!(
                         "{}: {time} s의 {angle:.4} rad가 소프트 한계 밖이다",
                         servo.name
@@ -1147,6 +1200,16 @@ impl<B: ServoBus> RunLoop<B> {
         }
         Ok(peak)
     }
+}
+
+/// 가운데 값 (짝수 개면 위쪽 가운데). 비어 있으면 0이다.
+fn median(values: &VecDeque<i32>) -> i32 {
+    if values.is_empty() {
+        return 0;
+    }
+    let mut sorted: Vec<i32> = values.iter().copied().collect();
+    let middle = sorted.len() / 2;
+    *sorted.select_nth_unstable(middle).1
 }
 
 /// 궤적의 `time` 시각 관절 각 (점 사이는 곧게). 끝을 지났으면 마지막 점과 `true`.
@@ -1649,24 +1712,40 @@ mod tests {
         assert_eq!(run.tick(DT), &Mode::Holding);
     }
 
+    /// 가짜 서보 하나의 온도를 바꾸고 박자를 돌린다.
+    fn heat_for(run: &mut RunLoop<Bus<FakePort>>, index: usize, temperature: i32, ticks: usize) {
+        fake(run, index).set(reg::PRESENT_TEMPERATURE, temperature);
+        for _ in 0..ticks {
+            run.tick(DT);
+        }
+    }
+
     #[test]
     fn a_hot_servo_stops_the_arm_until_it_cools() {
         let mut run = two_joints();
-        run.submit(line([1.0, 0.5], 1.0)).unwrap();
-        for _ in 0..10 {
-            run.tick(DT);
-        }
-        fake(&mut run, 1).set(reg::PRESENT_TEMPERATURE, 52);
-        run.tick(DT);
+        run.submit(line([1.0, 0.5], 5.0)).unwrap();
+        // 판단에 쓰는 온도는 최근 박자의 가운데 값이라, 바뀐 온도가 창의 반을 넘게 채운 박자에 바뀐다
+        let half = TEMPERATURE_TICKS / 2 + 1;
+        heat_for(&mut run, 1, 52, half - 1);
+        assert!(run.warnings().is_empty(), "{:?}", run.warnings());
+        heat_for(&mut run, 1, 52, 1);
         assert_eq!(run.mode(), &Mode::Moving); // 알림 기준만 넘으면 알리기만 한다
         let warnings = run.warnings();
         assert!(
             warnings[0].contains("j4: 온도 52°C가 알림 기준 50°C"),
             "{warnings:?}"
         );
-        fake(&mut run, 1).set(reg::PRESENT_TEMPERATURE, 56);
-        run.tick(DT);
+        assert_eq!(run.hottest(), Some((4, 52)));
+        heat_for(&mut run, 1, 56, half - 1);
+        assert_eq!(run.mode(), &Mode::Moving);
+        heat_for(&mut run, 1, 56, 1);
         assert_eq!(run.mode(), &Mode::Stopping);
+        assert!(
+            run.resting()
+                .is_some_and(|reason| reason.contains("쉬는 기준 55°C")),
+            "{:?}",
+            run.resting()
+        );
         until_holding(&mut run);
         let now = run.targets().to_vec();
         let stay = Trajectory {
@@ -1675,13 +1754,32 @@ mod tests {
         let message = run.submit(stay.clone()).unwrap_err();
         assert!(message.contains("뜨거워"), "{message}");
         // 알림 기준 아래로 식어야 다시 받는다
-        fake(&mut run, 1).set(reg::PRESENT_TEMPERATURE, 52);
-        run.tick(DT);
+        heat_for(&mut run, 1, 52, TEMPERATURE_TICKS);
         assert!(run.submit(stay.clone()).is_err());
-        fake(&mut run, 1).set(reg::PRESENT_TEMPERATURE, 45);
-        run.tick(DT);
+        heat_for(&mut run, 1, 45, TEMPERATURE_TICKS);
         assert!(run.warnings().is_empty());
+        assert!(run.resting().is_none());
         run.submit(stay).unwrap();
+    }
+
+    #[test]
+    fn temperature_readings_that_jump_for_a_few_ticks_are_ignored() {
+        let mut run = two_joints();
+        let trajectory = line([1.0, 0.5], 5.0);
+        let end = trajectory.points[1].1.clone();
+        run.submit(trajectory).unwrap();
+        // 2026-11-18 실물처럼: 실제 37°C에서 열 박자 남짓마다 한 박자, 가끔 세 박자 잇달아 76°C까지 튄다
+        for n in 0..600 {
+            let jumped = n % 11 == 0 || n % 97 < 3;
+            let temperature = if jumped { 60 + n % 17 } else { 37 };
+            fake(&mut run, 1).set(reg::PRESENT_TEMPERATURE, temperature);
+            run.tick(DT);
+            assert!(run.warnings().is_empty(), "{n}: {:?}", run.warnings());
+            assert_ne!(run.mode(), &Mode::Stopping, "{n}");
+        }
+        assert_eq!(run.hottest(), Some((4, 37)));
+        until_holding(&mut run);
+        assert_eq!(run.targets(), end.as_slice());
     }
 
     #[test]
@@ -1940,8 +2038,9 @@ mod tests {
         run.submit(move_joints(run.targets(), &[1.8, 0.0], &limits, DT).unwrap())
             .unwrap();
         until_holding(&mut run);
-        // 한계(118°, 2.06 rad)까지 0.26 rad: 가속하는 사이에 한계 앞에 서야 한다
-        let edge = 118f64.to_radians() - JOG_MARGIN;
+        // 한계(118°, 2.06 rad)까지 0.26 rad: 가속하는 사이에 한계 앞에 서야 한다. 루프의 한계는 118°에서 가장
+        // 가까운 서보 값(3391칸, 118.04°)이다
+        let edge = f64::from(steps(118f64.to_radians()) - 2048) * RAD_PER_STEP - JOG_MARGIN;
         let mut highest = 0.0_f64;
         for _ in 0..200 {
             run.jog(&[5.0, 0.0]).unwrap();
