@@ -1,0 +1,31 @@
+{
+ "name": "cable-motion-carrier",
+ "made": "2026-11-17T23:24:57",
+ "studio": "02.09.01.70",
+ "profiles": "02.09.00.81",
+ "bed_type": "Textured PEI Plate",
+ "plates": [
+  {
+   "file": "01-black-c0d028.3mf",
+   "image": "01-black-c0d028.png",
+   "color": "black",
+   "preset": "0.20mm Strength @BBL X1C",
+   "minutes": 33,
+   "grams": 7.7,
+   "overnight": false,
+   "parts": [
+    {
+     "file": "carrier.stl",
+     "label": "서보 받침",
+     "module": "wrist",
+     "count": 2,
+     "sha": "aa73d616a15d",
+     "height_mm": 20.0,
+     "base_mm2": 523,
+     "overhang_mm2": 9,
+     "slender": false
+    }
+   ]
+  }
+ ]
+}

@@ -14,3 +14,10 @@ FIRST_JOINT = PrintGuide(
     sub="손목 몸통 둘과 속 부품, 공차 시험편",
     bundles=("first-joint",),
 )
+
+CABLE_MOTION = PrintGuide(
+    id="cable-motion-print",
+    title="선 돌려 보기 출력",
+    sub="J6 서보 받침과 뒷덮개 둘 (J5, J6). 부러진 서보 받침은 다시 뽑는다 (여분 하나 더)",
+    bundles=("cable-motion", "cable-motion-carrier"),
+)
