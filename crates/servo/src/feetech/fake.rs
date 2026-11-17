@@ -15,7 +15,10 @@
 //!   입력 전압 범위 밖에서 전압 비트를 켠다 (토크와 통신은 그대로다).
 //! - `sag`만큼 짐에 눌려 목표보다 처진 자리에서 선다 (처짐 보정 시험).
 //! - 응답 없음, 깨진 응답, 잘린 응답, 상태 바이트의 오류 비트, 같은 ID 둘, 포트 오류를 일부러 낸다.
-//! - 가짜 포트는 기다리지 않아서, 응답 없음 시험도 바로 끝난다.
+//! - 가짜 포트는 기다리지 않아서, 응답 없음 시험도 바로 끝난다. 늦은 응답(`save_reply_delay`)은 버스가
+//!   기다리는 끝(deadline)과 견주어, 그보다 늦으면 받지 못한 것으로 한다.
+//! - 잠금을 푼 채 EEPROM 칸에 쓰면 `save_reply_delay`만큼 늦게 답한다. 실물(STS3215)은 위치 오프셋 쓰기가
+//!   20 ms 안에 답하지 않았고 값은 들어가 있었다 (2026-11-17).
 //! - 위치 오프셋을 쓰면 읽는 위치가 그만큼 옮겨진다 (`offset_moves_reading`, 기본으로 켜져 있다). 실물
 //!   (STS3215)도 그렇게 옮겨지는데, 쓴 값이 몇 ms 뒤에야 읽는 위치에 반영된다. `offset_lag_reads`로 그
 //!   늦음을 흉내 낸다.
@@ -72,6 +75,8 @@ pub struct FakeServo {
     overload_latched: bool,
     /// 짐에 눌려 목표보다 처지는 칸 수 (서보 값이 주는 쪽). 위치 서보는 버티는 토크만큼 처진 채 선다
     pub sag: i32,
+    /// 잠금을 푼 채 EEPROM 칸에 쓰면 값을 저장한 뒤 이만큼 늦게 답한다
+    pub save_reply_delay: Duration,
 }
 
 impl FakeServo {
@@ -93,6 +98,7 @@ impl FakeServo {
             held: false,
             overload_latched: false,
             sag: 0,
+            save_reply_delay: Duration::ZERO,
         };
         let defaults = [
             (reg::FIRMWARE_MAJOR, 3),
@@ -342,15 +348,31 @@ pub struct FakeWire {
 }
 
 impl FakeWire {
-    fn handle(&mut self, request: &[u8]) -> Vec<u8> {
+    /// 명령 하나에 서보들이 낼 응답과, 그 응답이 늦는 시간.
+    fn handle(&mut self, request: &[u8]) -> (Vec<u8>, Duration) {
         let &[0xFF, 0xFF, id, length, instruction, ..] = request else {
-            return Vec::new();
+            return (Vec::new(), Duration::ZERO);
         };
         let well_formed = request.len() == usize::from(length) + 4
             && packet::checksum(&request[2..request.len() - 1]) == request[request.len() - 1];
         if !well_formed {
-            return Vec::new(); // 실물도 체크섬이 틀린 명령은 무시한다
+            return (Vec::new(), Duration::ZERO); // 실물도 체크섬이 틀린 명령은 무시한다
         }
+        // 잠금을 푼 채 EEPROM 칸에 쓰면 값을 저장한 뒤에 답한다
+        let delay = match (instruction, &request[5..request.len() - 1]) {
+            (packet::WRITE, [address, ..]) if usize::from(*address) < EEPROM_END => self
+                .servos
+                .iter()
+                .filter(|s| s.id() == id && s.get(reg::LOCK) == 0)
+                .map(|s| s.save_reply_delay)
+                .max()
+                .unwrap_or_default(),
+            _ => Duration::ZERO,
+        };
+        (self.answer(request, id, instruction), delay)
+    }
+
+    fn answer(&mut self, request: &[u8], id: u8, instruction: u8) -> Vec<u8> {
         let params = &request[5..request.len() - 1];
         match (instruction, params) {
             (packet::SYNC_READ, [address, size, ids @ ..]) => {
@@ -435,6 +457,8 @@ fn status(servo: &FakeServo, data: &[u8]) -> Vec<u8> {
 pub struct FakePort {
     pub wire: FakeWire,
     received: Vec<u8>,
+    /// 받은 응답이 오는 때 (늦은 응답, 보낸 때 + `save_reply_delay`)
+    arrives: Option<Instant>,
     /// 기다리라고 한 시간의 합 (가짜 포트는 기다리지 않는다)
     pub paused: Duration,
 }
@@ -447,12 +471,18 @@ impl Port for FakePort {
                 "가짜 포트 오류 (USB가 빠진 것처럼)",
             ));
         }
-        let reply = self.wire.handle(bytes);
+        let (reply, delay) = self.wire.handle(bytes);
         self.received.extend(reply);
+        self.arrives = (!delay.is_zero()).then(|| Instant::now() + delay);
         Ok(())
     }
 
-    fn receive(&mut self, buffer: &mut Vec<u8>, want: usize, _deadline: Instant) -> io::Result<()> {
+    fn receive(&mut self, buffer: &mut Vec<u8>, want: usize, deadline: Instant) -> io::Result<()> {
+        if self.arrives.is_some_and(|arrives| deadline < arrives) {
+            // 기다리는 끝까지 오지 않았다. 늦게 온 응답은 다음 보내기 전에 버려진다
+            self.received.clear();
+            return Ok(());
+        }
         let take = want.saturating_sub(buffer.len()).min(self.received.len());
         buffer.extend(self.received.drain(..take));
         Ok(())
@@ -476,6 +506,7 @@ pub fn open_fake_bus(servos: impl IntoIterator<Item = FakeServo>) -> Bus<FakePor
             fail_next_send: false,
         },
         received: Vec::new(),
+        arrives: None,
         paused: Duration::ZERO,
     };
     Bus::new(port, 1_000_000, Duration::from_millis(1))

@@ -9,6 +9,7 @@
 //! - 포트는 이 버스 하나가 쥔다. 보내기 전에 받은 채 남은 바이트를 버려서, 통신 도중 오류가 나도
 //!   다음 통신이 막히지 않는다.
 //! - 응답은 정한 여유(latency)까지 기다리고, 기다리는 동안 CPU를 쓰지 않는다 (포트의 읽기 제한 시간).
+//!   잠금을 푼 채 쓸 때는 서보가 값을 저장한 뒤에 답해서 [`EEPROM_LATENCY`]까지 기다린다.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -180,6 +181,11 @@ pub struct ScanResult {
     /// 응답이 깨진 ID. 같은 ID의 서보가 둘일 수 있다
     pub garbled: Vec<u8>,
 }
+
+/// 잠금을 푼 채 쓸 때 응답을 기다리는 여유. 서보는 값을 전원을 꺼도 남게 저장한 뒤에 답한다: STS3215(ID 5)의
+/// 위치 오프셋 쓰기가 20 ms 안에 답하지 않았고, 다시 읽으니 값은 들어가 있었다 (2026-11-17, 영점 재기). 답이
+/// 오면 바로 끝나서 넉넉히 둔다.
+pub const EEPROM_LATENCY: Duration = Duration::from_millis(300);
 
 /// 서보 버스 하나. 한 포트를 쓰는 코드는 모두 이 버스 하나를 거친다.
 pub struct Bus<P: Port> {
@@ -528,7 +534,21 @@ impl<P: Port> Bus<P> {
     }
 
     /// EEPROM 잠금을 풀고 `body`를 한 뒤 다시 건다. 도중에 실패해도 다시 걸어 보고 원래 오류를 돌려준다.
+    /// 그동안은 응답을 [`EEPROM_LATENCY`]까지 기다린다.
     fn unlocked<T>(
+        &mut self,
+        id: u8,
+        relock_ids: &[u8],
+        body: impl FnOnce(&mut Self) -> Result<T, Error>,
+    ) -> Result<T, Error> {
+        let latency = self.latency;
+        self.latency = latency.max(EEPROM_LATENCY);
+        let result = self.unlock_and_relock(id, relock_ids, body);
+        self.latency = latency;
+        result
+    }
+
+    fn unlock_and_relock<T>(
         &mut self,
         id: u8,
         relock_ids: &[u8],

@@ -4,7 +4,9 @@
 //! 오류 처리를 가짜 서보 버스로 시험한다"의 맨 아래층 몫이다 (응답 없음, 깨진 응답, 오류 비트, 포트 오류).
 
 use std::collections::BTreeMap;
+use std::time::Duration;
 
+use horilab_servo::feetech::bus::EEPROM_LATENCY;
 use horilab_servo::feetech::fake::{FakeServo, open_fake_bus};
 use horilab_servo::feetech::registers as reg;
 use horilab_servo::feetech::{Error, Fault};
@@ -173,6 +175,33 @@ fn write_eeprom_relocks_when_a_write_fails() {
     let result = bus.write_eeprom(3, &[(reg::P_GAIN, 20), (reg::D_GAIN, 20)]);
     assert!(matches!(result, Err(Error::NoReply { .. })));
     assert_eq!(bus.wire().servos[0].get(reg::LOCK), 1);
+}
+
+#[test]
+fn write_eeprom_waits_for_the_servo_to_save() {
+    // 실물 STS3215는 잠금을 푼 채 쓴 값을 저장한 뒤에 답한다 (2026-11-17: 위치 오프셋 쓰기가 20 ms 안에 답하지
+    // 않았다). 보통 응답 여유(가짜 버스는 1 ms)보다 늦게 답해도 EEPROM 쓰기는 기다린다
+    let mut servo = FakeServo::with(5, 777, 1086);
+    servo.save_reply_delay = Duration::from_millis(60);
+    let mut bus = open_fake_bus([servo]);
+    bus.write_eeprom(5, &[(reg::POSITION_OFFSET, 147)]).unwrap();
+    let servo = &mut bus.wire().servos[0];
+    assert_eq!(servo.get(reg::LOCK), 1);
+    servo.power_cycle();
+    assert_eq!(servo.get(reg::POSITION_OFFSET), 147);
+}
+
+#[test]
+fn write_eeprom_reply_later_than_the_wait_is_no_reply_but_relocks() {
+    // 2026-11-17 영점 재기에서 본 것: 값은 들어가도 답이 기다리는 끝보다 늦으면 응답 없음이 된다. 잠금은 다시 건다
+    let mut servo = FakeServo::with(5, 777, 1086);
+    servo.save_reply_delay = EEPROM_LATENCY + Duration::from_millis(100);
+    let mut bus = open_fake_bus([servo]);
+    let result = bus.write_eeprom(5, &[(reg::POSITION_OFFSET, 147)]);
+    assert!(matches!(result, Err(Error::NoReply { id: 5, .. })));
+    let servo = &bus.wire().servos[0];
+    assert_eq!(servo.get(reg::LOCK), 1);
+    assert_eq!(servo.get(reg::POSITION_OFFSET), 147);
 }
 
 #[test]
