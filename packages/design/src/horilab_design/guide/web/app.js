@@ -108,6 +108,7 @@
     knife: '<rect x="3" y="12" width="14" height="7" rx="2" fill="currentColor"/><path d="M17 12H35L41 15.5L17 19Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>',
     tape: '<circle cx="22" cy="15" r="10" fill="none" stroke="currentColor" stroke-width="4"/><circle cx="22" cy="15" r="3" fill="none" stroke="currentColor" stroke-width="1.5"/>',
     wire: '<path d="M3 20C10 6 16 6 22 15S34 24 41 10" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>',
+    pen: '<rect x="9" y="11" width="24" height="8" rx="2" fill="currentColor"/><path d="M33 12.5L40 15L33 17.5Z" fill="currentColor"/><rect x="4" y="11.5" width="5" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/>',
   };
   const THUMBS = {};
   function itemOf(key) { return (S.guide && S.guide.items[key]) || { name: key, kind: 'tool', meta: '' }; }
@@ -764,21 +765,76 @@
   }
   function clearItems() {
     if (!G) return;
-    G.items.forEach((it) => { if (it.mesh.parent) it.mesh.parent.remove(it.mesh); it.mat.dispose(); it.emat.dispose(); });
+    G.items.forEach((it) => { if (it.mesh.parent) it.mesh.parent.remove(it.mesh); it.mat.dispose(); it.emat.dispose(); if (it.flex) it.flex.g.dispose(); });
     G.items = []; G.step = null;
     clearDecor();
+  }
+  // 관절 각에 따라 모양이 바뀌는 납작한 선 (안내 데이터의 flex): 관절 각마다의 (x, z) 꺾은선 사이를 이어, 단면이
+  // 폭 w × 두께 t인 띠로 그린다. 앞쪽 s[0] mm까지는 눕고(높이 y[0]), s[1] mm부터는 세워진다(폭이 y 방향, 높이 y[1])
+  function makeFlex(fx) {
+    const T = window.THREE, n = fx.p[0].length / 2;
+    const g = new T.BufferGeometry();
+    g.setAttribute('position', new T.BufferAttribute(new Float32Array(n * 8 * 3), 3));
+    const idx = [];
+    for (let i = 0; i < n - 1; i += 1) {
+      for (let f = 0; f < 4; f += 1) { const a = 8 * i + 2 * f; idx.push(a, a + 8, a + 1, a + 1, a + 8, a + 9); }
+    }
+    g.setIndex(idx);
+    const box = new T.Box3(new T.Vector3().fromArray(fx.box[0]), new T.Vector3().fromArray(fx.box[1]));
+    const F = { fx: fx, g: g, n: n, xz: new Float32Array(2 * n), box: box, at: null };
+    shapeFlex(F, 0);
+    return F;
+  }
+  const FLEX_CORNERS = [[1, 1], [-1, 1], [-1, -1], [1, -1]];  // (두께 쪽, 폭 쪽) 부호
+  function shapeFlex(F, a) {
+    if (F.at === a) return;
+    F.at = a;
+    const fx = F.fx, A = fx.a, n = F.n, xz = F.xz;
+    let k = 0, f = 0;
+    if (a >= A[A.length - 1]) k = A.length - 1;
+    else if (a > A[0]) { while (k < A.length - 2 && A[k + 1] <= a) k += 1; f = (a - A[k]) / (A[k + 1] - A[k]); }
+    const p0 = fx.p[k], p1 = fx.p[Math.min(k + 1, A.length - 1)];
+    for (let j = 0; j < 2 * n; j += 1) xz[j] = p0[j] + (p1[j] - p0[j]) * f;
+    const pos = F.g.attributes.position.array, hw = fx.w / 2, ht = fx.t / 2;
+    let s = 0;
+    for (let i = 0; i < n; i += 1) {
+      const i0 = Math.max(0, i - 1), i1 = Math.min(n - 1, i + 1);
+      let tx = xz[2 * i1] - xz[2 * i0], tz = xz[2 * i1 + 1] - xz[2 * i0 + 1];
+      const tl = Math.hypot(tx, tz) || 1; tx /= tl; tz /= tl;
+      if (i > 0) s += Math.hypot(xz[2 * i] - xz[2 * i - 2], xz[2 * i + 1] - xz[2 * i - 1]);
+      let e = (s - fx.s[0]) / (fx.s[1] - fx.s[0]); e = e < 0 ? 0 : e > 1 ? 1 : e; e = e * e * (3 - 2 * e);
+      const c = Math.cos(e * Math.PI / 2), sn = Math.sin(e * Math.PI / 2), nx = -tz, nz = tx;
+      const ax = sn * nx, ay = c, az = sn * nz;  // 두께 쪽: 누우면 y, 세우면 면 안의 법선
+      const bx = c * nx, by = -sn, bz = c * nz;  // 폭 쪽
+      const x = xz[2 * i], y = fx.y[0] + (fx.y[1] - fx.y[0]) * e, z = xz[2 * i + 1];
+      for (let q = 0; q < 4; q += 1) {
+        for (let v = 0; v < 2; v += 1) {
+          const cc = FLEX_CORNERS[(q + v) % 4], o = (8 * i + 2 * q + v) * 3;
+          pos[o] = x + cc[0] * ht * ax + cc[1] * hw * bx;
+          pos[o + 1] = y + cc[0] * ht * ay + cc[1] * hw * by;
+          pos[o + 2] = z + cc[0] * ht * az + cc[1] * hw * bz;
+        }
+      }
+    }
+    F.g.attributes.position.needsUpdate = true;
+    F.g.computeVertexNormals(); F.g.computeBoundingSphere();
+  }
+  function setJoint(a) {
+    G.spin.rotation.set(0, -deg(a), 0);
+    G.items.forEach((it) => { if (it.flex) shapeFlex(it.flex, a); });
   }
   function buildItems() {
     const T = G.T;
     clearItems();
     G.items = S.guide.scene.map((p, i) => {
-      const M = MESH[p.mesh];
+      const flex = p.flex ? makeFlex(p.flex) : null;
+      const M = flex || MESH[p.mesh];
       const mat = newMat(p.c), mesh = new T.Mesh(M.g, mat);
       const emat = new T.LineBasicMaterial({ color: 0x6f7a87 });
-      mesh.add(new T.LineSegments(M.e, emat));
+      if (!flex) mesh.add(new T.LineSegments(M.e, emat));
       mesh.userData.i = i; (p.m ? G.spin : G.root).add(mesh);
       return { i: i, p: p, mesh: mesh, mat: mat, emat: emat, hidden: false, t: new T.Vector3().fromArray(p.t), ctr: M.box.getCenter(new T.Vector3()), box: M.box,
-        basePos: new T.Vector3(), baseQuat: new T.Quaternion() };
+        basePos: new T.Vector3(), baseQuat: new T.Quaternion(), flex: flex };
     });
   }
   function styleAll() {
@@ -828,7 +884,7 @@
       it.mesh.quaternion.copy(it.baseQuat); it.mesh.position.copy(it.basePos);
     });
     G.joint = step.joint || 0;
-    G.spin.rotation.set(0, -deg(G.joint), 0);
+    setJoint(G.joint);
     G.moves = step.moves.map((m) => ({ idx: m.p, by: new T.Vector3().fromArray(m.by), delay: m.delay || 0 }));
     const last = G.moves.reduce((a, m) => Math.max(a, m.delay + MOVE_S), 0);
     let turn = null, end = last;
@@ -927,11 +983,12 @@
     const fw = Math.max(80, W - ins.l - ins.r), fh = Math.max(80, H - ins.t - ins.b);
     const tv = Math.tan(G.camera.fov * Math.PI / 360);
     const fov = Math.min(2 * Math.atan(tv * fh / H), 2 * Math.atan(tv * fw / H));
-    const dist = sph.radius / Math.sin(fov / 2) * 0.9;
+    const dist = sph.radius / Math.sin(fov / 2) * 0.9 / (step.zoom > 0 ? step.zoom : 1);
     const view = step.view || {};
     const az = deg(view.az || 0), elv = deg(view.el == null ? 20 : view.el);
     const dir = new T.Vector3(Math.sin(az) * Math.cos(elv), Math.sin(elv), Math.cos(az) * Math.cos(elv));
-    return { target: sph.center.clone(), pos: sph.center.clone().addScaledVector(dir, dist) };
+    const target = step.center ? new T.Vector3().fromArray(step.center).applyQuaternion(q) : sph.center.clone();
+    return { target: target, pos: target.clone().addScaledVector(dir, dist) };
   }
   function reframe(instant) {
     if (!G || !G.step) return;
@@ -1009,8 +1066,7 @@
     });
     if (tl.turn) {
       let k = (t - tl.start - tl.turn.t0) / (tl.turn.t1 - tl.turn.t0); k = k < 0 ? 0 : k > 1 ? 1 : k;
-      const a = tl.turn.a + (tl.turn.b - tl.turn.a) * ease(k);
-      G.spin.rotation.set(0, -deg(a), 0);
+      setJoint(tl.turn.a + (tl.turn.b - tl.turn.a) * ease(k));
     }
     const done = t >= tl.end - 1e-6;
     G.arrows.forEach((a) => { a.visible = !done; });

@@ -40,9 +40,29 @@ class Item:
 
 
 @dataclass(frozen=True)
+class Flex:
+    """관절 각에 따라 모양이 바뀌는 납작한 선 (두 몸통 사이 층에서 테에 감기는 서보 선).
+
+    관절 각(angles, 커지는 차례)마다 장면 좌표의 (x, z) 꺾은선(frames, 점 수가 모두 같다)을 두고, 화면이 지금
+    관절 각의 앞뒤 모양 사이를 이어 그린다. 선은 앞쪽 flat_mm까지 앞면에 눕고(가운데 높이 y_flat), edge_mm부터는
+    세워져(폭이 출력축 방향, 가운데 높이 y_edge) 테에 감긴다. 그 사이에서 비틀린다.
+    """
+
+    angles: tuple[float, ...]
+    frames: tuple[tuple[tuple[float, float], ...], ...]
+    width: float
+    thick: float
+    y_flat: float
+    y_edge: float
+    flat_mm: float
+    edge_mm: float
+
+
+@dataclass(frozen=True)
 class ScenePart:
     """장면에 놓인 부품 하나. key는 부품 목록(catalog)의 키, count가 거짓이면 쓰는 것의 개수에 넣지 않는다
-    (서보에 딸린 혼처럼 다른 부품의 일부)."""
+    (서보에 딸린 혼처럼 다른 부품의 일부). flex가 있으면 화면이 형상 대신 그 선을 관절 각에 맞춰 그린다 (shape는
+    그 선이 지나는 상자로, 부품 고르기에만 쓴다)."""
 
     name: str
     shape: Compound
@@ -50,6 +70,7 @@ class ScenePart:
     color: str
     moving: bool = False
     count: bool = True
+    flex: Flex | None = None
 
 
 @dataclass(frozen=True)
@@ -129,7 +150,8 @@ class Step:
     움직이지 않는 것(이번 손동작이 아닌 것)이다. mount는 이 단계에 본체에 붙는 부품이고, 주지 않으면 따로 놓고
     하는 단계(focus가 있는 단계)는 없음, 그 밖은 adds다. 보이는 부품은 앞 단계까지 본체에 붙은 것이고, focus를
     주면 그것만 보인다 (따로 놓고 하는 단계). 이번 부품(색을 입히는 것)은 adds에서 still을 뺀 것과 움직이는
-    부품이다.
+    부품이다. 3D는 보이는 부품이 다 들어오게 맞추고, zoom을 주면 그만큼 다가가며 center(장면 좌표)를 가운데에 둔다
+    (작은 자리를 볼 때).
     """
 
     id: str
@@ -157,6 +179,8 @@ class Step:
     spots: tuple[Spot, ...] = ()
     joint: float = 0.0
     turn: tuple[float, float] | None = None
+    zoom: float = 1.0
+    center: Vec | None = None
 
 
 @dataclass(frozen=True)

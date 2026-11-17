@@ -41,8 +41,8 @@ SERVO_ITEM = Item(
 )
 
 # 서보 선이 지나는 길 (0031): +z 쪽 커넥터에 꽂아 서보 받침 판 위에 눕히고, 서보 먼 끝을 따라 앞쪽으로 내려 앞벽
-# 가운데 홈으로 뺀다. 홈을 나온 뒤는 발 쪽으로 늘어뜨린 모습이다 (출력 원판 둘레에 감는 길은 300 mm 선으로 감아
-# 돌려 볼 때 그린다)
+# 가운데 홈으로 뺀다. 홈을 나온 뒤는 발 쪽으로 늘어뜨린 모습이다 (출력 원판 둘레에 감는 길은 안내 "서보 선 감아
+# 돌려 보기"가 그린다, guides/cable_wrap.py)
 _W, _T = j.WIRE_W, j.WIRE_T
 _PLUG_Z = (0.45, 9.46)  # +z 쪽 커넥터에 꽂은 플러그 (parts/joint.py의 servo())
 _ZC = sum(_PLUG_Z) / 2
@@ -60,19 +60,19 @@ def _slant(a: tuple[float, float], b: tuple[float, float]) -> Compound:
     return solid(plane * Box(d.length + _W, _T, _W))
 
 
-def _cable() -> tuple[Compound, Compound]:
-    """서보 선: (꽂은 플러그, 선)."""
+def cable_parts() -> tuple[Compound, Compound, Compound]:
+    """서보 선: (꽂은 플러그, 손목 몸통 속의 선, 앞벽 가운데 홈을 나와 발 쪽으로 늘어뜨린 끝)."""
     plug = box(-16.6, -11.85, j.PLUG_TOP + DY, j.L1 + 0.5 + DY, *_PLUG_Z)
-    wire = box(-26.0, -12.6, *_WY, _ZC - _W / 2, _ZC + _W / 2)  # 판 위, 발 쪽으로
-    wire += _slant((-26.0, _ZC), (-33.0, 0.0))  # 가운데로 모으며
-    wire += box(_XD - _T / 2, -33.0, *_WY, -_W / 2, _W / 2)
-    wire += box(_XD - _T / 2, _XD + _T / 2, _WY[0], j.FRONT + _T, -_W / 2, _W / 2)  # 먼 끝 앞으로
-    wire += box(-45.0, _XD + _T / 2, j.FRONT, j.FRONT + _T, -_W / 2, _W / 2)  # 홈을 나와 발 쪽으로
-    return solid(plug), solid(wire)
+    inside = box(-26.0, -12.6, *_WY, _ZC - _W / 2, _ZC + _W / 2)  # 판 위, 발 쪽으로
+    inside += _slant((-26.0, _ZC), (-33.0, 0.0))  # 가운데로 모으며
+    inside += box(_XD - _T / 2, -33.0, *_WY, -_W / 2, _W / 2)
+    inside += box(_XD - _T / 2, _XD + _T / 2, _WY[0], j.FRONT + _T, -_W / 2, _W / 2)  # 먼 끝 앞으로
+    hang = box(-45.0, _XD + _T / 2, j.FRONT, j.FRONT + _T, -_W / 2, _W / 2)  # 홈을 나와 발 쪽으로
+    return solid(plug), solid(inside), solid(hang)
 
 
 # 장면 부품 이름(설계 코드) → 부품 목록 키. 앞에서부터 이름의 앞부분이 맞는 것을 쓴다. 세 번째는 개수에 넣는지
-_KEYS: tuple[tuple[str, str, bool], ...] = (
+PART_KEYS: tuple[tuple[str, str, bool], ...] = (
     ("손목 몸통", "wrist_body", True),
     ("베어링", "bearing_6806", True),
     ("허브 판", "hub_plate", True),
@@ -101,11 +101,11 @@ def scene() -> list[ScenePart]:
     for p in wrist.first_joint(MODEL):
         if p.name in _SKIP:
             continue
-        key, count = next((k, c) for prefix, k, c in _KEYS if p.name.startswith(prefix))
+        key, count = next((k, c) for prefix, k, c in PART_KEYS if p.name.startswith(prefix))
         out.append(ScenePart(p.name, p.shape, key, p.color, p.moving, count))
-    plug, wire = _cable()
+    plug, inside, hang = cable_parts()
     out.append(ScenePart("서보 선 플러그", plug, "servo_cable", "plug", False, False))
-    out.append(ScenePart("서보 선", wire, "servo_cable", "wire", False, False))
+    out.append(ScenePart("서보 선", solid(inside + hang), "servo_cable", "wire", False, False))
     return out
 
 
@@ -642,7 +642,7 @@ STEPS: tuple[Step, ...] = (
         "끝까지 돌려 보기",
         do=(
             "서보 선은 앞벽 가운데 홈에서 나온 채 발 쪽으로 늘어뜨립니다. 선을 출력 원판 둘레에 감아 돌려 보는 "
-            "일은 300 mm 선이 오면 따로 합니다.",
+            '일은 다음 안내 "서보 선 감아 돌려 보기"에서 합니다.',
             "한 손으로 아래 몸통(집)을 책상에 눌러 잡고, 다른 손으로 위 몸통(자식)을 천천히 한쪽 끝까지 돌립니다.",
             "반대쪽 끝까지 천천히 돌립니다.",
         ),

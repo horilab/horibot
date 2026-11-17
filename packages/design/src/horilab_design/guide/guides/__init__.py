@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from horilab_design.guide.guides import first_joint, prints
+from horilab_design.guide.guides import cable_wrap, first_joint, prints
 from horilab_design.guide.model import Guide, PrintGuide
 
-ALL: tuple[Guide | PrintGuide, ...] = (first_joint.GUIDE, prints.FIRST_JOINT)
+ALL: tuple[Guide | PrintGuide, ...] = (first_joint.GUIDE, cable_wrap.GUIDE, prints.FIRST_JOINT)

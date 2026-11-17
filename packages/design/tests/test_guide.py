@@ -4,14 +4,23 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import replace
 from pathlib import Path
 
+import numpy as np
 import pytest
 from build123d import Box, Pos
 
-from horilab_design.guide import selftest
-from horilab_design.guide.build import GuideError, plate_refs, print_json, resolve, write_site
-from horilab_design.guide.guides import first_joint, prints
+from horilab_design.guide import cables, selftest
+from horilab_design.guide.build import (
+    GuideError,
+    guide_json,
+    plate_refs,
+    print_json,
+    resolve,
+    write_site,
+)
+from horilab_design.guide.guides import cable_wrap, first_joint, prints
 from horilab_design.guide.meshes import pack, tessellate, unpack
 from horilab_design.guide.model import Guide, Move, PrintGuide, ScenePart, Step, View
 from horilab_design.parts import joint as j
@@ -136,6 +145,47 @@ def test_first_joint_guide_counts_match_the_parts_list() -> None:
     }
 
 
+def test_servo_cable_wraps_outside_the_rim_with_its_ends_held() -> None:
+    rod = cables.servo_rod()
+    # 손목 2로 들어가는 자리가 살에서 156° 쪽이라 -163°에서 가장 길게 감긴다. 선은 그 길이에 맞춘다 (0031)
+    assert cables.tight_length(rod, cables.LONG_STOP) > cables.tight_length(rod, -cables.LONG_STOP)
+    assert rod.length == pytest.approx(cables.longest(rod) + cables.SPARE)
+    # 20 cm 선은 손목 1 속과 층을 지나고도 손목 2 안으로 들어간다 (끝을 테이프로 붙일 몫)
+    assert 10.0 < cables.tail_mm(rod) < 30.0
+    angles = cables.wrap_angles(40.0)
+    frames = cables.solve(rod, angles)
+    assert len(frames) == len(angles)
+    for a, p in zip(angles, frames, strict=True):
+        assert tuple(p[0]) == pytest.approx(rod.start)
+        assert tuple(p[-1]) == pytest.approx(tuple(cables.rot(np.array(rod.end), a)))
+        assert np.linalg.norm(p, axis=1).min() >= rod.radius - 1e-6  # 테 안으로 들어가지 않는다
+        length = np.linalg.norm(np.diff(p, axis=0), axis=1).sum()
+        assert rod.length - 0.5 < length < rod.length * 1.05  # 어림 풀이라 조금 늘어난다
+
+
+def test_flex_needs_matching_frames() -> None:
+    fx = cables.flex(angles=cables.wrap_angles(80.0))
+    good = Guide(
+        "flex",
+        "measure",
+        "선",
+        "시험",
+        lambda: [ScenePart("선", solid(Box(10.0, 10.0, 10.0)), "servo_cable", "wire", flex=fx)],
+        (_work("lay", adds=("선",)),),
+    )
+    data = guide_json(resolve(good), {})
+    assert data["meshes"] == [] and len(data["scene"][0]["flex"]["p"]) == len(fx.angles)
+    bad = replace(fx, frames=fx.frames[:-1])
+    broken = replace(
+        good,
+        scene=lambda: [
+            ScenePart("선", solid(Box(10.0, 10.0, 10.0)), "servo_cable", "wire", flex=bad)
+        ],
+    )
+    with pytest.raises(GuideError, match="꺾은선"):
+        guide_json(resolve(broken), {})
+
+
 def _plan(tmp: Path, bundle: str, plates: list[list[tuple[str, int]]]) -> None:
     folder = tmp / bundle
     folder.mkdir(parents=True)
@@ -196,7 +246,11 @@ def test_built_site_has_every_file_its_guides_need(tmp_path: Path) -> None:
     page = (tmp_path / "index.html").read_text(encoding="utf-8")
     assert "/*@CSS@*/" not in page and "/*@JS@*/" not in page and "<title>작업 안내</title>" in page
     catalog = json.loads((tmp_path / "data" / "catalog.json").read_text(encoding="utf-8"))
-    assert [g["id"] for g in catalog["guides"]] == ["first-joint", prints.FIRST_JOINT.id]
+    assert [g["id"] for g in catalog["guides"]] == [
+        "first-joint",
+        "cable-wrap",
+        prints.FIRST_JOINT.id,
+    ]
     for row in catalog["guides"]:
         guide = json.loads((tmp_path / row["file"]).read_text(encoding="utf-8"))
         # 처음 화면의 진행은 확인 칸(판은 Claude의 기록)으로 셈한다: 작업 단계와 판은 모두 track에 든다
@@ -204,7 +258,8 @@ def test_built_site_has_every_file_its_guides_need(tmp_path: Path) -> None:
         for step in guide["steps"]:
             if step["kind"] == "plate" and step["plate"]["image"]:
                 assert (tmp_path / step["plate"]["image"]).exists()
-        assert {s["mesh"] for s in guide["scene"]} == set(guide["meshes"])
+        assert {s["mesh"] for s in guide["scene"] if "mesh" in s} == set(guide["meshes"])
+        assert all(("mesh" in s) != ("flex" in s) for s in guide["scene"])
         for mesh in guide["meshes"]:
             assert (tmp_path / "data" / "meshes" / f"{mesh}.json").exists()
         for step in guide["steps"]:
@@ -235,4 +290,5 @@ def test_site_passes_its_selftest_in_a_headless_browser(tmp_path: Path) -> None:
         pytest.skip("three.js를 받지 못했다 (인터넷)")
     assert selftest.problems(report) == []
     plates = len(print_json(prints.FIRST_JOINT)["steps"])
-    assert sum(g["steps"] for g in report["guides"]) == len(first_joint.STEPS) + plates
+    steps = len(first_joint.STEPS) + len(cable_wrap.STEPS) + plates
+    assert sum(g["steps"] for g in report["guides"]) == steps

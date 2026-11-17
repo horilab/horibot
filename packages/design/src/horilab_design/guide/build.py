@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib
+import itertools
 import json
 import re
 import shutil
@@ -28,7 +29,7 @@ from typing import Any
 
 from horilab_design.guide import catalog
 from horilab_design.guide.meshes import Mesh, pack, tessellate
-from horilab_design.guide.model import Guide, Item, PrintGuide, ScenePart, Step, Vec, View
+from horilab_design.guide.model import Flex, Guide, Item, PrintGuide, ScenePart, Step, Vec, View
 from horilab_design.slicing import PLANS_DIR, oriented
 from horilab_design.values import REPO_ROOT
 
@@ -345,6 +346,8 @@ def resolve(guide: Guide, prints: Sequence[PrintGuide] = (), plans: Path = PLANS
                 "kit": kit,
                 "joint": step.joint,
                 "turn": list(step.turn) if step.turn else None,
+                "zoom": step.zoom,
+                "center": _r(step.center) if step.center else None,
             }
         )
     left = [parts[i].name for i in range(len(parts)) if i not in mounted]
@@ -389,10 +392,57 @@ def _item_json(
     return out
 
 
+def _flex_json(name: str, f: Flex) -> dict[str, Any]:
+    """관절 각에 따라 바뀌는 선 (model.Flex). 화면이 관절 각마다 이 꺾은선으로 납작한 선을 다시 그린다."""
+    n = len(f.frames[0]) if f.frames else 0
+    if (
+        len(f.angles) < 2
+        or len(f.frames) != len(f.angles)
+        or n < 2
+        or any(len(fr) != n for fr in f.frames)
+        or any(b <= a for a, b in itertools.pairwise(f.angles))
+        or not 0.0 <= f.flat_mm < f.edge_mm
+    ):
+        raise GuideError(f"'{name}': 관절 각과 꺾은선의 수, 차례, 눕고 세우는 길이가 맞지 않다")
+    xs = [x for fr in f.frames for x, _ in fr]
+    zs = [z for fr in f.frames for _, z in fr]
+    ys = (f.y_flat, f.y_edge)
+    pad = max(f.width, f.thick) / 2
+    return {
+        "a": [round(a, 2) for a in f.angles],
+        "p": [[round(v, 2) for pt in fr for v in pt] for fr in f.frames],
+        "w": f.width,
+        "t": f.thick,
+        "y": [round(y, 3) for y in ys],
+        "s": [f.flat_mm, f.edge_mm],
+        "box": [
+            _r((min(xs) - pad, min(ys) - pad, min(zs) - pad)),
+            _r((max(xs) + pad, max(ys) + pad, max(zs) + pad)),
+        ],
+    }
+
+
 def guide_json(r: Resolved, meshes: dict[str, Mesh]) -> dict[str, Any]:
-    """안내 하나의 JSON. 형상을 삼각형으로 바꿔 meshes에 모은다."""
-    scene = []
+    """안내 하나의 JSON. 형상을 삼각형으로 바꿔 meshes에 모은다. 관절 각에 따라 바뀌는 선(flex)은 형상 대신
+    꺾은선을 담는다."""
+    scene: list[dict[str, Any]] = []
     for p in r.parts:
+        if p.flex is not None:
+            if p.moving:
+                raise GuideError(
+                    f"{r.guide.id}: '{p.name}'는 부모 좌표로 그리는 선이라 자식과 같이 돌지 않는다"
+                )
+            scene.append(
+                {
+                    "n": p.name,
+                    "k": p.key,
+                    "t": [0.0, 0.0, 0.0],
+                    "c": p.color,
+                    "m": False,
+                    "flex": _flex_json(p.name, p.flex),
+                }
+            )
+            continue
         m = pack(*tessellate(p.shape))
         meshes.setdefault(m.id, m)
         scene.append(
@@ -417,7 +467,7 @@ def guide_json(r: Resolved, meshes: dict[str, Mesh]) -> dict[str, Any]:
         "bundle": f"build/print/{g.bundle}/" if g.bundle else "",
         "items": {k: _item_json(r.items[k], r.parts, r.plates) for k in sorted(used)},
         "scene": scene,
-        "meshes": sorted({row["mesh"] for row in scene}),
+        "meshes": sorted({row["mesh"] for row in scene if "mesh" in row}),
         "steps": r.steps,
         "board": r.board,
         "work": sum(1 for s in r.steps if s["kind"] == "work"),

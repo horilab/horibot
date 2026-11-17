@@ -54,13 +54,6 @@ ITEMS: dict[str, Item] = {
         ),
         Item("servo_cable", "서보 선 20 cm", "bought", "서보에 딸린 것", icon="wire"),
         Item(
-            "d405_cable",
-            "D405 선",
-            "bought",
-            "얇은 USB 2 선 (카메라 쪽 플러그가 ㄱ자). 감아 돌려 볼 때만 쓴다",
-            icon="wire",
-        ),
-        Item(
             "pin_msh3_20",
             "영점 핀 MSH3-20",
             "bought",
@@ -90,7 +83,8 @@ ITEMS: dict[str, Item] = {
         Item("driver", "작은 십자 드라이버", "tool", "서보 뒷면 나사", icon="driver"),
         Item("tweezers", "핀셋", "tool", "실 걷기, 너트 잡기", icon="tweezers"),
         Item("knife", "작은 칼이나 니퍼", "tool", "처진 실 걷기", icon="knife"),
-        Item("tape", "테이프", "tool", "선을 잡을 때", icon="tape"),
+        Item("tape", "절연 테이프", "tool", "선을 몸통에 붙일 때", icon="tape"),
+        Item("pen", "네임펜", "tool", "선에 표시할 때", icon="pen"),
     )
 }
 
