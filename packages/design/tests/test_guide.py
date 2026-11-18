@@ -20,7 +20,7 @@ from horilab_design.guide.build import (
     resolve,
     write_site,
 )
-from horilab_design.guide.guides import cable_motion, cable_wrap, first_joint, prints
+from horilab_design.guide.guides import cable_motion_300, first_joint, prints
 from horilab_design.guide.meshes import pack, tessellate, unpack
 from horilab_design.guide.model import Guide, Move, PrintGuide, ScenePart, Step, View
 from horilab_design.parts import joint as j
@@ -248,10 +248,9 @@ def test_built_site_has_every_file_its_guides_need(tmp_path: Path) -> None:
     catalog = json.loads((tmp_path / "data" / "catalog.json").read_text(encoding="utf-8"))
     assert [g["id"] for g in catalog["guides"]] == [
         "first-joint",
-        "cable-wrap",
         prints.FIRST_JOINT.id,
-        "cable-motion",
         prints.CABLE_MOTION.id,
+        "cable-motion-300",
     ]
     for row in catalog["guides"]:
         guide = json.loads((tmp_path / row["file"]).read_text(encoding="utf-8"))
@@ -292,5 +291,5 @@ def test_site_passes_its_selftest_in_a_headless_browser(tmp_path: Path) -> None:
         pytest.skip("three.js를 받지 못했다 (인터넷)")
     assert selftest.problems(report) == []
     plates = sum(len(print_json(p)["steps"]) for p in (prints.FIRST_JOINT, prints.CABLE_MOTION))
-    steps = len(first_joint.STEPS) + len(cable_wrap.STEPS) + len(cable_motion.STEPS) + plates
+    steps = len(first_joint.STEPS) + len(cable_motion_300.STEPS) + plates
     assert sum(g["steps"] for g in report["guides"]) == steps

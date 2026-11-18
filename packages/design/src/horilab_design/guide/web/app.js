@@ -109,6 +109,10 @@
     tape: '<circle cx="22" cy="15" r="10" fill="none" stroke="currentColor" stroke-width="4"/><circle cx="22" cy="15" r="3" fill="none" stroke="currentColor" stroke-width="1.5"/>',
     wire: '<path d="M3 20C10 6 16 6 22 15S34 24 41 10" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>',
     pen: '<rect x="9" y="11" width="24" height="8" rx="2" fill="currentColor"/><path d="M33 12.5L40 15L33 17.5Z" fill="currentColor"/><rect x="4" y="11.5" width="5" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/>',
+    caliper: '<rect x="4" y="8" width="36" height="5" rx="1" fill="currentColor"/><path d="M8 13V24M15 13V20" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>',
+    scale: '<rect x="5" y="19" width="34" height="6" rx="2" fill="currentColor"/><path d="M9 15H35" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/><path d="M22 15V19" stroke="currentColor" stroke-width="2"/>',
+    band: '<ellipse cx="22" cy="15" rx="15" ry="8" fill="none" stroke="currentColor" stroke-width="2.6"/>',
+    ruler: '<rect x="3" y="9" width="38" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="M9 9V14M15 9V16M21 9V14M27 9V16M33 9V14" stroke="currentColor" stroke-width="1.6"/>',
   };
   const THUMBS = {};
   function itemOf(key) { return (S.guide && S.guide.items[key]) || { name: key, kind: 'tool', meta: '' }; }

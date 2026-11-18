@@ -172,6 +172,28 @@ def parent_disc(model: ServoModel = "STS3215") -> list[j.Part]:
     return parts
 
 
+def foot_mount(model: ServoModel = "STS3215", flip: bool = False) -> list[j.Part]:
+    """이 몸통의 발에 단 앞 관절의 출력 원판과 그 밑면의 너트 넷, 발 나사(몸통 나사 M3 × 10) 넷 (이 몸통의 서보 좌표).
+
+    작업 안내가 발에 원판을 다는 단계를 그릴 때 쓴다 (형상은 parent_disc, child_hardware와 같다). flip이면 원판을
+    앞 관절 축 둘레로 반 바퀴 돌려 단다: J4의 원판을 손목 1에 달 때처럼 멈춤 귀가 이 몸통의 출력 쪽 반대를 본다.
+    """
+    back = _child_at().inverse()
+    if flip:
+        back = Pos(0, AX_Y, 0) * Rot(180, 0, 0) * Pos(0, -AX_Y, 0) * back
+    parts = [j.Part("앞 관절의 출력 원판", solid(back * j.out_disc()), color="cap")]
+    for p in j.inner_hardware(model):
+        if p.name.startswith("너트 (출력 원판)"):
+            parts.append(
+                j.Part(f"앞 관절의 {p.name}", solid(back * p.shape), j.STEEL, False, "metal")
+            )
+    x = X_FOOT + j.EAR_T
+    for k, (dy, z) in enumerate(j.RIM):
+        s = cyl_x(1.5, x - j.BODY_SCREW, x, AX_Y + dy, z) + cyl_x(2.85, x, x + 1.65, AX_Y + dy, z)
+        parts.append(j.Part(f"발 나사 M3x10 {k + 1}", solid(s), j.STEEL, False, "metal"))
+    return parts
+
+
 def child_hardware() -> list[j.Part]:
     """자식 몸통 나사 M3 × 10 넷과 영점 핀 (핀은 PIN_POSE_DEG에 꽂은 자리)."""
     out: list[j.Part] = []
