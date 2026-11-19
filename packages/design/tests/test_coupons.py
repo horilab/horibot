@@ -75,6 +75,22 @@ def test_shoulder_bearing_coupons_bracket_the_6806_result() -> None:
     assert coupons.STUB_BORE_6808 < coupons.BEARING_SHAFTS_6808[0] - 8.0  # 축 벽 4 mm 넘게
 
 
+def test_st3120_horn_coupon_sits_on_the_measured_rim() -> None:
+    from horilab_design.parts import shoulder as sh
+
+    # 자리 깊이(2.0)가 테 두께(2.5) 안이고, 가운데 구멍이 혼 가운데 돋움(가정 지름 14)을 비키며 혼 볼트 구멍과 살이 남는다
+    assert coupons.HORN_RECESS_DEPTH < sh.HORN_T
+    relief = 2 * sh.SEAT_R0
+    assert relief > 2 * sh.HORN_BOSS_R
+    assert sh.BOLT_R - coupons.BOLT_HOLE / 2 - relief / 2 > 1.5
+    part = coupons.COUPONS["fit2_st3120_horn"]().solids()[0]
+    pitch = 29.9 + 6.0
+    y = coupons.MARGIN + pitch / 2
+    x = coupons.MARGIN + pitch / 2
+    assert not part.is_inside((x + sh.HORN_BOSS_R, y, 1.0))  # 돋움 자리는 뚫려 있다
+    assert part.is_inside((x + relief / 2 + 0.5, y, 1.0))  # 그 밖은 테에 앉는 바닥이다
+
+
 def test_pin_press_coupon_goes_below_the_smallest_hand_fit() -> None:
     # 검정 세로 핀 구멍은 3.30도 손끝으로 들어갔다. 눌러 박는 구멍은 그보다 작은 칸에서 찾는다
     assert max(coupons.PIN_PRESS_HOLES) == min(coupons.PIN_HOLES)

@@ -34,6 +34,7 @@ from build123d import (
     extrude,
 )
 
+from horilab_design.parts import shoulder
 from horilab_design.parts.shapes import nut_trap, solid
 from horilab_design.values import REPO_ROOT, ServoSpec, load_servos
 
@@ -286,10 +287,11 @@ def servo_frames(spec: ServoSpec) -> Compound:
     return Compound(frames)
 
 
-def horn_recesses(spec: ServoSpec) -> Compound:
+def horn_recesses(spec: ServoSpec, relief: float = HORN_SCREW_RELIEF) -> Compound:
     """혼이 들어갈 얕은 자리. 지름은 혼 지름에 여유를 더하고, M3 구멍이 혼의 구멍 원 위에 있다.
 
-    서보에 달린 혼 위에 시험판을 엎어 얹어 본다.
+    서보에 달린 혼 위에 시험판을 엎어 얹어 본다. relief는 가운데 구멍의 지름이다: 혼 윗면 위로 나온 것(가운데 나사
+    머리, ST-3120은 가운데 돋움까지)이 그 속에 들어서, 자리의 바닥이 혼의 테에 앉는다.
     """
     pitch = spec.horn_diameter_mm + 6.0
     height = HORN_RECESS_DEPTH + 2.0
@@ -301,7 +303,7 @@ def horn_recesses(spec: ServoSpec) -> Compound:
         x = MARGIN + pitch * (i + 0.5)
         recess = Cylinder((spec.horn_diameter_mm + clearance) / 2, HORN_RECESS_DEPTH + 1.0)
         plate -= Pos(x, y, height - HORN_RECESS_DEPTH + (HORN_RECESS_DEPTH + 1.0) / 2) * recess
-        plate -= _vertical_hole(HORN_SCREW_RELIEF, x, y, height)
+        plate -= _vertical_hole(relief, x, y, height)
         r = spec.horn_bolt_circle_mm / 2
         for k in range(spec.horn_bolts):
             angle = 2 * math.pi * k / spec.horn_bolts
@@ -393,9 +395,13 @@ COUPONS: dict[str, Callable[[], Compound]] = {
     # STS3215와 STS3250은 도면이 같아서 같은 시험편으로 본다
     "fit2_sts_frames": lambda: servo_frames(load_servos()["STS3215"]),
     "fit2_sts_horn": lambda: horn_recesses(load_servos()["STS3215"]),
-    # ST-3120은 도면 치수로 미리 만들어 두고, 서보가 오면 뽑아 끼워 본다
+    # ST-3120: 틀은 도면의 단면(65 × 30)이다. 혼 자리는 잰 혼에 맞췄다: 테(두께 2.5)의 가운데가 2.12 솟아 있어서
+    # 가운데 구멍을 어깨 허브 판의 가운데 구멍(돋움 지름의 가정 14에 1.0)과 같게 냈다. 자리의 바닥이 테에 앉고,
+    # 돋움이 가정보다 크면 얹히지 않는다
     "fit2_st3120_frames": lambda: servo_frames(load_servos()["ST-3120"]),
-    "fit2_st3120_horn": lambda: horn_recesses(load_servos()["ST-3120"]),
+    "fit2_st3120_horn": lambda: horn_recesses(
+        load_servos()["ST-3120"], relief=2 * shoulder.SEAT_R0
+    ),
     "fit3_pin_vertical": pin_holes_vertical,
     "fit3_pin_horizontal": pin_holes_horizontal,
     "fit3_6806_bores": bearing_bores,

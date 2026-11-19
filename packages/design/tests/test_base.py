@@ -7,10 +7,16 @@ import pytest
 from horilab_design.parts import base as b
 from horilab_design.parts import joint as j
 from horilab_design.parts import shoulder as sh
-from horilab_design.printcheck import overhangs, printed_mass_g
+from horilab_design.printcheck import (
+    air_walls,
+    mid_layer_levels,
+    overhangs,
+    printed_mass_g,
+    wall_settings,
+)
 from horilab_design.studies import ur_arm
 from horilab_design.studies.packaging import MM
-from horilab_design.values import ServoModel
+from horilab_design.values import ServoModel, load_measured
 
 BED = 256.0  # 출력 범위 [mm]
 HORN_MASS_G = 2.0  # STS 서보의 출력 혼과 가운데 나사 (실측)
@@ -100,6 +106,90 @@ def test_stack_matches_the_skeleton() -> None:
     # 멈춤 나사 끝이 홈 바닥에 닿지 않고, 영점 핀이 살 속에 3.5 넘게 들어간다
     assert (b.ATOP - 1.8 - 10.0) - b.CH_Y > 0.8
     assert b.FRONT - (b.ATOP + j.EAR_T + 3.0 - 20.0) > 3.5
+
+
+def test_bearing_bore_is_tight_only_at_the_two_seats() -> None:
+    # 자리 둘(각 6.6 mm)만 시험편 값이고 그 아래와 사이는 0.2 넓다. 속 부품(누름 틀, 서보 받침)은 그보다 0.3 작다
+    assert j.BEARING_ENTRY - j.BEARING_BORE == pytest.approx(0.2)
+    assert b.SEAT_IN == pytest.approx(0.4)
+    core = b.core().solids()[0]
+    for y, r in (
+        (b.Y_FLOOR + 5.0, j.R_ENTRY),
+        (b.B0 + 3.5, j.R_BORE),
+        ((b.B0 + j.BRG_B + b.B1) / 2, j.R_ENTRY),
+        (b.B1 + 3.5, j.R_BORE),
+    ):
+        # 서보 먼 끝 자리(-x)와 벽 나사 구멍(±z, +x)을 피한 방위각에서 본다
+        x, z = j.polar(r, 45.0)
+        assert not core.is_inside((x * (1 - 0.03 / r), y, z * (1 - 0.03 / r))), y
+        assert core.is_inside((x * (1 + 0.03 / r), y, z * (1 + 0.03 / r))), y
+
+
+def test_black_parts_use_the_black_coupon_values() -> None:
+    assert (b.SLOT_W, b.SLOT_H) == j.K_NUT_LYING == (5.9, 2.8)
+    # 허브: 너트 위 살 1.6 + 옆 홈 2.8 + 밑 살 1.6
+    assert b.HUB_BODY - b.NUT_ROOF - b.SLOT_H == pytest.approx(1.6)
+
+
+def test_j1_body_nuts_drop_in_from_above_as_printed() -> None:
+    # 흰색은 너트가 서는 홈의 값이 떨어뜨려 넣는 방향뿐이다 (fit1_nut_drops 5.6 × 2.8)
+    white = load_measured().fit["pla_basic_white"]
+    assert (white.m3_nut_drop_width_mm, white.m3_nut_drop_thickness_mm) == b.FOOT_NUT_SLOT
+    w, t = b.FOOT_NUT_SLOT
+    # 너트 밑에 살 6.0, 위에 살 1.0. 돌림판 밑에서 올라온 M3 × 12가 너트를 1 넘게 지나고 바닥판 속에서 끝난다
+    assert b.FLOOR_T - b.FOOT_SEAT - t == pytest.approx(1.0)
+    tip = b.BRIM_T - b.FOOT_RECESS - b.FOOT_SCREW  # 돌림판 윗면에서 나사 끝까지 (음수: 위로)
+    assert -tip - (b.FOOT_SEAT + j.NUT_T) >= 1.0
+    assert -tip <= b.FLOOR_T
+    for (_x, y, z), slide, length in b.foot_nut_slots():
+        assert slide == (0.0, -1.0, 0.0)  # J1 몸통을 뽑을 때 위
+        r = (z * z + (y - sh.J1_AXIS_Y) ** 2) ** 0.5
+        assert r == pytest.approx(b.R_FOOT)
+        if y < sh.J1_AXIS_Y:  # 뒷덮개 쪽: 바닥판의 뒤 가장자리까지 열린다
+            assert y - length < sh.BACK_END
+        else:  # 위팔 쪽: 홈이 가운데 구멍(반지름 16) 속으로 다 열린다
+            assert abs(z) + w / 2 < b.FOOT_HOLE - 2.0
+            end = y - length - sh.J1_AXIS_Y
+            assert (end**2 + (abs(z) + w / 2) ** 2) ** 0.5 < b.FOOT_HOLE
+    # 나사 넷이 반 바퀴 대칭이 아니다: J1 몸통이 돌림판에 한 방향으로만 달린다
+    spots = {(round(x, 3), round(z, 3)) for x, z in b.FOOT}
+    assert {(-x, -z) for x, z in spots} != spots
+
+
+@pytest.mark.slow
+def test_j1_body_nuts_fall_into_their_slots() -> None:
+    body = b.j1_body()
+    for center, slide, length in b.foot_nut_slots():
+        assert j.nut_entry_overlap(body, center, (1.0, 0.0, 0.0), slide, reach=length) < 0.01
+    # 홈 위(어깨 서보 쪽)에 살이 남아 너트가 목 속으로 빠지지 않는다
+    solid_body = body.solids()[0]
+    for (x, y, z), _slide, _length in b.foot_nut_slots():
+        assert solid_body.is_inside((x + b.FOOT_NUT_SLOT[1] / 2 + 0.5, y + 2.0, z + 2.2))
+
+
+@pytest.mark.slow
+def test_no_air_walls_or_mid_layer_faces_block_the_printed_parts() -> None:
+    for name, (shape, up, _color, preset) in b.printed().items():
+        found = [a for a in air_walls(shape, up, wall_settings(preset)) if a.blocking]
+        assert found == [], (name, [a.describe() for a in found])
+        assert mid_layer_levels(shape, up) == [], name
+
+
+@pytest.mark.slow
+def test_nut_seat_ceilings_are_closed_by_one_layer(parts: list[j.Part]) -> None:
+    # 조인 너트가 붙는 홈의 천장은 막 한 층이 나사 구멍까지 덮는다 (구멍이 뚫린 천장은 벽 고리가 공중에 뽑힌다)
+    core = next(p for p in parts if p.name == "베이스 몸통").shape.solids()[0]
+    for x, z in b.plate_xz():
+        roof = b.Y_FLOOR + b.PLATE_NUT_UP
+        assert core.is_inside((x, roof - b.SKIN / 2, z))
+        assert not core.is_inside((x, roof - b.SKIN - 0.5, z))
+        assert not core.is_inside((x, roof + 0.5, z))
+    hub = next(p for p in parts if p.name == "허브").shape.solids()[0]
+    for x, z in b.clamp_xz():
+        roof = b.B0 - b.NUT_ROOF
+        assert hub.is_inside((x, roof + b.SKIN / 2, z))
+        assert not hub.is_inside((x, roof + b.SKIN + 0.5, z))
+        assert not hub.is_inside((x, roof - 0.5, z))
 
 
 def test_j1_body_screws_sit_close_to_the_journal() -> None:

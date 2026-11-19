@@ -12,6 +12,10 @@ STS 관절(parts/joint.py)을 세워 놓고 베어링을 둘로 늘린 짜임이
 - 기계 멈춤 기둥은 돌림판 밑면에, 홈과 살은 몸통 윗면에 있다. 영점 핀은 J1 몸통의 뒤쪽 귀에서 그 살에 꽂는다.
 - J1 몸통은 돌림판에 축 가까이(반지름 21 mm)의 나사 넷으로 단다. 나사는 돌림판 밑에서 올라와 J1 몸통의 두꺼운
   바닥판 속 너트에 물린다 (책상 위에서 먼저 조립한다). 돌림판의 얇은 테가 팔의 기울이는 힘에 휘지 않게 하려는 것이다.
+  너트는 J1 몸통을 뽑는 방향(어깨 원통 앞 끝이 바닥)에서 위로 열린 홈에 떨어뜨려 넣는다 (흰색 fit1_nut_drops 값).
+  어깨 뒷덮개 쪽의 둘은 바닥판의 뒤 가장자리에서, 위팔 쪽의 둘은 바닥판 가운데 구멍 속에서 넣는다.
+- 베어링 구멍은 두 베어링이 앉는 자리만 시험편 값(42.2)이고, 그 아래와 사이는 0.2 넓다. 위 베어링은 아래 자리(6.6 mm)만
+  눌러 지나가면 사이를 그냥 내려간다.
 - 선은 몸통 윗부분의 띠(높이 16 mm, 반지름 40.5 mm)에 감긴다 (0031). 몸통 쪽 누르개와 J1 몸통 뒤쪽 귀 위의
   누르개가 범위 가운데에서 같은 방위각(뒤에서 왼쪽으로 28°)에 온다.
 
@@ -35,6 +39,7 @@ from build123d import Compound, Cone, Location, Plane, Pos, Rot
 from horilab_design.parts import joint as j
 from horilab_design.parts import shoulder as sh
 from horilab_design.parts.shapes import (
+    Point,
     box,
     cyl_x,
     cyl_y,
@@ -45,7 +50,13 @@ from horilab_design.parts.shapes import (
     solid,
     teardrop,
 )
-from horilab_design.printcheck import air_wall_lines, overhangs, printed_mass_g
+from horilab_design.printcheck import (
+    LAYER,
+    air_wall_lines,
+    mid_layer_levels,
+    overhangs,
+    printed_mass_g,
+)
 from horilab_design.values import ServoModel
 
 # ---- 축 방향 쌓임 (혼 윗면 j.SEAT에서 위로) ----
@@ -81,11 +92,13 @@ R_TABLE = 39.0  # 돌림판 테와 J1 몸통 발의 바깥 = 선이 감기는 �
 R_CLAMP = 11.6  # 조임 볼트 넷 (저널 벽 1.75가 남고, 볼트가 혼의 바깥(반지름 9.98)을 지난다)
 R_HORN = 7.0  # 혼 나사 넷 (혼의 M3 나사 구멍)
 HEAD_POCKET = j.HEAD_H + 0.6  # 허브 밑면의 혼 가운데 나사 머리 자리 (머리는 혼 윗면 위로 2.0까지)
-HEAD_RECESS = 1.5  # 허브 윗면의 혼 나사 머리 자리 (머리가 0.15 나오고, 저널 끝과는 0.45 뜬다)
+# 허브 윗면의 혼 나사 머리 자리 (머리가 0.05 나오고, 저널 끝과는 0.55 뜬다). 허브를 뽑을 때 자리 바닥이 층 경계다
+HEAD_RECESS = 1.6
 HORN_SCREW = 8.0  # 혼 나사 M3 × 8
 HORN_FLANGE = 2.5  # 혼의 테 두께 (M3 나사 구멍이 뚫려 있다, docs/hardware.md)
 NUT_ROOF = 1.6  # 허브 옆 홈의 너트 위에 남는 살
-SLOT_W, SLOT_H = 5.6, 2.8  # 옆에서 밀어 넣는 너트 홈 (임시: 흰색 값. 검정 시험편 값으로 바꾼다)
+# 검정 부품(베이스 몸통, 허브)의 옆에서 밀어 넣는 너트 홈: 너트가 눕는다 (검정 fit1_nut_slots 값 5.9 × 2.8)
+SLOT_W, SLOT_H = j.K_NUT_LYING
 CLAMP_LEN = 45.0  # 조임 볼트: 가진 유두 렌치볼트 M3 × 45
 CLAMP_HEAD_R, CLAMP_HEAD_H = 2.75, 3.0  # 그 머리 (지름 5.5, 높이 3.0, 2.5 mm 육각렌치)
 # 조임 볼트의 머리 자리: 돌림판 윗면에서 SINK만큼 내려간 곳에 와셔가 앉는다. 볼트 끝이 허브의 너트를 1.1 지나고
@@ -103,10 +116,13 @@ SPOT_R = j.SPOT_R  # 벽 나사 머리가 앉는 면. STS 관절과 같아서 �
 SPACER_R = j.R_BORE - 0.5  # 사이 고리의 몸통: 저널이 들어오기 전에 구멍 가운데 가까이 있게 한다
 JOURNAL_TIP = 0.8  # 저널 끝의 모따기 (사이 고리가 0.5 비켜 있어도 들어간다)
 SPACER_BORE = j.BRG_D / 2 + 0.15
+SEAT_IN = (
+    j.SEAT_Y - j.B0
+)  # 베어링 자리(좁은 구멍)가 베어링 밑면보다 늦게 시작하는 길이 0.4 (STS 관절과 같다)
 
 # ---- 기계 멈춤, 영점 핀, J1 몸통 나사 ----
 R_POST = 33.0  # 멈춤 기둥 (돌림판 밑면, 앞쪽)
-POST_TIP = SEAM - 4.5
+POST_TIP = SEAM - 4.6  # 기둥 돋움의 끝 (돌림판을 뽑을 때 바닥에서 8.8). 그 아래 너트 2.4
 CH_R = (R_POST - 4.4, R_POST + 4.4)  # 몸통 윗면의 홈
 CH_Y = FRONT - 7.0  # 홈 바닥
 WEB_HALF = 180.0 - j.STOP_DEG - math.degrees(math.asin(j.BOSS_R / R_POST))  # 살의 반각 11.3°
@@ -114,10 +130,20 @@ R_PIN = 33.0  # 영점 핀 (뒤쪽 살의 가운데)
 # J1 몸통 나사 M3 × 12 넷 (x, z). 돌림판의 단(반지름 16.5)에서 4.5 mm 밖이라 테가 휘는 길이가 짧다.
 # 가장자리(반지름 35)에 두면 테가 팔의 기울이는 힘(약 3 N·m)에 0.05° 넘게 휜다 (어림)
 R_FOOT = 21.0
-FOOT = tuple(j.polar(R_FOOT, a) for a in (45.0, 135.0, 225.0, 315.0))
+# 방위각: 오른쪽(어깨 뒷덮개 쪽, +z)의 둘은 45°와 135°, 왼쪽(위팔 쪽)의 둘은 240°와 300°다. 왼쪽 둘의 너트 홈은
+# J1 몸통 바닥판의 가운데 구멍 속으로 열려야 해서, 홈(폭 5.6)이 구멍(반지름 16) 안에 다 들게 x를 ±10.5로 좁혔다.
+# 넷이 반 바퀴 대칭이 아니라서 J1 몸통이 돌림판에 한 방향으로만 달린다
+FOOT_DEG = (45.0, 135.0, 240.0, 300.0)
+FOOT = tuple(j.polar(R_FOOT, a) for a in FOOT_DEG)
 FOOT_SCREW = 12.0
 FOOT_RECESS = 1.8  # 돌림판 밑면의 나사 머리 자리
-FOOT_NUT = 2.6  # J1 몸통 바닥판 윗면의 너트 자리 깊이
+# J1 몸통 바닥판의 너트 홈: 뽑을 때 위로 열려 너트를 떨어뜨려 넣는 홈이다 (볼트는 가로). 흰색은 너트가 서는 홈의
+# 값이 이 방향(fit1_nut_drops: 폭 5.6, 두께 2.8)뿐이다. 너트 밑(돌림판 쪽)에 살 FOOT_SEAT, 위에 살 1.0이 남는다
+FOOT_SEAT = 6.0
+FOOT_NUT_SLOT = (
+    j._fit(j._WHITE.m3_nut_drop_width_mm),
+    j._fit(j._WHITE.m3_nut_drop_thickness_mm),
+)
 # J1 몸통의 바닥판 두께 (목 안쪽). 돌림판 밑에서 올라온 M3 × 12가 바닥판 속 너트에 다 물린다.
 # 목 앞뒤로 나온 귀는 j.EAR_T(6.2)로 얇아서 영점 핀이 살 속에 4.6 들어간다
 FLOOR_T = 9.8
@@ -179,15 +205,15 @@ R_PLATE = (
 PLATE_SCREW = 10.0  # M3 × 10
 PLATE_RECESS = 2.2  # 판 밑면의 머리 자리: 둥근머리 1.65 + 와셔 0.5 (머리가 밑면보다 0.05 안에 있다)
 PLATE_NUT_UP = 4.2  # 몸통 밑면에서 너트 홈까지의 살
-PLATE_HOLE = 8.7  # 몸통 밑면에서 나사 구멍의 깊이 (나사 끝 7.7에 1.0 여유)
+PLATE_HOLE = 8.8  # 몸통 밑면에서 나사 구멍의 깊이 (나사 끝 7.7에 1.1 여유. 몸통을 뽑을 때 구멍 끝이 층 경계다)
 ACC_X = (-28.0, -52.0)  # 날개 바깥 가장자리의 부속 자리 (스프링 기둥, 선 정리 부품): 날개마다 M3 둘
 ACC_Z = 69.0
 ACC_NUT = 2.6  # 그 밑면의 너트 자리 깊이
 
 PROVISIONAL = (
-    "SLOT_W, SLOT_H (검정 너트 홈 시험편)",
     "선 누르개의 모양 (쓸 선의 굵기가 정해진 뒤에 그린다. 나사 자리는 냈다)",
-    "검정 부품의 구멍과 너트 홈 (흰색 값을 씀), 너트가 서는 홈 (옛 방식의 임시 값)",
+    "책상에 무는 판의 구멍과 너트 자리 (흰색 값을 쓴다. 판을 다시 그릴 때 바꾼다)",
+    "M2_TAP (스프링 줄을 묶는 나사 구멍. 시험편 값이 없다)",
 )
 
 
@@ -212,7 +238,13 @@ def _tunnel(axis: str, sign: int, y: float, half_y: float, half_w: float) -> Com
 def core() -> Compound:
     """베이스 몸통. 윗면(y = FRONT)을 바닥에 두고 뽑는다. 속은 아래(뽑을 때 위)로 열려 있다."""
     h = solid(Rot(0, 45, 0) * cyl_y(R_CORE, Y_FLOOR, FRONT))
-    cav = cyl_y(j.R_BORE, Y_FLOOR - 1, B1 + j.BRG_B) + cyl_y(j.R_LIP, B1, FRONT + 1)
+    # 베어링 구멍: 두 베어링이 앉는 자리(각 6.6 mm)만 R_BORE이고, 그 아래와 사이는 0.2 넓다 (R_ENTRY). 자리의
+    # 끝은 몸통을 뽑을 때 층 경계에 온다 (바닥에서 1.8, 8.4, 31.8, 38.4)
+    cav = cyl_y(j.R_ENTRY, Y_FLOOR - 1, B0 + SEAT_IN + 0.01)
+    cav += cyl_y(j.R_BORE, B0 + SEAT_IN, B0 + j.BRG_B)
+    cav += cyl_y(j.R_ENTRY, B0 + j.BRG_B - 0.01, B1 + SEAT_IN + 0.01)
+    cav += cyl_y(j.R_BORE, B1 + SEAT_IN, B1 + j.BRG_B)
+    cav += cyl_y(j.R_LIP, B1, FRONT + 1)
     cav += box(-(j.FAR + FAR_GAP), -12.0, Y_FLOOR - 1, POCKET_TOP, -j.NECK_IN, j.NECK_IN)
     h = solid(h - solid(cav))
     hw, ht = WIRE_EXIT
@@ -221,9 +253,9 @@ def core() -> Compound:
     band = j.ring(CH_R[1], CH_R[0], CH_Y, FRONT + 1)
     web = band & j.wedge(180 - WEB_HALF, 180 + WEB_HALF, CH_R[1] + 5, CH_Y - 1, FRONT + 2)
     h = solid(h - solid(band - web))
-    h = solid(h - cyl_y(j.PIN_HOLE / 2, CH_Y - 2.0, FRONT + 1, -R_PIN, 0.0))
+    h = solid(h - cyl_y(j.K_PIN_HOLE / 2, CH_Y - 2.0, FRONT + 1, -R_PIN, 0.0))
     # 벽 나사: 누름 틀 셋 (양옆과 앞), 서보 받침 둘 (양옆, 축 방향으로 긴 구멍)
-    r = j.M3_FREE_H / 2
+    r = j.K_M3_FREE_H / 2
     for s in (1, -1):
         z0, z1 = (15.0, SPOT_R + 0.01) if s > 0 else (-SPOT_R - 0.01, -15.0)
         h = solid(h - cyl_z(r, z0, z1, 0.0, j.RET_SCREW_Y))
@@ -236,10 +268,13 @@ def core() -> Compound:
         h = solid(h - _tunnel("z", s, j.CAR_SCREW_Y, 5.2, 4.2))
     h = solid(h - cyl_x(r, 15.0, SPOT_R + 0.01, j.RET_SCREW_Y, 0.0))
     h = solid(h - _tunnel("x", 1, j.RET_SCREW_Y, 3.4, 3.4))
-    # 책상에 무는 판의 나사 넷: 밑에서 올라와 옆에서 밀어 넣은 너트에 물린다
+    # 책상에 무는 판의 나사 넷: 밑에서 올라와 옆에서 밀어 넣은 너트에 물린다. 조인 너트가 붙는 홈의 면(몸통을 뽑을
+    # 때 홈의 천장)은 첫 층이 나사 구멍까지 덮는 막이다. 구멍이 뚫린 천장은 구멍을 둘러싼 벽 고리가 공중에 뽑힌다.
+    # 판을 달기 전에 밑면 쪽에서 구멍 자리의 막을 뚫는다
     y_nut = Y_FLOOR + PLATE_NUT_UP + SLOT_H / 2
     for a, (x, z) in zip((45.0, 135.0, 225.0, 315.0), plate_xz(), strict=True):
-        h = solid(h - cyl_y(j.M3_FREE / 2, Y_FLOOR - 1, Y_FLOOR + PLATE_HOLE, x, z))
+        h = solid(h - cyl_y(j.K_M3_FREE / 2, Y_FLOOR - 1, Y_FLOOR + PLATE_NUT_UP - SKIN, x, z))
+        h = solid(h - cyl_y(j.K_M3_FREE / 2, Y_FLOOR + PLATE_NUT_UP, Y_FLOOR + PLATE_HOLE, x, z))
         out = (math.cos(math.radians(a)), 0.0, math.sin(math.radians(a)))
         trap = nut_trap((x, y_nut, z), (0.0, 1.0, 0.0), out, R_CORE - R_PLATE + 1, SLOT_W, SLOT_H)
         h = solid(h - trap)
@@ -358,11 +393,15 @@ def hub() -> Compound:
         h = solid(h - j.ring(j.R_STEP + 1, j.HUB_SEAT_R, j.SEAT - 1, j.SEAT + HUB_RELIEF))
     h = solid(h - cyl_y(3.6, j.SEAT - 1, j.SEAT + HEAD_POCKET))  # 혼 가운데 나사 머리
     for x, z in j.bolt_xz():  # 혼 나사 (45°부터)
-        h = solid(h - cyl_y(j.M3_FREE / 2, j.SEAT - 1, B0 + 1, x, z))
+        h = solid(h - cyl_y(j.K_M3_FREE / 2, j.SEAT - 1, B0 + 1, x, z))
         h = solid(h - cyl_y(3.1, B0 - HEAD_RECESS, B0 + 1, x, z))
+    # 조임 볼트의 너트 홈. 조인 너트가 붙는 홈의 천장(B0 - NUT_ROOF)은 첫 층이 볼트 구멍까지 덮는 막이다 (구멍이
+    # 뚫린 천장은 구멍을 둘러싼 벽 고리가 공중에 뽑힌다). 허브를 혼에 달기 전에 윗면 쪽에서 구멍 자리의 막을 뚫는다
     y_nut = B0 - NUT_ROOF - SLOT_H / 2
+    roof = B0 - NUT_ROOF
     for a, (x, z) in zip((0, 90, 180, 270), clamp_xz(), strict=True):
-        h = solid(h - cyl_y(j.M3_FREE / 2, j.SEAT - 1, B0 + 1, x, z))
+        h = solid(h - cyl_y(j.K_M3_FREE / 2, j.SEAT - 1, roof, x, z))
+        h = solid(h - cyl_y(j.K_M3_FREE / 2, roof + SKIN, B0 + 1, x, z))
         out = (math.cos(math.radians(a)), 0.0, math.sin(math.radians(a)))
         trap = nut_trap((x, y_nut, z), (0.0, 1.0, 0.0), out, j.R_STEP - R_CLAMP + 1, SLOT_W, SLOT_H)
         h = solid(h - trap)
@@ -401,16 +440,19 @@ def turntable() -> Compound:
     lip = j.ring(TABLE_LIP[1], TABLE_LIP[0], FRONT + j.LIP_GAP, SEAM + 0.01)
     a = solid(a + solid(Rot(0, 45, 0) * lip))
     a = solid(a + cyl_y(j.BOSS_R, POST_TIP, SEAM + 0.01, R_POST, 0.0))  # 멈춤 기둥 (속에 M3 나사)
-    a = solid(a - cyl_y(j.M3_FREE / 2, POST_TIP - 1, ATOP + 1, R_POST, 0.0))
-    a = solid(a - cyl_y(3.1, ATOP - 1.8, ATOP + 1, R_POST, 0.0))  # 기둥 나사 머리 자리
+    # 기둥 나사 머리 자리: 천장 첫 층이 구멍까지 덮는 막이다 (STS 관절의 출력 원판과 같다). 멈춤 나사를 꽂기 전에
+    # 구멍 자리의 막을 뚫는다
+    seat = ATOP - j.POST_HEAD_SINK
+    a = solid(a - cyl_y(j.K_M3_FREE / 2, POST_TIP - 1, seat - LAYER, R_POST, 0.0))
+    a = solid(a - cyl_y(j.HEAD_POCKET_R, seat, ATOP + 1, R_POST, 0.0))
     for x, z in clamp_xz():  # 볼트 구멍과 머리 자리. 그 사이에 막 한 층이 남는다
-        a = solid(a - cyl_y(j.M3_FREE / 2, B0, ATOP - SINK - SKIN, x, z))
+        a = solid(a - cyl_y(j.K_M3_FREE / 2, B0, ATOP - SINK - SKIN, x, z))
         a = solid(a - cyl_y(SINK_R, ATOP - SINK, ATOP + 1, x, z))
     for (
         x,
         z,
     ) in FOOT:  # J1 몸통 나사: 머리가 밑면의 자리에 앉는다 (뽑을 때 위라 자리 바닥이 평평하다)
-        a = solid(a - cyl_y(j.M3_FREE / 2, SEAM - 1, ATOP + 1, x, z))
+        a = solid(a - cyl_y(j.K_M3_FREE / 2, SEAM - 1, ATOP + 1, x, z))
         a = solid(a - cyl_y(3.1, SEAM - 1, SEAM + FOOT_RECESS, x, z))
     a = solid(a - cyl_y(2.0, SEAM - 1, ATOP + 1, -R_PIN, 0.0))  # 영점 핀이 지나가는 구멍
     # 스프링 자리 (0011): 테 둘레의 줄 홈과, 줄 끝을 묶는 M2 나사 구멍 (옆에서 조여 넣는다). 스프링이나 추는
@@ -474,10 +516,10 @@ def j1_body() -> Compound:
         (x0 - 1, sh.J1_AXIS_Y, 0.0), (1.0, 0.0, 0.0), FLOOR_T + 2, 2 * FOOT_HOLE, (0.0, -1.0, 0.0)
     )
     h = solid(h - hole)
-    for x, z in FOOT:  # 베이스의 (x, z) → 어깨의 (y, z) = (J1_AXIS_Y - z, -x)
-        y_h, z_h = sh.J1_AXIS_Y - z, -x
+    for (x_nut, y_h, z_h), slide, length in foot_nut_slots():
         h = solid(h - cyl_x(j.M3_FREE_H / 2, x0 - 1, x_floor + 1, y_h, z_h))
-        h = solid(h - j.hex_x(y_h, z_h, x_floor - FOOT_NUT, x_floor + 0.01, j.NUT_AF_UPRIGHT))
+        trap = nut_trap((x_nut, y_h, z_h), (1.0, 0.0, 0.0), slide, length, *FOOT_NUT_SLOT)
+        h = solid(h - trap)
     h = solid(h - cyl_x(j.PIN_HOLE_H / 2, x0 - 1, x_ear + 1, sh.J1_AXIS_Y, R_PIN))
     # 뒤쪽 귀의 누르개 나사 구멍 (0031): J1을 넘는 선을 여기서 잡는다. 베이스의 (x, z) → 어깨의 (y, z)
     cx, cz = EAR_CLAMP
@@ -487,8 +529,24 @@ def j1_body() -> Compound:
     return h
 
 
-def as_child(shape: Compound, q_deg: float = 0.0) -> Compound:
-    """어깨의 서보 좌표로 그린 것을 베이스 좌표로 옮긴다 (J1 각 q).
+def foot_nut_slots() -> list[tuple[Point, Point, float]]:
+    """J1 몸통 바닥판의 너트 홈 넷: (너트 가운데, 입구 쪽 방향, 홈의 길이). 어깨의 서보 좌표다.
+
+    입구는 모두 J1 몸통을 뽑을 때 위(-y, 어깨 뒷덮개 쪽)다. 뒷덮개 쪽의 둘은 바닥판의 뒤 가장자리까지 열리고
+    (뒷덮개의 테가 입구를 가린다), 위팔 쪽의 둘은 바닥판 가운데 구멍 속으로 열린다.
+    """
+    x_nut = NECK_X + FOOT_SEAT + FOOT_NUT_SLOT[1] / 2
+    out: list[tuple[Point, Point, float]] = []
+    for x, z in FOOT:  # 베이스의 (x, z) → 어깨의 (y, z) = (J1_AXIS_Y - z, -x)
+        y_h, z_h = sh.J1_AXIS_Y - z, -x
+        # 가운데 구멍 속으로 열리는 홈은 구멍 가운데에서 4 mm 앞까지 판다 (그 끝은 구멍 속이다)
+        length = y_h - sh.BACK_END + 1.0 if z > 0 else -z - 4.0
+        out.append(((x_nut, y_h, z_h), (0.0, -1.0, 0.0), length))
+    return out
+
+
+def child_at() -> Location:
+    """어깨의 서보 좌표를 베이스 좌표(J1의 서보 좌표)로 옮기는 자리 (J1 각 0).
 
     어깨의 x(위) → 베이스의 y, 어깨의 y(어깨 축, 출력 쪽) → 베이스의 -z(로봇 왼쪽), 어깨의 z → 베이스의 -x(뒤).
     """
@@ -497,7 +555,12 @@ def as_child(shape: Compound, q_deg: float = 0.0) -> Compound:
         x_dir=(0.0, 1.0, 0.0),
         z_dir=(-1.0, 0.0, 0.0),
     )
-    return j.turned(solid(shape.moved(Location(plane))), q_deg)
+    return Location(plane)
+
+
+def as_child(shape: Compound, q_deg: float = 0.0) -> Compound:
+    """어깨의 서보 좌표로 그린 것을 베이스 좌표로 옮긴다 (child_at). q_deg는 설계 각이다 (joint.turned)."""
+    return j.turned(solid(shape.moved(child_at())), q_deg)
 
 
 # ------------------------------------------------------------------------------------------------
@@ -537,10 +600,9 @@ def hardware(model: ServoModel) -> list[j.Part]:
                 f"혼 나사 M3x8 {k + 1}", _screw_down(x, z, seat, HORN_SCREW), j.STEEL, True, "metal"
             )
         )
+    seat = ATOP - j.POST_HEAD_SINK
     out.append(
-        j.Part(
-            "멈춤 나사 M3x10", _screw_down(R_POST, 0.0, ATOP - 1.8, 10.0), j.STEEL, True, "metal"
-        )
+        j.Part("멈춤 나사 M3x10", _screw_down(R_POST, 0.0, seat, 10.0), j.STEEL, True, "metal")
     )
     nut = j.hex_y(R_POST, 0.0, POST_TIP - j.NUT_T, POST_TIP, 5.4) - cyl_y(
         1.5, POST_TIP - 3, POST_TIP + 1, R_POST, 0.0
@@ -551,7 +613,7 @@ def hardware(model: ServoModel) -> list[j.Part]:
     for k, (x, z) in enumerate(FOOT):  # 돌림판 밑에서 올라오는 나사와 바닥판 속 너트
         shape = cyl_y(1.5, seat, seat + FOOT_SCREW, x, z) + cyl_y(2.85, seat - 1.65, seat, x, z)
         out.append(j.Part(f"J1 몸통 나사 M3x12 {k + 1}", solid(shape), j.STEEL, True, "metal"))
-        y0 = ATOP + FLOOR_T - FOOT_NUT
+        y0 = ATOP + FOOT_SEAT
         nut = j.hex_y(x, z, y0, y0 + j.NUT_T, 5.4) - cyl_y(1.5, y0 - 1, y0 + j.NUT_T + 1, x, z)
         out.append(j.Part(f"너트 (J1 몸통) {k + 1}", solid(nut), j.STEEL, True, "metal"))
     pin = cyl_y(1.5, top + 3.0 - 20.0, top + 3.0, -R_PIN, 0.0)
@@ -568,19 +630,14 @@ def hardware(model: ServoModel) -> list[j.Part]:
         nut = j.hex_y(x, z, y0, y0 + j.NUT_T, 5.4) - cyl_y(1.5, y0 - 1, y0 + j.NUT_T + 1, x, z)
         out.append(j.Part(f"너트 (판) {k}", solid(nut), j.STEEL, False, "metal"))
     out += j.wall_screws()
-    leg_in = j.SPOT_R - j.SCREW_LEN
+    side = j.NUT_Z + j.K_NUT_SLOT[1] / 2  # 조인 너트가 붙는 옆 홈의 바깥 면 (STS 관절과 같다)
     for sg in (1, -1):
-        z0, z1 = (leg_in, leg_in + j.NUT_T) if sg > 0 else (-leg_in - j.NUT_T, -leg_in)
+        z0, z1 = (side - j.NUT_T, side) if sg > 0 else (-side, -side + j.NUT_T)
         nut_r = j.hex_z(0.0, j.RET_SCREW_Y, z0, z1, 5.4)
         out.append(j.Part("너트 (누름 틀)", nut_r, j.STEEL * 0.72, False, "metal"))
-        b0, b1 = (
-            (leg_in + 1.6, leg_in + 1.6 + j.NUT_T)
-            if sg > 0
-            else (-leg_in - 1.6 - j.NUT_T, -leg_in - 1.6)
-        )
-        nut_c = solid(Pos(0, dy, 0) * j.hex_z(0.0, j.CAR_SCREW_Y, b0, b1, 5.4))
+        nut_c = solid(Pos(0, dy, 0) * j.hex_z(0.0, j.CAR_SCREW_Y, z0, z1, 5.4))
         out.append(j.Part("너트 (서보 받침)", nut_c, j.STEEL * 0.72, False, "metal"))
-    nut_x = j.hex_x(j.RET_SCREW_Y, 0.0, leg_in, leg_in + j.NUT_T, 5.4)
+    nut_x = j.hex_x(j.RET_SCREW_Y, 0.0, side - j.NUT_T, side, 5.4)
     out.append(j.Part("너트 (누름 틀)", nut_x, j.STEEL * 0.72, False, "metal"))
     for k, (x, z) in enumerate(j.BACK_HOLES):
         y = j.L1 - j.PLATE_T + dy  # 머리 밑면 (받침 판의 뒷면)
@@ -589,13 +646,12 @@ def hardware(model: ServoModel) -> list[j.Part]:
     return out
 
 
-def assembly(model: ServoModel = "STS3215") -> list[j.Part]:
-    """J1 조립: 베이스 몸통과 속 부품, 돌림판, J1 몸통, 어깨 서보(틈 검사용), 나사와 핀."""
+def own_parts(model: ServoModel = "STS3215") -> list[j.Part]:
+    """J1 관절의 부품: 베이스 몸통과 책상에 무는 판, 속 부품, J1 서보, 돌림판 (J1 몸통과 나사는 빼고)."""
     dy = j.servo_dy(model)
     sv = j.servo(model)
     lower, upper = bearings()
-    shoulder = sh.servo()
-    parts = [
+    return [
         j.Part("베이스 몸통", core(), color="cap"),
         j.Part("책상에 무는 판", plate(), color="frame"),
         j.Part("베어링 6806 (아래)", lower, color="metal"),
@@ -609,10 +665,16 @@ def assembly(model: ServoModel = "STS3215") -> list[j.Part]:
         j.Part("혼", sv["horn"], moving=True, color="metal"),
         j.Part("플러그", sv["plugs"], color="plug"),
         j.Part("선 자리", sv["wires"], color="wire"),
-        j.Part("J1 몸통", as_child(j1_body()), moving=True, color="body"),
-        j.Part("어깨 서보", as_child(shoulder["body"]), moving=True, color="servo"),
     ]
-    return parts + hardware(model)
+
+
+def assembly(model: ServoModel = "STS3215") -> list[j.Part]:
+    """J1 조립: 베이스 몸통과 속 부품, 돌림판, J1 몸통, 어깨 서보(틈 검사용), 나사와 핀."""
+    over = [
+        j.Part("J1 몸통", as_child(j1_body()), moving=True, color="body"),
+        j.Part("어깨 서보", as_child(sh.servo()["body"]), moving=True, color="servo"),
+    ]
+    return own_parts(model) + over + hardware(model)
 
 
 # 서로 닿게 그린 쌍: 안쪽 링을 무는 부품들, 혼에 앉는 허브
@@ -677,7 +739,7 @@ def screw_checks(model: ServoModel) -> dict[str, float]:
     clamp_seat = ATOP - SINK + WASHER_T  # 조임 볼트 머리의 밑면
     clamp_tip = clamp_seat - CLAMP_LEN
     foot_tip = SEAM + FOOT_RECESS + FOOT_SCREW
-    foot_nut = ATOP + FLOOR_T - FOOT_NUT  # 바닥판 속 너트의 밑면
+    foot_nut = ATOP + FOOT_SEAT  # 바닥판 속 너트의 밑면
     plate_tip = Y_DESK + PLATE_RECESS - WASHER_T + PLATE_SCREW  # 판 나사의 끝
     return {
         "혼 나사가 혼 테(2.5)에 물린 길이": min(j.SEAT - horn_tip, HORN_FLANGE),
@@ -735,9 +797,10 @@ def report(model: ServoModel = "STS3215") -> None:
         f"책상에서: 몸통 윗면 {FRONT - Y_DESK:.1f}, 돌림판 윗면 {TOP_H:.1f}, 어깨 축 {SHOULDER_H:.0f} "
         f"(어깨 서보 먼 끝 {SHOULDER_H - sh.FAR:.1f}), 목 아래 끝 x {NECK_X:.1f}"
     )
-    print(f"임시 값: {', '.join(PROVISIONAL)}")
+    print(f"임시 값: {'; '.join(PROVISIONAL)}")
     print("\n뽑는 부품 (무게는 뽑아서 잰 부품에 맞춘 어림, 걸침은 바닥에 닿지 않고 아래를 보는 면)")
-    for name, (shape, up, color, preset) in printed().items():
+    made = printed()
+    for name, (shape, up, color, preset) in made.items():
         bb = shape.bounding_box()
         over = overhangs(shape, up)
         print(
@@ -745,7 +808,20 @@ def report(model: ServoModel = "STS3215") -> None:
             f"{printed_mass_g(shape, up, preset):5.1f} g  걸침 {over.total:5.0f} mm² (거의 수평 {over.flat:.0f}, "
             f"가장 넓은 한 자리 {over.largest:.0f})"
         )
-    print("\n".join(air_wall_lines(printed())))
+    mid = {n: mid_layer_levels(s, up) for n, (s, up, _c, _p) in made.items()}
+    print(
+        "층 가운데에 걸친 수평면 (한 층이 더 뽑힐지가 정해지지 않는다): "
+        + (", ".join(f"{n} {z}" for n, z in mid.items() if z) or "없음")
+    )
+    print("\n".join(air_wall_lines(made)))
+    body = made["j1_body"][0]
+    drops = [
+        j.nut_entry_overlap(body, c, (1.0, 0.0, 0.0), s, reach=n) for c, s, n in foot_nut_slots()
+    ]
+    print(
+        "J1 몸통 바닥판의 홈에 너트를 곧게 떨어뜨릴 때 겹침 [mm³]: "
+        + ", ".join(f"{v:.2f}" for v in drops)
+    )
     metal = sum(p.mass_g for p in parts if p.density > 0 and "핀" not in p.name)
     print(f"나사와 너트 {metal:.1f} g")
     for name, value in screw_checks(model).items():

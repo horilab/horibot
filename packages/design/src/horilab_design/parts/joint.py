@@ -118,9 +118,6 @@ K_NUT_LYING = (
     _fit(_BLACK.m3_nut_slot_width_mm),
     _fit(_BLACK.m3_nut_slot_height_mm),
 )
-# 너트가 서는 홈을 옛 방식(안쪽 면에서 판 육각 자리)으로 둔 부품이 쓰는 임시 값 (어깨, 베이스). 그 부품의 뽑을
-# 파일을 낼 때 위의 옆 홈으로 바꾼다
-NUT_AF_UPRIGHT = 5.6
 # 6806 바깥 링 자리: 엄지로 꾹 눌러 들어가고 놀지 않는다. 흰색과 검정이 같은 값이다 (42.2)
 BEARING_BORE = _fit(_WHITE.bearing_6806_bore_mm)
 assert BEARING_BORE == _fit(_BLACK.bearing_6806_bore_mm)

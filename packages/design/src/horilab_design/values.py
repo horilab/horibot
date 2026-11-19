@@ -138,6 +138,15 @@ class ServoBody(_Values):
     horn_to_back_mm: float = Field(gt=0)  # 출력 혼 윗면 ~ 출력축 둘레의 낮은 뒷면 (두께 29인 면)
     horn_to_wire_mm: float | None = Field(default=None, gt=0)  # 출력 혼 윗면 ~ 뒷면에 꽂아 눕힌 선
     horn_to_boss_mm: float | None = Field(default=None, gt=0)  # 출력 혼 윗면 ~ 뒷면 보스 끝
+    # ST-3120 (혼 테의 가운데가 솟아 있고, 뒷면 보스에 베어링이 남고, 커넥터가 옆면에 있다)
+    horn_boss_to_back_mm: float | None = Field(default=None, gt=0)  # 혼 가운데 돋움 윗면 ~ 뒷면
+    # 혼 가운데 나사 머리 ~ 뒷면 보스 끝
+    horn_screw_to_back_boss_mm: float | None = Field(default=None, gt=0)
+    back_boss_mm: float | None = Field(default=None, gt=0)  # 뒷면 ~ 보스 끝 (남은 베어링의 면)
+    back_bearing_diameter_mm: float | None = Field(default=None, gt=0)  # 보스에 남은 베어링
+    # 옆면 커넥터에 꽂은 플러그: 혼 쪽 끝 면 ~ 플러그의 먼 쪽 면, 뒷면 ~ 플러그의 앞쪽 면
+    side_plug_far_mm: float | None = Field(default=None, gt=0)
+    side_plug_front_mm: float | None = Field(default=None, gt=0)
 
 
 class ServoDepth(_Values):
