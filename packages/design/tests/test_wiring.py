@@ -8,6 +8,8 @@ import pytest
 from build123d import Pos
 
 from horilab_design.parts import base as bp
+from horilab_design.parts import camera_mount as cmt
+from horilab_design.parts import gripper as gp
 from horilab_design.parts import joint as j
 from horilab_design.parts import links, wrist
 from horilab_design.parts import shoulder as sp
@@ -30,7 +32,10 @@ def test_wire_is_longest_at_a_stop_and_slack_in_the_middle() -> None:
 
 def test_each_wire_reaches_with_a_cable_on_hand() -> None:
     chosen = {w.name: w for w in wr.wires()}
-    assert [w.cable for w in chosen.values()] == [900.0, 900.0, 900.0, 300.0, 300.0, 200.0]
+    # J6 → 그리퍼는 그리퍼 몸통의 겉으로 돌아서 20 cm 선(181 mm)으로 닿지 않는다. 300 mm 선을 쓴다
+    assert [w.cable for w in chosen.values()] == [900.0, 900.0, 900.0, 300.0, 300.0, 300.0]
+    assert chosen["J6 → 그리퍼"].need > wr.usable(200.0)
+    assert gp.CABLE_G == pytest.approx(4.5)  # 그리퍼의 무게에 넣은 선도 300 mm 선이다
     for w in chosen.values():
         assert w.left >= wr.SPARE, (w.name, w.need, w.left)
     # 산 300 mm 선으로는 아래팔을 지나는 J3 → J4가 닿지 않는다 (0016의 어림과 다르다)
@@ -122,13 +127,20 @@ def test_wrist2_wire_has_a_clear_route_at_every_angle() -> None:
     # 핀 자세(-90°)에서 귀는 부모 쪽 구간 바로 안쪽을 지난다: 그 각 근처의 가장 좁은 곳이 부모 쪽 구간과 귀 사이다
     pin = routes[163 + round(wrist.PIN_POSE_DEG)]
     assert pin.near == "영점 핀 귀" and pin.gap > 2.5
-    # D405를 달면 닿지 않는 길은 있지만, +93 ~ +121°에서 받침의 클립 밑으로 지나느라 2 mm보다 좁다 (받침과 선을 달고
-    # 돌려 볼 자리, 0031의 남은 확인). 클립은 상자로, 선은 지름이 폭인 둥근 선으로 본 값이라 실제보다 좁게 나온다
+    # D405를 달면 (플러그는 잰 자리, 클립은 없다): 플러그의 고무 끝이 발 위 18.7 mm라, 거기서 J5 쪽으로 곧게 내려오는
+    # D405 선이 이 선이 도는 자리(발 위 11 ~ 16 mm)를 가로지른다. +86 ~ +117°에서는 2.5 mm를 띄우는 길이 없고,
+    # +100° 근처에서는 D405 선과 귀 사이로 지나갈 틈도 없다 (정해지지 않은 배치다, camera_mount.PROVISIONAL). 선은
+    # 지름이 폭인 둥근 선으로, D405 선은 플러그 밑 12 mm만 곧은 막대로 본 값이다
+    assert not cmt.clip_rooted()
     cam = wr.clear_routes(c, wr.wrist_lumps(True, True), strand, (c.h,))
-    assert min(r.gap for r in cam) > 0.0
-    narrow = [r.q for r in cam if r.gap < 2.0]
-    assert narrow and 90.0 <= narrow[0] and narrow[-1] <= 125.0
-    assert all(r.gap > 2.5 for r in cam if r.q < 0)  # 귀 쪽(-)은 D405와 상관없다
+    blocked = [r.q for r in cam if r.gap < 2.5]
+    assert blocked and 80.0 <= blocked[0] and blocked[-1] <= 120.0
+    assert min(r.gap for r in cam) < 0.0
+    assert all(r.gap > 2.5 for r in cam if r.q < 80.0)  # 그 밖의 각은 D405와 상관없다
+    # D405 선이 없다고 쳐도 카메라의 바닥면(발 위 16.7)이 2.1 mm까지 온다
+    bare = tuple(x for x in wr.wrist_lumps(True, True) if x.name != "D405 선")
+    alone = wr.clear_routes(c, bare, strand, (c.h,))
+    assert 2.0 < min(r.gap for r in alone) < 2.5
 
 
 @pytest.mark.slow
@@ -273,3 +285,67 @@ def test_base_band_and_clamp_holes() -> None:
     x, z = bp.EAR_CLAMP
     probe = box(x - 0.6, x + 0.6, bp.ATOP + 1.0, bp.ATOP + j.EAR_T - 1.0, z - 0.6, z + 0.6)
     assert solid(body & probe).volume < 0.01
+
+
+def test_gripper_wire_leaves_the_frame_above_the_flange_ears() -> None:
+    c = wr.over_gripper()
+    # 선은 그리퍼 몸통의 서보 먼 끝에서 축에서 멀어지는 쪽으로 곧게 나온다 (도구는 손목 2의 좌표에 그대로 그린다)
+    assert not c.mirror and not c.flip
+    assert c.face[1] == c.start[1] == gp.EXIT_ZC and c.start[0] < c.face[0] < -35.0
+    # 플랜지 원판의 귀 윗면(플랜지 면)보다 4.5 mm 넘게 위에서 나오고, 서보 뒷면의 볼록한 판(6.3) 밑을 지나온 높이다
+    low = c.h - j.WIRE_T / 2
+    assert low == pytest.approx(gp.EXIT_H[0]) and low > 4.5
+    assert low + j.WIRE_T < gp.H_BACK - 1.9
+    assert gp.EXIT_H[1] - gp.EXIT_H[0] > j.WIRE_T + 0.25
+    for h in gp.EXIT_H:  # 주머니의 바닥과 천장은 뽑을 때 층 경계다
+        assert abs(h / 0.2 - round(h / 0.2)) < 1e-6
+    # 주머니는 눕힌 선보다 넓고, 그 밑의 틈은 세운 선만 지나간다 (눕힌 선은 되내려가지 않는다)
+    assert 2 * gp.EXIT_HW > j.WIRE_W + 0.6
+    assert j.WIRE_T + 0.4 <= 2 * gp.EXIT_SLIT_HW < j.WIRE_W - 2.5
+    # 범위 가운데에서 나가는 자리와 들어가는 자리가 거의 같은 방위각이고, 양 끝의 길이가 비슷하다
+    assert abs(c.exit_az - c.entry_az) < 10.0
+    assert c.length(c.stop_deg) == pytest.approx(c.length(-c.stop_deg), abs=12.0)
+    # 손목 2의 홈에서 곧게 올라오는 선: 옆 홈이면 플랜지 원판의 영점 핀 귀와 멈춤 귀가 쓸고 가는 자리와 2.5 mm 넘게
+    # 뜨고, 가운데 홈이면 영점 핀 귀와 2 mm가 안 된다
+    lumps = wr.tool_lumps()
+    assert wr.strand_gap(wr.wrist2_strand(True), lumps, "영점 핀 귀") > 2.5
+    assert wr.strand_gap(wr.wrist2_strand(True), lumps, "멈춤 귀") > 2.5
+    assert wr.strand_gap(wr.wrist2_strand(False), lumps, "영점 핀 귀") < 2.0
+    # 그 선은 그리퍼 몸통의 눕힌 끝벽이 지나가는 높이 밑으로만 선다 (플랜지 면 위 4.3)
+    assert 3.5 < wr.tool_ceiling() < wr.tool_ceiling(0.0) < c.h
+    # J6 → 그리퍼 선: 손목 2에서는 +z 쪽 옆 홈으로 곧게 나가고, 그리퍼 속은 주머니에서 플러그까지 30 mm가 안 된다
+    by = dict(next(w for w in wr.wires() if w.name == "J6 → 그리퍼").parts)
+    assert by["손목 2 속"] == pytest.approx(wr.length(wr.wrist_out(side=True)))
+    assert 15.0 < by["그리퍼"] < 30.0
+    # 테에 감던 길보다 20 mm쯤 길다
+    assert 15.0 < c.longest() - wr.j6_in_layer().longest() < 30.0
+
+
+@pytest.mark.slow
+def test_gripper_wire_has_a_clear_route_at_every_angle() -> None:
+    routes = wr.gripper_routes()
+    assert [r.q for r in routes] == [float(q) for q in range(-163, 164)]
+    # 멈춤 각에서 멈춤 각까지 1° 간격으로, 플랜지 원판의 귀와 멈춤 기둥, 그리퍼의 귀와 나사 머리, J5 원판의 멈춤 귀,
+    # D405를 2.5 mm 넘게 피하는 길이 있다
+    assert min(r.gap for r in routes) > 2.5
+    # 가장 좁은 곳은 영점 핀 귀가 손목 2의 홈에서 올라온 선 안쪽을 지날 때다 (J6 0° 근처)
+    worst = min(routes, key=lambda r: r.gap)
+    assert worst.near == "영점 핀 귀" and abs(worst.q) < 20.0
+    # 손목 2의 홈에서 올라온 선은 그리퍼의 눕힌 끝벽 밑에서 끝난다
+    assert max(r.join_h for r in routes) < wr.tool_ceiling(0.0)
+    # 그 길은 300 mm 선에서 두 몸통 속의 길을 뺀 길이보다 짧다
+    by = dict(next(w for w in wr.wires() if w.name == "J6 → 그리퍼").parts)
+    assert max(r.length for r in routes) < wr.usable(300.0) - by["손목 2 속"] - by["그리퍼"] - 30.0
+    # 가운데 홈으로 나가면 영점 핀 귀와 2.5 mm가 안 된다
+    c = wr.over_gripper()
+    center = wr.clear_routes(
+        c,
+        wr.tool_lumps(),
+        wr.wrist2_strand(False),
+        (c.h,),
+        wr.wrist2_fixed(),
+        wr.tool_ceiling(),
+        1.0,
+        wr.J6_DROP,
+    )
+    assert min(r.gap for r in center) < 2.5

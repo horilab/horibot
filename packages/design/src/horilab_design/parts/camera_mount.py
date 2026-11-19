@@ -7,11 +7,14 @@ D405는 J6 원통 옆(-z 쪽, 영점 핀 귀의 반대쪽)에 있고, 광축을 
 받침의 뒤에서 나사를 조인다. 받침의 발은 손목 몸통의 돋움 둘(parts/wrist.py)에 M3 나사 둘로 단다.
 
 카메라의 치수는 공식 사양서와 CAD에서 읽은 값이고(docs/hardware.md의 D405), 플러그는 잰 값이다
-(data/measured.toml의 d405_usb2_plug). 몸통이 옆면의 어디에 붙는지는 사진으로 어림한 값이다 (PLUG_TOP, ±2).
+(data/measured.toml의 d405_usb2_plug). 몸통이 옆면의 어디에 붙는지도 잰 값이다 (PLUG_TOP, 2026-11-19).
 
-플러그의 고무 끝 바로 밑에는 선을 무는 클립이 있다 (0031의 "D405 선": 선의 고리가 흔들리거나 당겨져도 플러그에
+플러그의 고무 끝 바로 밑에서 선을 무는 클립을 그렸다 (0031의 "D405 선": 선의 고리가 흔들리거나 당겨져도 플러그에
 힘이 가지 않게 한다). 판의 앞면에서 솟은 가운데 받침과 두 갈래이고, 선을 앞(도구 쪽)에서 눌러 끼운다. 클립의
-자리는 플러그의 값(PLUG_TOP 등)을 따라간다.
+자리는 플러그의 값(PLUG_TOP 등)을 따라간다. 그런데 잰 자리에서는 고무 끝이 받침의 J5 쪽 면보다 2.0 mm 밖이라,
+클립이 판에서 솟지 못하고 판 밖에 뜬다 (clip_rooted). 그래서 지금 받침에는 클립이 없다. 플러그 밑에서 곧게 내려오는
+D405 선은 J5를 넘는 서보 선이 손목 2 겉을 도는 자리(발 위 11 ~ 16 mm)를 가로지른다 (studies/wiring.py). 클립을
+어디에 어떻게 둘지는 그 배치와 같이 정한다 (PROVISIONAL).
 
 좌표는 joint.py의 서보 좌표다 (y가 J6 축, 플랜지 면이 y = ATOP, -x가 J5 쪽).
 
@@ -52,7 +55,11 @@ PLUG_OUT = _PLUG.protrusion_mm  # 커넥터가 있는 옆면에서 플러그의 
 PLUG_LEN = _PLUG.body_length_mm  # 몸통의 길이: 카메라의 세로 방향이고, 선은 바닥면 쪽 끝에서 나온다
 PLUG_BODY = _PLUG.body_out_mm  # 꽂는 방향의 몸통 두께 (선은 그 가운데에서 나온다)
 PLUG_ACROSS = _PLUG.body_across_mm  # 카메라의 깊이 방향 폭
-PLUG_TOP = 7.0  # 몸통 위끝이 옆면의 위 모서리에서 내려온 거리 (사진으로 어림, ±2)
+if _PLUG.top_mm is None:
+    raise ValueError("D405 플러그 몸통의 자리(d405_usb2_plug.top_mm)를 재지 않았다")
+# 몸통 위끝이 카메라 윗면에서 내려온 거리 (잰 값, 2026-11-19). 위끝은 비스듬히 깎여 옆면 쪽이 가장 높고, 잰 값은 그
+# 가장 높은 곳이다. 상자로 그린 몸통은 그보다 크게 잡는 쪽이다
+PLUG_TOP = _PLUG.top_mm
 WIRE_D = _CABLE.diameter_mm  # 그 선의 지름
 PLUG_GAP = 1.0  # 플러그와 손목 몸통(원통, 벽 나사 머리) 사이에 남길 틈
 
@@ -109,7 +116,9 @@ CLIP_TIP = 1.6
 CLIP_LEN = 5.0  # 단면이 다 있는 길이 (선 방향)
 # 플러그 몸통의 J5 쪽 아래 모서리와 클립의 비스듬한 면 사이 (PLUG_GAP보다 넓다)
 CLIP_PLUG_GAP = 1.2
-PROVISIONAL = ("PLUG_TOP (플러그 몸통이 옆면에 붙는 자리, 사진 어림. 클립의 자리가 따라간다)",)
+PROVISIONAL = (
+    "클립 (잰 플러그 자리에서는 받침 판 밖에 떠서 뺐다. 플러그 밑의 D405 선과 J5 서보 선의 자리를 정한 뒤 다시 그린다)",
+)
 
 
 def _yz(p: tuple[float, float, float]) -> tuple[float, float]:
@@ -205,6 +214,11 @@ def clip_span() -> tuple[float, float, float]:
     bed = MOUNT_W / 2  # 뽑을 때 바닥에 닿는 면 (+x 쪽)
     end = bed - math.ceil((bed - (full - CLIP_LEN)) / LAYER - 1e-6) * LAYER
     return start, full, end
+
+
+def clip_rooted() -> bool:
+    """클립이 판의 앞면에서 솟는지. 솟기 시작하는 곳이 받침의 J5 쪽 면보다 안(+x)이어야 판에 뿌리가 있다."""
+    return clip_span()[0] + CLIP_BACK > -MOUNT_W / 2 + CLIP_T
 
 
 def clip_outline() -> list[tuple[float, float]]:
@@ -314,7 +328,7 @@ def profile() -> list[tuple[float, float]]:
 def mount() -> Compound:
     """D405 받침 (검정). 옆으로 눕혀 뽑는다: 꺾인 단면이 바닥에 그려져 각도가 정확하고, 층이 판의 길이
     방향으로 이어져 카메라 무게가 층을 떼는 쪽으로 걸리지 않는다. +x 쪽 옆면을 바닥에 두어, J5 쪽(-x)으로 나온
-    클립이 맨 위에서 뽑힌다."""
+    클립이 맨 위에서 뽑힌다. 클립은 판에 뿌리가 있을 때만 붙인다 (clip_rooted. 잰 플러그 자리에서는 없다)."""
     z_in, z_out = -wrist.MOUNT_Z, -(wrist.MOUNT_Z + FOOT_T)
     m = j.prism_x(profile(), -MOUNT_W / 2, MOUNT_W / 2)
     for x, y in wrist.mount_xy():  # 발 나사
@@ -326,7 +340,8 @@ def mount() -> Compound:
         hole = cyl_z(r, -CAM_D - PLATE_T - 1, -CAM_D + 1, 0.0, sy * CAM_HOLE_X)
         hole += cyl_z(3.1, -CAM_D - PLATE_T - 1, -CAM_D - PLATE_T + HEAD_REC, 0.0, sy * CAM_HOLE_X)
         m = solid(m - solid(hole).moved(FRAME))
-    m = solid(m + clip())
+    if clip_rooted():
+        m = solid(m + clip())
     if not m.is_valid or len(m.solids()) != 1:
         raise RuntimeError("D405 받침 형상이 깨졌다")
     return m
@@ -522,6 +537,11 @@ def report(model: ServoModel = "STS3215") -> None:
     )
     start, full, end = clip_span()
     clip_g = printed_mass_g(clip(), (-1.0, 0.0, 0.0))
+    if not clip_rooted():
+        print(
+            f"클립은 받침에 없다: 고무 끝이 카메라의 세로로 {CAM_H / 2 - PLUG_TOP - PLUG_LEN:.2f}, 받침의 J5 쪽 면이 "
+            f"{-MOUNT_W / 2:.1f}이라 클립이 판 밖에 뜬다. 아래 클립 숫자는 플러그를 따라 그렸을 때의 값이다"
+        )
     print(
         f"클립: 카메라의 세로로 {start:.2f}에서 솟기 시작해 {full:.2f}부터 {end:.2f}까지 온 단면 "
         f"(받침의 J5 쪽 면 {-MOUNT_W / 2:.1f}, 카메라의 바닥면 {-CAM_H / 2:.1f}), 무게 약 {clip_g:.2f} g"

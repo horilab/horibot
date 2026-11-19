@@ -120,9 +120,9 @@ FLANGE_MASS = 25.4 * G
 # 평행 그리퍼의 무게 덩어리 (uv run python -m horilab_design.parts.gripper): (무게 kg, 도구 좌표의 무게 중심 mm).
 # 도구 좌표는 x가 손가락이 벌어지는 쪽(J6의 멈춤 귀 쪽), H가 플랜지 면에서 도구 쪽, z가 D405의 반대쪽이다
 GRIPPER_LUMPS: dict[str, tuple[float, Vec3]] = {
-    "몸통, 손나사, 선": (25.8 * G, (-6.9, 12.7, 0.7)),
+    "몸통, 손나사, 선": (27.2 * G, (-7.9, 13.1, 0.8)),
     "서보와 혼": (58.65 * G, (-12.8, 24.5, 0.0)),
-    "랙 집과 속 부품, 나사": (37.0 * G, (1.0, 47.2, 0.0)),
+    "랙 집과 속 부품, 나사": (37.3 * G, (1.0, 47.2, 0.0)),
     "손가락": (7.2 * G, (0.0, 71.5, 0.0)),
 }
 # D405의 플러그: "angle"은 얇은 USB 2 선의 ㄱ자 플러그와 손목 2 몸통을 따라가는 선(잰 값, parts/camera_mount.py),
@@ -367,8 +367,8 @@ def draw_gripper(b: Builder, link: int, yf: float, opening: float) -> None:
     frame = [(x1, 0.0), (x1, top), (x0, top), (x0, -gp.RELIEF_X - x0), (-gp.RELIEF_X, 0.0)]
     tprism("gripper_frame", frame, "z", gp.CRADLE_Z + gp.WALL)
     # 서보 먼 끝 쪽의 귀와 가까운 끝 쪽의 돋움 (밑은 45°로 받친다)
-    lug = [(x0, gp.LUG_H0 - (gp.HOUSE_HL + x0)), (x0, top), (-gp.HOUSE_HL, top)]
-    tprism("gripper_lug", [*lug, (-gp.HOUSE_HL, gp.LUG_H0)], "z", gp.LUG_HW)
+    lug = [(x0, gp.LUG_H0 - (gp.END_OUT + x0)), (x0, top), (-gp.END_OUT, top)]
+    tprism("gripper_lug", [*lug, (-gp.END_OUT, gp.LUG_H0)], "z", gp.LUG_HW)
     boss = [(x1, gp.BOSS_H0 - (gp.BOSS_X1 - x1)), (x1, top), (gp.BOSS_X1, top)]
     tprism("gripper_boss", [*boss, (gp.BOSS_X1, gp.BOSS_H0)], "z", gp.FS[1] + gp.BOSS_HW)
     # 바닥판과 랙 집: 밑의 긴 모서리 둘은 깎여 있다 (단면은 (H, z))

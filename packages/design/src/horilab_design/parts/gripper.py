@@ -174,9 +174,20 @@ BOSS_NUT_H = 36.6
 END_T = 4.0  # 랙 집의 끝벽
 IN_HL = STROKE + LC + 0.3  # 통로 안쪽 반 길이 40.3
 HOUSE_HL = IN_HL + END_T  # 랙 집의 반 길이 44.3
-TS = (IN_HL + END_T / 2, 7.5)  # 끝벽 나사 (위에서, 끝벽의 플라스틱에 조인다)
+# 끝벽 나사 (위에서, 끝벽의 플라스틱에 조인다)의 자리와 그 둘레의 살. 끝벽(4.0)의 가운데에 두면 조여 넣는 구멍(2.8)의
+# 양옆 살이 0.6, 귀와 바닥판의 지나가는 구멍(3.4)에서 끝 면까지가 0.3으로 벽 선 하나(0.42)가 겨우 서고, 나사 머리
+# (반지름 2.85)가 귀 끝 밖으로 0.85 나왔다. 끝벽을 통째로 두껍게 하면 랙 집이 길어지므로(0030의 88.6), 나사 자리에만
+# 반지름 END_BOSS_R의 돋움을 끝 면 밖으로 낸다:
+# - 통로 쪽 살 1.2 (벽 선 셋에 가깝다. 통로 안쪽 면은 벌림 쪽 멈춤이라 받침이 와서 닿는다)
+# - 끝 쪽 살 1.6: 조여 넣는 M3 둘레의 살은 나사 지름의 절반(1.5)을 넘긴다 (나사산이 구멍을 벌리는 힘을 벽 선 넷이
+#   고리로 받는다. 구멍 축이 뽑는 방향이라 고리가 층 안에 놓인다)
+# - 귀와 바닥판의 지나가는 구멍에서 끝까지 1.3 (벽 선 셋), 나사 머리는 돋움 안에 다 얹힌다 (0.15 안쪽)
+END_SCREW_IN = 2.6  # 통로 안쪽 면에서 나사까지
+END_BOSS_R = 3.0  # 나사 둘레 돋움의 반지름
+TS = (IN_HL + END_SCREW_IN, 7.5)
+END_OUT = TS[0] + END_BOSS_R  # 돋움의 끝 = 몸통 귀의 끝 45.9 (랙 집의 끝 면보다 1.6 밖)
 LUG_H0 = H_FRONT - 4.0  # -x 쪽 귀의 윗면 (나사 머리가 앉는다)
-LUG_POCKET_R = 3.2  # 귀 나사의 머리 자리 (귀 밑의 받침을 지나는 길)
+LUG_POCKET_R = 3.2  # 귀 나사의 머리 자리 (귀 밑의 받침을 지나는 길). 귀 끝까지 같은 폭으로 터 있다
 # 귀의 반폭: 머리 자리 바깥 옆의 살이 2.7이다. 벽 띠(Strength 6겹, 2.45)보다 넓어야 머리 자리 천장 첫 층의 벽 선이
 # 살 위에서 꺾이고, 천장은 곧은 선으로만 건넌다 (살이 0.8이던 11.5에서는 벽 선 넷이 공중에서 꺾였다)
 LUG_HW = TS[1] + LUG_POCKET_R + 2.7  # 13.4
@@ -186,6 +197,23 @@ TUB_CHAMFER = 2.0  # 랙 집 밑 긴 모서리를 깎은 길이 (D405가 그 모
 # 눌러야 든다), 두 벽이 맞변을 잡는 홈은 누운 것 5.9, 선 것 5.8까지 조여도 너트가 돌지 않는다 (6.0부터 돈다).
 # 흰색 떨어뜨리는 홈도 5.6에서 저절로 내려가고 돌지 않았다 (data/measured.toml)
 FINGER_NUT_W = 5.6
+
+# ---- 서보 선이 몸통에서 나오는 자리 (0031의 손목 관절: 선은 자식 몸통의 겉으로 돈다) ----
+# 선은 서보 뒷면 커넥터에서 뒷면 밑을 따라 서보 먼 끝 쪽으로 가서, 눕힌 끝벽의 주머니로 축에서 멀어지는 쪽으로 나온다.
+# 주머니의 바닥(턱)이 플랜지 면 위 EXIT_H[0]이라, 선은 플랜지 원판의 귀(윗면이 플랜지 면)보다 그만큼 위에서 나온다
+# (손목 2 뒷덮개의 턱과 같은 구실: 선이 턱보다 낮은 데서 나올 수 없다). 그 밑은 선 두께만 지나가는 좁은 틈이라, 꽂은
+# 선을 세워서(90° 비틀어) 밑에서 밀어 올린 뒤 주머니에서 눕힌다. 플러그를 꿰지 않고, 눕힌 선(폭 4.85)은 틈(2.0)으로
+# 되내려가지 않는다. 주머니의 바닥과 천장은 뽑을 때 층 경계다. 선(두께 1.5)은 4.6 ~ 6.1에 눕는다: 서보 뒷면의 볼록한
+# 판(플랜지 면 위 6.3까지, x -29.7까지) 밑을 지나온 높이 그대로다
+EXIT_H = (4.6, 6.4)
+EXIT_ZC = (PLUG_Z[0] + PLUG_Z[1]) / 2  # 주머니의 가운데: 꽂는 커넥터의 가운데
+EXIT_HW = 2.8  # 주머니의 반폭 (선 폭 4.85에 0.75)
+EXIT_SLIT_HW = 1.0  # 선을 세워 밀어 올리는 틈의 반폭 (선 두께 1.5에 0.5)
+# 턱의 둥근 면: 선이 플랜지 쪽으로 당겨질 때 이 면을 타고 꺾인다. 눕힌 끝벽(두께 2.0)만으로는 반지름 1.2가 한계라,
+# 주머니 폭만큼 끝벽 안쪽을 서보 밑 빈자리 쪽으로 메워 반지름을 키웠다 (손목 2 뒷덮개의 턱은 4.0)
+EXIT_CHIN_R = 3.0
+# 주머니 천장의 바깥 모서리를 45°로 깎은 길이 (선이 도구 쪽으로 처질 때 닿는 모서리)
+EXIT_ROOF_CUT = 1.0
 PROVISIONAL = ("가진 M3 × 12 (손가락, 귀)와 M3 × 8 수량",)
 
 
@@ -309,6 +337,7 @@ def frame() -> Compound:
     )
     f = solid(f - cyl_y(BOSS_REC[0], yd - BOSS_REC[1], yd + 0.01))
     f = flange.adapter_cuts(f)
+    f = _wire_exit(f)
     # 손나사 손잡이가 드는 창, 옆벽의 창 셋 (윗변은 45°로 좁혀 걸치는 길이를 줄인다)
     for x, z in flange.TOOL_SCREWS:
         s = 1.0 if z > 0 else -1.0
@@ -323,24 +352,28 @@ def frame() -> Compound:
         win += [(wx0 + c, _y(h1)), (wx0, _y(h1 - c))]
         f = solid(f - _prism_z(win, -zo - 1, zo + 1))
     # -x 쪽 귀: 나사 둘이 귀, 바닥판을 지나 랙 집의 끝벽에 조인다. 귀 밑(뽑을 때)은 45°로 받친다
-    run = HOUSE_HL + x0
-    lug = box(-HOUSE_HL, x0 + 0.01, _y(LUG_H0), yf, -LUG_HW, LUG_HW)
+    run = END_OUT + x0
+    lug = box(-END_OUT, x0 + 0.01, _y(LUG_H0), yf, -LUG_HW, LUG_HW)
     lug += _prism_z(
         [
             (x0 + 0.01, _y(LUG_H0 - run)),
             (x0 + 0.01, _y(LUG_H0) + 0.01),
-            (-HOUSE_HL, _y(LUG_H0) + 0.01),
+            (-END_OUT, _y(LUG_H0) + 0.01),
         ],
         -LUG_HW,
         LUG_HW,
     )
     f = solid(f + solid(lug))
     # 귀 나사의 머리 자리. 천장(머리가 앉는 면) 첫 층은 구멍까지 덮는 막이다: 구멍이 뚫려 있으면 구멍을 둘러싼 벽
-    # 고리가 공중에 뜬다. 머리 자리는 귀 끝으로 터져 있어서, 끝 면을 따라 도는 벽 선 여섯이 머리 자리를 곧게 건너고
-    # 그 안쪽은 다리 선이 덮는다 (스튜디오로 잘라 G-code에서 확인했다). 나사를 꽂기 전에 구멍 자리의 막을 뚫는다
+    # 고리가 공중에 뜬다. 머리 자리는 귀 끝까지 같은 폭으로 터져 있어서, 끝 면을 따라 도는 벽 선 여섯이 머리 자리를
+    # 곧게 건너고 그 안쪽은 다리 선이 덮는다 (귀가 짧아 둥근 자리가 저절로 끝으로 터지던 때에 스튜디오로 잘라
+    # G-code에서 확인한 꼴이다). 나사를 꽂기 전에 구멍 자리의 막을 뚫는다
     for sz in (1, -1):
         f = solid(f - cyl_y(j.K_M3_FREE / 2, _y(LUG_H0 + LAYER), yf + 1, -TS[0], sz * TS[1]))
-        f = solid(f - cyl_y(LUG_POCKET_R, _y(LUG_H0 - run - 1), _y(LUG_H0), -TS[0], sz * TS[1]))
+        pocket = cyl_y(LUG_POCKET_R, _y(LUG_H0 - run - 1), _y(LUG_H0), -TS[0], sz * TS[1])
+        za, zb = sorted((sz * (TS[1] - LUG_POCKET_R), sz * (TS[1] + LUG_POCKET_R)))
+        pocket += box(-END_OUT - 1, -TS[0], _y(LUG_H0 - run - 1), _y(LUG_H0), za, zb)
+        f = solid(f - solid(pocket))
     # +x 쪽 돋움 둘: 밑에서 올라온 바닥판 나사의 너트를 품는다. 너트가 붙는 홈 천장의 첫 층은 구멍까지 덮는 막이고,
     # 홈을 가로지르는 틈 셋으로 갈라 선이 홈의 한 옆 벽에서 다른 옆 벽으로 곧게 건넌다 (틈이 없으면 옆 벽을 따라
     # 도는 벽 선이 홈 위 공중에서 꺾인다). 틈은 돋움의 바깥 옆면으로 터져 있고(출력 원판 귀와 같다. 그 층에서만
@@ -391,10 +424,66 @@ def frame() -> Compound:
     return f
 
 
+def _wire_exit(f: Compound) -> Compound:
+    """눕힌 끝벽에 서보 선이 나오는 주머니와 턱, 선을 세워 밀어 올리는 틈을 낸다 (EXIT_H)."""
+    ya = _y(0.0)
+    x0 = CRADLE_X[0] - WALL
+    x_in = -(RELIEF_X - WALL * math.sqrt(2))  # 눕힌 끝벽의 안쪽 면이 플랜지 면과 만나는 x
+    z0, z1 = EXIT_ZC - EXIT_HW, EXIT_ZC + EXIT_HW
+    h0, h1 = EXIT_H
+    # 턱을 받치는 살: 끝벽의 안쪽 면에서 x_in의 세로 면까지 메운다 (끝벽 위에 얹혀 걸치지 않는다)
+    fill = _prism_z([(x_in, ya), (x_in, ya + h0), (x_in - h0, ya + h0)], z0, z1)
+    f = solid(f + fill)
+    f = solid(f - box(x0 - 1, x_in + 1, ya + h0, ya + h1, z0, z1))  # 주머니
+    # 턱의 둥근 면: 주머니 바닥과 끝벽의 바깥 면(45°)에 닿는 원. 그 밖의 뾰족한 끝을 걷어 낸다
+    r = EXIT_CHIN_R
+    tip = (-RELIEF_X - h0, h0)
+    cx, ch = tip[0] + r / math.tan(math.radians(22.5)), h0 - r
+    arc = [
+        (cx + r * math.cos(math.radians(a)), ch + r * math.sin(math.radians(a)))
+        for a in (90.0 + 135.0 * k / 12 for k in range(13))
+    ]
+    nose = [(tip[0] - 0.5, tip[1] + 0.01), (cx, h0 + 0.01), *arc, (tip[0] - 0.5, arc[-1][1] - 0.5)]
+    f = solid(f - _prism_z([(x, ya + h) for x, h in nose], z0, z1))
+    # 천장의 바깥 모서리
+    c = EXIT_ROOF_CUT
+    lip = [(x0 - 0.01, ya + h1 - 0.01), (x0 + c, ya + h1 - 0.01), (x0 - 0.01, ya + h1 + c)]
+    f = solid(f - _prism_z(lip, z0, z1))
+    # 선을 세워 밀어 올리는 틈: 플랜지 면에서 주머니까지
+    slit = box(
+        x0 - 1, x_in + 1, ya - 1, ya + h0 + 0.01, EXIT_ZC - EXIT_SLIT_HW, EXIT_ZC + EXIT_SLIT_HW
+    )
+    return solid(f - slit)
+
+
+def wire_exit() -> tuple[Pt, Pt, float]:
+    """선이 몸통에서 나오는 자리: (끝벽 바깥 면의 (x, z), 거기서 6 mm 곧게 나간 끝, 선 가운데의 높이 H)."""
+    x0 = CRADLE_X[0] - WALL
+    return (x0, EXIT_ZC), (x0 - 6.0, EXIT_ZC), EXIT_H[0] + j.WIRE_T / 2
+
+
+def wire_tail() -> list[tuple[float, float, float]]:
+    """몸통 속의 선 (x, H, z): 끝벽 바깥 면 → 턱 → 서보 뒷면 밑 → 플러그의 뒤 끝."""
+    (x0, z), _start, h = wire_exit()
+    crest = -RELIEF_X - EXIT_H[0] + EXIT_CHIN_R / math.tan(math.radians(22.5))
+    lie = H_PLUG - j.WIRE_T / 2
+    return [(x0, h, z), (crest, h, z), (-14.2 - 3.3, lie, z), (-14.2, H_PLUG, z)]
+
+
+def _end_boss(sx: int, sz: int, y0: float, y1: float) -> Compound:
+    """끝벽 나사 둘레의 돋움에서 랙 집 끝 면 밖으로 나온 몫 (END_BOSS_R)."""
+    boss = cyl_y(END_BOSS_R, y0, y1, sx * TS[0], sz * TS[1])
+    xa, xb = sorted((sx * (HOUSE_HL - 0.01), sx * (END_OUT + 1)))
+    return solid(boss & box(xa, xb, y0 - 1, y1 + 1, -HOUSE_HW, HOUSE_HW))
+
+
 def floor() -> Compound:
     """바닥판 (검정): 서보 앞면이 앉고, 밑면이 통로의 천장이다. 납작하게 뽑는다."""
     y0, y1 = _y(H_FRONT), _y(H_FLOOR)
     f = box(-HOUSE_HL, HOUSE_HL, y0, y1, -HOUSE_HW, HOUSE_HW)
+    for sx in (1, -1):
+        for sz in (1, -1):
+            f = solid(f + _end_boss(sx, sz, y0, y1))
     f = solid(f - cyl_y(HUB_R + 0.3, y0 - 1, y1 + 1))  # 혼과 피니언의 목
     f = solid(f - box(-34.5, -8.8, y0 - 1, y1 + 1, -7.4, 7.4))  # 서보 앞면의 라벨 판
     for x, z in screw_xz():
@@ -424,6 +513,7 @@ def tub() -> Compound:
         t = solid(t - j.prism_x(cut, -HOUSE_HL - 1, HOUSE_HL + 1))
     for sx in (1, -1):
         for sz in (1, -1):
+            t = solid(t + _end_boss(sx, sz, y0, y1))
             t = solid(t - cyl_y(j.M3_TAP / 2, y0 - 1, _y(H_ARM1 - 1.5), sx * TS[0], sz * TS[1]))
     if not t.is_valid or len(t.solids()) != 1:
         raise RuntimeError("랙 집 형상이 깨졌다")
@@ -787,7 +877,11 @@ def printed() -> dict[str, tuple[Compound, tuple[float, float, float], str, str,
 
 
 SERVO_G = 57.2 + 1.45  # 서보 몸통과 출력 혼 (잰 값, data/measured.toml)
-CABLE_G = 3.5  # 서보 선 20 cm
+# J6 서보에서 오는 서보 선: 300 mm 선 (잰 값 4.5 g). 그리퍼 몸통의 겉으로 도는 길은 20 cm 선으로 닿지 않는다
+# (studies/wiring.py: 192 mm가 들고 20 cm 선은 181 mm다. 20 cm 선은 3.5 g이다)
+_BOUGHT_WIRE = j._MEASURED.waveshare_servo_wire
+assert _BOUGHT_WIRE is not None
+CABLE_G = _BOUGHT_WIRE.mass_300_g
 
 
 def mass_g() -> dict[str, float]:

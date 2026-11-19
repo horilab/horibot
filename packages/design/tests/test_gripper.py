@@ -5,11 +5,12 @@ from __future__ import annotations
 import math
 
 import pytest
+from build123d import Compound
 
 from horilab_design.parts import flange
 from horilab_design.parts import gripper as g
 from horilab_design.parts import joint as j
-from horilab_design.parts.shapes import COMB_PITCH
+from horilab_design.parts.shapes import COMB_PITCH, box, solid
 from horilab_design.printcheck import LAYER, air_walls, mid_layer_levels, overhangs, wall_settings
 
 
@@ -195,3 +196,74 @@ def test_ceilings_keep_their_walls_and_seats() -> None:
     assert c["바닥판 나사의 너트 위 살 (돋움)"] >= 2.0
     # 손가락의 너트 홈 폭은 검정 시험편이 가둔 범위 안이다: 육각 홈에서 저절로 드는 5.6 이상, 선 홈에서 안 도는 5.8 이하
     assert j.K_NUT_AF + 0.1 - 1e-9 <= g.FINGER_NUT_W <= j.K_NUT_SLOT[0] + 1e-9
+
+
+@pytest.mark.slow
+def test_end_wall_screws_have_walls_around_them() -> None:
+    # 끝벽 나사는 통로 안쪽 면에서 2.6 mm에 있고, 그 둘레에 반지름 3.0의 돋움이 끝 면 밖으로 1.6 나온다
+    x = g.TS[0]
+    assert x == pytest.approx(g.IN_HL + 2.6) and g.END_OUT == pytest.approx(g.HOUSE_HL + 1.6)
+    tap, free = j.M3_TAP / 2, j.K_M3_FREE / 2
+    assert x - tap - g.IN_HL == pytest.approx(1.2)  # 조여 넣는 구멍과 통로 사이
+    assert g.END_OUT - x - tap == pytest.approx(
+        1.6
+    )  # 조여 넣는 구멍과 돋움 끝 사이 (나사 지름의 절반 넘게)
+    assert g.END_OUT - x - free == pytest.approx(1.3)  # 귀와 바닥판의 지나가는 구멍에서 끝까지
+    assert g.END_OUT - x - 2.85 > 0.1  # 나사 머리가 귀 끝 안에 얹힌다
+    # 랙 집의 끝 면은 그대로다 (돋움 사이와 바깥은 88.6 mm)
+    tub, floor, frame = g.tub(), g.floor(), g.frame()
+    for part in (tub, floor):
+        bb = part.bounding_box()
+        assert bb.size.X == pytest.approx(2 * g.END_OUT, abs=0.05)
+        for sx in (1, -1):
+            xa, xb = sorted((sx * (g.HOUSE_HL + 0.2), sx * (g.END_OUT + 1.0)))
+            for z0, z1 in ((-1.0, 1.0), (g.TS[1] + g.END_BOSS_R + 0.5, g.HOUSE_HW)):
+                probe = box(xa, xb, bb.min.Y - 1, bb.max.Y + 1, z0, z1)
+                assert solid(part & probe).volume < 0.01
+    # 조여 넣는 구멍 둘레의 살이 실제로 차 있다 (끝 쪽과 통로 쪽, 구멍 가운데 높이)
+    ym = g._y((g.H_FLOOR + g.H_ARM1 - 1.5) / 2)
+    for sx in (1, -1):
+        for sz in (1, -1):
+            for x0, x1 in ((x + tap + 0.1, g.END_OUT - 0.25), (g.IN_HL + 0.1, x - tap - 0.1)):
+                xa, xb = sorted((sx * x0, sx * x1))
+                probe = box(xa, xb, ym - 1, ym + 1, sz * g.TS[1] - 0.4, sz * g.TS[1] + 0.4)
+                assert solid(tub & probe).volume == pytest.approx(probe.volume, rel=0.02)
+    # 몸통의 귀는 돋움 끝까지 곧게 나오고, 나사 머리 자리는 귀 끝까지 같은 폭으로 터 있다
+    assert frame.bounding_box().min.X == pytest.approx(-g.END_OUT, abs=0.01)
+    y = g._y(g.LUG_H0 - 0.8)
+    for sz in (1, -1):
+        slot = box(-g.END_OUT - 0.5, -x, y - 0.5, y + 0.5, sz * g.TS[1] - 2.9, sz * g.TS[1] + 2.9)
+        assert solid(frame & slot).volume < 0.01
+
+
+@pytest.mark.slow
+def test_wire_pocket_is_open_and_keeps_the_wire_up() -> None:
+    frame = g.frame()
+    (x0, zc), start, h = g.wire_exit()
+    assert x0 == pytest.approx(g.CRADLE_X[0] - g.WALL) and start[0] == pytest.approx(x0 - 6.0)
+    assert h == pytest.approx(g.EXIT_H[0] + j.WIRE_T / 2)
+    ya = j.ATOP
+    h0, h1 = g.EXIT_H
+
+    def filled(probe: Compound) -> float:
+        return solid(frame & probe).volume
+
+    # 주머니는 끝벽 바깥에서 서보 밑 빈자리까지 뚫려 있다 (선 두께와 폭만큼)
+    pocket = box(x0 - 0.5, -28.5, ya + h0 + 0.1, ya + h1 - 0.1, zc - 2.5, zc + 2.5)
+    assert filled(pocket) < 0.01
+    # 그 밑의 틈은 플랜지 면에서 주머니까지 뚫려 있고, 틈 양옆의 턱은 차 있다 (눕힌 선이 얹힌다)
+    assert filled(box(x0 - 0.5, -28.5, ya + 0.1, ya + h0, zc - 0.8, zc + 0.8)) < 0.01
+    for s in (1, -1):
+        za, zb = sorted((zc + s * 1.3, zc + s * 2.6))
+        chin = box(-29.6, -28.4, ya + 0.6, ya + h0 - 0.2, za, zb)
+        assert filled(chin) == pytest.approx(chin.volume, rel=0.02)
+    # 턱의 둥근 면은 반지름 3이고, 꼭대기가 턱을 받치는 살 안에 있다
+    crest = -g.RELIEF_X - h0 + g.EXIT_CHIN_R / math.tan(math.radians(22.5))
+    x_in = -(g.RELIEF_X - g.WALL * math.sqrt(2))
+    assert g.EXIT_CHIN_R >= 3.0 and x_in - h0 < crest < x_in
+    # 주머니의 턱은 서보 뒷면의 볼록한 판(플랜지 면 위 6.3)보다 낮아 서보와 겹치지 않는다
+    assert h0 + j.WIRE_T < g.H_BACK - 1.9
+    # 몸통 속의 선은 주머니에서 플러그까지 높이가 1 mm 안에서 바뀐다 (꺾이지 않는다)
+    tail = g.wire_tail()
+    assert tail[0][0] == pytest.approx(x0) and tail[-1][1] == pytest.approx(g.H_PLUG)
+    assert max(p[1] for p in tail[:-1]) - min(p[1] for p in tail[:-1]) < 1.0

@@ -191,6 +191,9 @@ class AnglePlug(_Values):
     body_length_mm: float = Field(gt=0)  # 선 방향: 꺾인 몸통 끝 ~ 고무 끝
     body_out_mm: float = Field(gt=0)  # 꽂는 방향(옆면에서 바깥쪽)의 몸통 두께
     body_across_mm: float = Field(gt=0)  # 위 두 방향과 직각인 몸통 폭
+    top_mm: float | None = Field(
+        default=None, gt=0
+    )  # 카메라 윗면 ~ 몸통 위끝 (몸통이 옆면에 붙는 자리)
 
 
 class BackScrew(_Values):

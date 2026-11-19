@@ -137,8 +137,24 @@ def test_clip_holds_the_wire_just_below_the_plug(parts: list[j.Part]) -> None:
     assert mid_layer_levels(shape, up) == []
 
 
+def test_plug_sits_where_it_was_measured_and_the_clip_is_left_off() -> None:
+    # 플러그 몸통의 위끝은 카메라 윗면에서 11.74 mm다 (잰 값). 고무 끝이 카메라 바닥면보다 2.0 mm 위, 받침의 J5 쪽
+    # 면보다 2.0 mm 밖이다
+    assert cm.PLUG_TOP == pytest.approx(11.74)
+    plug_end = cm.CAM_H / 2 - cm.PLUG_TOP - cm.PLUG_LEN
+    assert plug_end == pytest.approx(-cm.CAM_H / 2 + 1.96, abs=0.01)
+    assert plug_end < -cm.MOUNT_W / 2 - 2.0
+    # 그래서 플러그를 따라 그린 클립은 판에서 솟지 못한다 (판 밖에서 시작한다). 받침에는 클립이 없다
+    assert cm.clip_span()[0] < -cm.MOUNT_W / 2 and not cm.clip_rooted()
+    shape = cm.printed()["d405_mount"][0]
+    assert shape.bounding_box().min.X == pytest.approx(-cm.MOUNT_W / 2, abs=0.01)
+    assert any("클립" in text for text in cm.PROVISIONAL)
+
+
 def test_clip_follows_the_plug(monkeypatch: pytest.MonkeyPatch) -> None:
-    # 플러그가 붙는 자리(PLUG_TOP, 사진 어림 ±2)를 재서 바꾸면 클립이 그만큼 따라간다
+    # 플러그가 붙는 자리(PLUG_TOP)를 바꾸면 클립이 그만큼 따라간다. 사진으로 어림하던 자리(7 mm)에서는 판에서 솟는다
+    monkeypatch.setattr(cm, "PLUG_TOP", 7.0)
+    assert cm.clip_rooted()
     base = cm.clip_span()
     monkeypatch.setattr(cm, "PLUG_TOP", cm.PLUG_TOP + 2.0)
     moved = cm.clip_span()

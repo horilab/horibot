@@ -147,6 +147,9 @@ class OverBody(Crossing):
     face는 선이 자식 몸통에서 나오는 자리, start는 거기서 나온 방향으로 곧게 간 끝이다 (그 사이는 몸통에 붙어
     같이 돈다). hull은 선이 도는 높이에서 자식 몸통의 볼록한 둘레다. flip이면 자식을 반 바퀴 돌려 단 관절이다 (J4).
     부모에서 나가는 자리(exit_r, exit_az)는 Crossing과 같다. drum_r은 둘레를 고르게 편 반지름이다 (표에만 쓴다).
+
+    mirror는 자식을 그린 좌표가 부모의 좌표와 거울상인지다. 손목 몸통은 부모 좌표로 옮길 때 z가 뒤집힌다
+    (parts/wrist.py의 as_child). J6의 도구는 부모(손목 2)의 서보 좌표에 바로 그려서 뒤집히지 않는다: (u, v) = (x, z).
     """
 
     face: Flat = (0.0, 0.0)
@@ -154,13 +157,23 @@ class OverBody(Crossing):
     h: float = 0.0
     hull: tuple[Flat, ...] = ()
     flip: bool = False
+    mirror: bool = True
 
     def parent_at(self, q_deg: float, r: float | None = None, az: float | None = None) -> Flat:
         """부모에 붙은 점(반지름, 방위각. 기본은 선이 나가는 자리)이 관절 각 q에서 자식 몸통에서 보이는 자리."""
         r = self.exit_r if r is None else r
         a = math.radians((self.exit_az if az is None else az) - q_deg)
-        u, v = r * math.cos(a), -r * math.sin(a)
+        u, v = r * math.cos(a), r * math.sin(a) * (-1.0 if self.mirror else 1.0)
         return (-u, -v) if self.flip else (u, v)
+
+    def to_parent(self, uv: np.ndarray, q_deg: float) -> np.ndarray:
+        """자식 몸통에서 본 점들 (u, v)를 관절 각 q에서 부모의 (x, z)로 옮긴다 (parent_at의 반대)."""
+        sign = -1.0 if self.flip else 1.0
+        u, v = sign * uv[:, 0], sign * uv[:, 1] * (-1.0 if self.mirror else 1.0)
+        a = math.radians(q_deg)
+        return np.column_stack(
+            (u * math.cos(a) - v * math.sin(a), u * math.sin(a) + v * math.cos(a))
+        )
 
     def outline(self, off: float) -> Polygon:
         """선의 가운데가 도는 둘레: 몸통의 둘레에서 off만큼 띄운 것."""
@@ -234,7 +247,6 @@ def crossings() -> dict[str, Crossing]:
     """관절마다 서보 선이 넘는 자리."""
     out: dict[str, Crossing] = {}
     win = sum(j.WIN_X) / 2  # 링크의 선 창 가운데
-    notch_x = wp.X_FOOT + 1.2  # 손목 몸통의 가운데 홈
     rise = j.ATOP + 1.5 - j.FRONT  # 앞면에서 자식 발 바닥 조금 위까지
     slot_z = sum(lp.FOOT_SLOT_Z) / 2
 
@@ -258,11 +270,19 @@ def crossings() -> dict[str, Crossing]:
     out["J4"] = Crossing("J4", j.R_DRUM, -win, 180.0, r4, a4, rise)
     # J5: 손목 2의 겉을 돌아 뒷덮개의 창(발 위 13 mm)으로 들어온다
     out["J5"] = over_wrist2()
-    # J6: 그리퍼 몸통의 판을 튼 자리로 들어가 서보 뒷면 커넥터에 꽂힌다. 튼 자리는 폭이 21 mm라 선이 그 안에서
-    # 짧은 쪽으로 온다. 가운데로 들어온다고 보면 어느 쪽으로 감겨도 실제보다 길게 센다
-    r6, a6 = _az(-fp.ADAPTER_R, 0.0)
-    out["J6"] = Crossing("J6", j.R_DRUM, -notch_x, 180.0, r6, a6, 2.0)
+    # J6: 손목 2 앞벽의 옆 홈(+z)에서 나와 그리퍼 몸통의 겉을 돌아, 눕힌 끝벽의 주머니로 들어간다
+    out["J6"] = over_gripper()
     return out
+
+
+def j6_in_layer() -> Crossing:
+    """J6를 플랜지 원판의 테에 감아 넘기던 길 (2026-11-19에 그리퍼 몸통의 겉으로 바꿨다, over_gripper). 견줄 때만 쓴다.
+
+    손목 2 앞벽의 가운데 홈에서 나와 테에 감기고, 그리퍼 몸통의 판을 튼 자리(플랜지 면 위 2 mm, 영점 핀 귀의 바로
+    위)로 들어갔다.
+    """
+    r6, a6 = _az(-fp.ADAPTER_R, 0.0)
+    return Crossing("J6", j.R_DRUM, -(wp.X_FOOT + 1.2), 180.0, r6, a6, 2.0)
 
 
 # J1 몸통 왼쪽 면에서 선을 잡는 누르개: 어깨 축에서의 거리 (바닥판 높이의 가운데. 그 밑은 속이 찬 바닥판이다)
@@ -400,13 +420,8 @@ def j1_into_shoulder() -> list[Point]:
 
 
 def gripper_tail() -> list[Point]:
-    """그리퍼: 판을 튼 자리의 가장자리 → 서보 뒷면 커넥터 (도구 좌표를 J6의 서보 좌표로: 플랜지 면이 ATOP)."""
-    y = j.ATOP
-    return [
-        (-fp.ADAPTER_R, y + 2.0, 0.0),
-        (PLUG_X - 2.0, y + 2.0, PLUG_Z),
-        (PLUG_X, y + gp.H_PLUG, PLUG_Z),
-    ]
+    """그리퍼: 눕힌 끝벽의 주머니 → 턱 → 서보 뒷면 커넥터 (도구 좌표를 J6의 서보 좌표로: 플랜지 면이 ATOP)."""
+    return [(x, j.ATOP + h, z) for x, h, z in gp.wire_tail()]
 
 
 # ------------------------------------------------------------------------------------------------
@@ -486,7 +501,7 @@ def wires() -> list[Wire]:
         Wire(
             "J6 → 그리퍼",
             (
-                ("손목 2 속", length(wrist_out())),
+                ("손목 2 속", length(wrist_out(side=True))),
                 ("J6 넘기", over["J6"]),
                 ("그리퍼", length(gripper_tail())),
             ),
@@ -745,8 +760,9 @@ def wrist_lumps(post_front: bool, d405: bool) -> tuple[Lump, ...]:
             out.append(
                 Lump("받침 돋움", boss, x - wp.MOUNT_HW - wp.X_FOOT, x + wp.MOUNT_HW - wp.X_FOOT)
             )
+        if cmt.clip_rooted():
+            out.append(_box_lump("D405 선 클립", cmt.clip()))
         out += [
-            _box_lump("D405 선 클립", cmt.clip()),
             _box_lump("D405", cmt.camera()),
             _box_lump("D405 플러그", cmt.plug()),
             _box_lump("D405 선", cmt.wire_stub()),
@@ -811,13 +827,24 @@ def clear_route(
     q_deg: float,
     wraps: tuple[float, ...],
     floor: float,
+    fixed: tuple[Lump, ...] = (),
+    ceiling: float = 40.1,
+    step: float = 2.0,
+    drop: float | None = None,
 ) -> Route:
     """관절 각 q에서 자식 쪽 구간의 끝(start)과 부모 쪽 구간을 잇는 길 가운데 가장 멀리 띄운 것.
 
     길의 모양: start에서 자식 몸통의 둘레까지 가며 도는 높이(wraps 가운데 하나)로 오르내리고, 둘레를 그 높이로
     돌고, 둘레를 떠나 부모 쪽 구간까지 곧게 가며 넘어가는 높이로 오르내린다. 부모 쪽 구간은 홈(높이 floor)에서
     그 높이까지 곧게 선다. 자유로운 구간은 선이 어느 쪽으로 누울지 몰라 반폭(WIRE_W / 2)을, 부모 쪽 구간은 축
-    쪽으로 반 두께를 뺀다. 넘어가는 높이는 2 mm 간격으로 찾는다.
+    쪽으로 반 두께를 뺀다. 넘어가는 높이는 floor + 2부터 ceiling까지 step 간격으로 찾는다 (부모 쪽 구간이 설 수 있는
+    높이: 그 위를 자식 몸통이 지나가면 ceiling으로 막는다).
+
+    fixed는 부모에 붙어 서 있는 것들이다: 단면은 부모의 (x, z), 높이는 같은 기준이다. 자식과 같이 도는 구간(자식
+    쪽 구간과 자유로운 구간)을 부모의 자리로 옮겨 잰다.
+
+    drop을 주면 둘레를 떠난 선이 도는 높이를 지키다가 부모 쪽 구간 앞 drop mm에서만 넘어가는 높이로 오르내린다
+    (주지 않으면 그 곧은 구간 전체에 걸쳐 고르게 오르내린다).
     """
     flat = c.path(q_deg, WRAP_OFF)
     seg = [math.dist(a, b) for a, b in itertools.pairwise(flat)]
@@ -827,30 +854,42 @@ def clear_route(
     )
     part = np.concatenate([np.full(k, i) for i, k in enumerate(n)])
     frac = np.concatenate([np.linspace(0.0, 1.0, k) for k in n])
+    tail = seg[-1]
+    late = drop is not None and tail > drop
+    # 마지막 구간에서 높이가 바뀐 몫 (0 ~ 1)
+    sink = np.clip((frac * tail - (tail - drop)) / drop, 0.0, 1.0) if late and drop else frac
     posts = np.array([c.parent_at(q_deg, r, az) for r, az in strand])
     last = len(seg) - 1
     stub = np.linspace(c.face, c.start, 7)
     stub_gap, stub_near = _lump_gaps(lumps, stub, np.full(7, c.h), np.full(7, c.h))
+    uv_parent = c.to_parent(uv, q_deg)
+    if fixed:
+        there = _lump_gaps(fixed, c.to_parent(stub, q_deg), np.full(7, c.h), np.full(7, c.h))
+        stub_gap, stub_near = min((stub_gap, stub_near), there)
     best: Route | None = None
     for wrap in wraps if last > 0 else (c.h,):
-        for join in np.arange(floor + 2.0, 40.1, 2.0):
+        for join in np.arange(floor + 2.0, ceiling, step):
             h = np.full(len(uv), wrap)
             if last > 0:
                 h = np.where(part == 0, c.h + (wrap - c.h) * frac, h)
-                h = np.where(part == last, wrap + (join - wrap) * frac, h)
+                h = np.where(part == last, wrap + (join - wrap) * sink, h)
             else:
-                h = c.h + (join - c.h) * frac
+                h = c.h + (join - c.h) * sink
             free, name = _lump_gaps(lumps, uv, h, h)
+            if fixed:
+                free, name = min((free, name), _lump_gaps(fixed, uv_parent, h, h))
             free -= j.WIRE_W / 2
             lo, hi = np.full(len(posts), floor), np.full(len(posts), float(join))
-            fixed, name2 = _lump_gaps(lumps, posts, lo, hi)
-            fixed -= j.WIRE_T / 2
-            gap, near = min((free, name), (fixed, name2), (stub_gap - j.WIRE_W / 2, stub_near))
+            held, name2 = _lump_gaps(lumps, posts, lo, hi)
+            held -= j.WIRE_T / 2
+            gap, near = min((free, name), (held, name2), (stub_gap - j.WIRE_W / 2, stub_near))
             if last > 0:
                 rises = [wrap - c.h] + [0.0] * (last - 1) + [float(join) - wrap]
             else:
                 rises = [float(join) - c.h]
             run = sum(math.hypot(s, r) for s, r in zip(seg, rises, strict=True))
+            if late and drop:
+                run += tail - drop + math.hypot(drop, rises[-1]) - math.hypot(tail, rises[-1])
             total = math.dist(c.face, c.start) + run + (join - floor)
             if best is None or gap > best.gap + 1e-9:
                 best = Route(q_deg, gap, near, total, float(wrap), float(join))
@@ -863,11 +902,18 @@ def clear_routes(
     lumps: tuple[Lump, ...],
     strand: list[tuple[float, float]],
     wraps: tuple[float, ...],
+    fixed: tuple[Lump, ...] = (),
+    ceiling: float = 40.1,
+    step: float = 2.0,
+    drop: float | None = None,
 ) -> list[Route]:
     """멈춤 각에서 멈춤 각까지 1° 간격으로 본 clear_route."""
     floor = j.FRONT - j.ATOP  # 부모의 앞면 (자식의 발 바닥에서)
     stop = round(c.stop_deg)
-    return [clear_route(c, lumps, strand, float(q), wraps, floor) for q in range(-stop, stop + 1)]
+    return [
+        clear_route(c, lumps, strand, float(q), wraps, floor, fixed, ceiling, step, drop)
+        for q in range(-stop, stop + 1)
+    ]
 
 
 def wrist1_strand(side: bool) -> list[tuple[float, float]]:
@@ -919,6 +965,141 @@ def forearm_strand() -> list[tuple[float, float]]:
 WRAP_OVER = (
     j.EAR_T + wp.HEAD_H + j.WIRE_W / 2 + 2.0
 )  # 귀와 발 나사 머리 위로 도는 높이 (머리 위 2 mm)
+
+
+# ------------------------------------------------------------------------------------------------
+# J6: 그리퍼 몸통의 겉으로 도는 선 (자식은 플랜지 원판과 그리퍼, 부모는 손목 2)
+#
+# 자식에서 본 자리는 손목 2의 서보 좌표 그대로다: (u, v) = (x, z), 높이는 플랜지 면에서 도구 쪽으로 잰다 (gripper의 H).
+# J5와 다른 것은 둘이다. 그리퍼 몸통의 서보 먼 끝(축에서 37.4 ~ 40.2)이 손목 2의 홈(35.3 ~ 37.7) 위를 지나가서, 부모
+# 쪽 구간이 그 밑으로만 선다 (tool_ceiling). 그리고 부모에 붙어 서 있는 것(J5 원판의 멈춤 귀, D405)이 있다.
+
+
+def wrist2_strand(side: bool) -> list[tuple[float, float]]:
+    """손목 2 앞벽의 홈에서 도구 쪽으로 곧게 올라오는 선이 J6 축에 가장 가까이 놓인 자리. side면 +z 옆 홈, 아니면 가운데 홈."""
+    return wrist1_strand(side)  # 손목 1과 손목 2는 같은 부품이다
+
+
+def over_gripper() -> OverBody:
+    """J6: 손목 2 앞벽의 옆 홈(+z)에서 나와 그리퍼 몸통의 겉을 돌아 눕힌 끝벽의 주머니로 들어가는 선 (parts/gripper.py).
+
+    둘레는 선이 도는 높이(플랜지 면 위 5.35)에서 선이 기대는 것들의 볼록한 테다: 서보를 품는 틀, 플랜지에 앉는 둥근
+    판(윗면 6.2), 손나사 손잡이 둘(6.5부터). 손잡이는 둥근 기둥이라 걸릴 것이 아니라 둘레로 센다.
+    """
+    exit_r, exit_az = _az(wp.X_FOOT + wp.NOTCH_H / 2, sum(wp.NOTCH) / 2)
+    face, start, h = gp.wire_exit()
+    x0, x1 = gp.CRADLE_X[0] - gp.WALL, gp.CRADLE_X[1] + gp.WALL
+    zo = gp.CRADLE_Z + gp.WALL
+    around_it = [shapely.box(x0, -zo, x1, zo), shapely.Point(0.0, 0.0).buffer(fp.ADAPTER_R, 8)]
+    around_it += [shapely.Point(x, z).buffer(fp.KNOB[0], 8) for x, z in fp.TOOL_SCREWS]
+    ring = shapely.get_coordinates(shapely.union_all(around_it).convex_hull)[:-1]
+    hull = tuple((float(u), float(v)) for u, v in ring)
+    entry_r, entry_az = _az(*start)
+    even = Polygon(hull).length / (2 * math.pi)
+    rise = j.ATOP + h - j.FRONT
+    return OverBody(
+        "J6",
+        even,
+        exit_r,
+        exit_az,
+        entry_r,
+        entry_az,
+        rise,
+        0.0,
+        j.STOP_DEG,
+        face,
+        start,
+        h,
+        hull,
+        False,
+        False,
+    )
+
+
+@functools.cache
+def tool_lumps() -> tuple[Lump, ...]:
+    """J6의 자식(플랜지 원판과 평행 그리퍼)에 붙어 같이 도는 튀어나온 것들. 높이는 플랜지 면에서 잰다."""
+    brim = -j.BRIM_T
+    pin = shapely.Point(-j.R_PIN, 0.0).buffer(fp.EAR_HW)
+    pin = pin.union(shapely.box(-j.R_PIN, -fp.EAR_HW, -j.R_STEP, fp.EAR_HW))
+    post = shapely.Point(j.R_POST, 0.0).buffer(j.EAR_HW)
+    post = post.union(shapely.box(j.R_STEP, -j.EAR_HW, j.R_POST, j.EAR_HW))
+    x0, x1 = gp.CRADLE_X[0] - gp.WALL, gp.CRADLE_X[1] + gp.WALL
+    heads = MultiPoint([(-gp.TS[0], s * gp.TS[1]) for s in (1, -1)]).buffer(2.85)
+    bosses = shapely.union_all(
+        [
+            shapely.box(x1, s * gp.FS[1] - gp.BOSS_HW, gp.BOSS_X1, s * gp.FS[1] + gp.BOSS_HW)
+            for s in (1, -1)
+        ]
+    )
+    return (
+        Lump("영점 핀 귀", pin, brim, 0.0),
+        Lump("멈춤 귀", post, brim, 0.0),
+        Lump(
+            "멈춤 기둥",
+            shapely.Point(j.R_POST, 0.0).buffer(j.BOSS_R),
+            j.POST_TIP - j.NUT_T - j.ATOP,
+            brim,
+        ),
+        Lump(
+            "그리퍼 몸통의 귀",
+            shapely.box(-gp.END_OUT, -gp.LUG_HW, x0, gp.LUG_HW),
+            gp.LUG_H0 - (gp.END_OUT + x0),
+            gp.H_FRONT,
+        ),
+        Lump("귀 나사 머리", heads, gp.LUG_H0 - wp.HEAD_H, gp.LUG_H0),
+        Lump("바닥판 나사의 돋움", bosses, gp.BOSS_H0 - (gp.BOSS_X1 - x1), gp.H_FRONT),
+        Lump(
+            "랙 집",
+            shapely.box(-gp.END_OUT, -gp.HOUSE_HW, gp.END_OUT, gp.HOUSE_HW),
+            gp.H_FRONT,
+            gp.H_BOTTOM,
+        ),
+    )
+
+
+def _fixed_box(name: str, shape: Compound) -> Lump:
+    """손목 2에 붙어 서 있는 형상을 감싸는 상자: 단면은 손목 2의 (x, z), 높이는 플랜지 면에서."""
+    bb = shape.bounding_box()
+    area = shapely.box(bb.min.X, bb.min.Z, bb.max.X, bb.max.Z)
+    return Lump(name, area, bb.min.Y - j.ATOP, bb.max.Y - j.ATOP)
+
+
+@functools.cache
+def wrist2_fixed() -> tuple[Lump, ...]:
+    """손목 2(J6의 부모)에 붙어 서 있는 것들: 손목 2가 앉은 J5 출력 원판의 멈춤 귀, D405와 받침, 플러그.
+
+    J5 원판의 멈춤 귀는 손목 2의 앞쪽을 보고 가운데 홈의 바로 뒤에 선다 (끝이 플랜지 면 0.6 밑).
+    """
+    ear = shapely.box(wp.X_FOOT - j.BRIM_T, -j.EAR_HW, wp.X_FOOT, j.EAR_HW)
+    top = wp.AX_Y + j.R_POST + j.EAR_HW - j.ATOP
+    return (
+        Lump("J5 원판의 멈춤 귀", ear, wp.AX_Y + j.R_STEP - j.ATOP, top),
+        _fixed_box("D405", cmt.camera()),
+        _fixed_box("D405 받침", cmt.mount()),
+        _fixed_box("D405 플러그", cmt.plug()),
+    )
+
+
+def tool_ceiling(margin: float = 0.5) -> float:
+    """손목 2의 홈에서 올라온 선이 설 수 있는 높이 (플랜지 면에서): 그 위로 그리퍼 몸통의 눕힌 끝벽(45°)이 지나간다.
+
+    선의 축 쪽 면(홈의 축 쪽 가장자리)에서 끝벽의 바깥 면까지를 재고 margin을 뺀다.
+    """
+    return -gp.RELIEF_X - (wp.X_FOOT + wp.NOTCH_H) - margin
+
+
+# J6에서 둘레를 떠난 선이 손목 2의 홈 앞에서 내려오는 길이. 홈 옆에는 J5 원판의 멈춤 귀가 서 있고 멈춤 각에서는
+# 플랜지 원판의 멈춤 귀가 그 앞까지 온다: 선은 그 위를 도는 높이로 지난 뒤에 내려온다
+J6_DROP = 6.0
+
+
+def gripper_routes() -> list[Route]:
+    """J6의 관절 각마다 귀와 나사 머리, 멈춤 귀를 가장 멀리 피하는 길 (D405와 J5 원판의 멈춤 귀까지 넣는다)."""
+    c = over_gripper()
+    return clear_routes(
+        c, tool_lumps(), wrist2_strand(True), (c.h,), wrist2_fixed(), tool_ceiling(), 1.0, J6_DROP
+    )
 
 
 def report() -> None:
@@ -1047,6 +1228,30 @@ def report() -> None:
             f"- J4 피하는 길 ({label}): 가장 좁은 곳 {worst.gap:.2f} ({worst.q:+.0f}°, {worst.near}), "
             f"가장 긴 길 {max(r.length for r in routes):.0f}"
         )
+    c6 = over_gripper()
+    tool = tool_lumps()
+    low6 = c6.h - j.WIRE_T / 2
+    print(
+        f"- J6 그리퍼 몸통의 주머니: 선이 플랜지 면 위 {low6:.2f} ~ {low6 + j.WIRE_T:.2f}에서 축에서 멀어지는 쪽으로 "
+        f"나온다 (플랜지 원판의 귀 윗면에서 {low6:.2f}, J5 원판의 멈춤 귀 끝에서 {low6 - wrist2_fixed()[0].h1:.2f}). "
+        f"손목 2의 홈에서 올라온 선은 플랜지 면 위 {tool_ceiling(0.0):.2f}까지 선다 (그 위로 그리퍼의 눕힌 끝벽이 지나간다)"
+    )
+    print(
+        "- J6 손목 2의 홈에서 곧게 올라오는 선과 플랜지 원판의 귀가 쓸고 가는 자리: "
+        + ", ".join(
+            f"{name} 옆 홈 {strand_gap(wrist2_strand(True), tool, name):.2f} · "
+            f"가운데 홈 {strand_gap(wrist2_strand(False), tool, name):.2f}"
+            for name in ("영점 핀 귀", "멈춤 귀")
+        )
+    )
+    routes6 = gripper_routes()
+    worst6 = min(routes6, key=lambda r: r.gap)
+    old6 = j6_in_layer()
+    print(
+        f"- J6 피하는 길: 가장 좁은 곳 {worst6.gap:.2f} ({worst6.q:+.0f}°, {worst6.near}), 가장 긴 길 "
+        f"{max(r.length for r in routes6):.0f}. 선 길이는 가장 길 때 {c6.longest():.0f}, 범위 가운데에서 "
+        f"{c6.slack(0.0):.0f} 남는다 (테에 감던 길은 {old6.longest():.0f}, {old6.slack(0.0):.0f})"
+    )
     print()
     print(
         f"## 팔에 실리는 선의 무게 (J2 위쪽): {sum(masses.values()) * 1000:.0f} g = "
