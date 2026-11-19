@@ -77,6 +77,14 @@ horn_screw_head_diameter_mm = 5.15
 width_mm = 4.75
 thickness_mm = 1.5
 
+# Waveshare 서보 선(5264 3핀, 300 mm와 900 mm 묶음, 2026-11-19 받음). 무게는 선 하나를 양쪽 플러그까지 저울로 잰 값이고,
+# 길이는 상품 이름의 값이다. 폭은 선 가운데를 디지털 캘리퍼스로 잰 값이다 (2026-11-19, 20 cm 선보다 0.1 넓다).
+# 두께와 플러그 크기는 20 cm 선(servo_wire, servo_plug)과 같다 (2026-11-19, 견주어 봄)
+[waveshare_servo_wire]
+mass_300_g = 4.5
+mass_900_g = 11.3
+width_mm = 4.85
+
 # D405 기본 선(USB 3 Micro-B, 1 m)의 지름 [mm] (디지털 캘리퍼스, 2026-11-13). 무게와 플러그는 아직 재지 않았다
 [d405_cable]
 diameter_mm = 5.12

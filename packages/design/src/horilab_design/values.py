@@ -162,6 +162,14 @@ class ServoWire(_Values):
     thickness_mm: float = Field(gt=0)
 
 
+class BoughtServoWire(_Values):
+    """따로 산 서보 선(Waveshare, 5264 3핀)의 선 한 줄. 길이는 상품 이름의 값이다."""
+
+    mass_300_g: float = Field(gt=0)  # 300 mm 선 하나 (양쪽 플러그 포함)
+    mass_900_g: float = Field(gt=0)  # 900 mm 선 하나 (양쪽 플러그 포함)
+    width_mm: float | None = Field(default=None, gt=0)  # 세 가닥을 나란히 놓은 폭
+
+
 class Cable(_Values):
     """둥근 선 [mm]."""
 
@@ -208,6 +216,7 @@ class Measured(_Values):
     servo_body: dict[ServoModel, ServoBody] = {}
     servo_depth: ServoDepth | None = None
     servo_wire: ServoWire | None = None
+    waveshare_servo_wire: BoughtServoWire | None = None  # 손목 구간과 긴 구간에 쓰는 선 (0031)
     d405_cable: Cable | None = None  # D405 기본 선 (USB 3, 1 m)
     d405_usb2_cable: ThinCable | None = None  # D405에 쓸 얇은 USB 2 선 (0031)
     d405_usb2_plug: AnglePlug | None = None  # 그 선의 카메라 쪽 ㄱ자 플러그
