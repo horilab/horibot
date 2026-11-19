@@ -22,6 +22,8 @@ pub const JOINT_NAMES: [&str; 6] = ["j1", "j2", "j3", "j4", "j5", "j6"];
 
 /// 그리퍼 서보의 ID: 11부터 그리퍼마다 하나씩 다르다 (0024)
 const GRIPPER_IDS: RangeInclusive<u8> = 11..=19;
+/// 그리퍼 서보의 이름 (영점, 값 적용에서 관절 이름 자리에 쓴다)
+pub const GRIPPER_NAME: &str = "gripper";
 
 /// 서보 값 한 칸 [rad]
 pub const RAD_PER_STEP: f64 = TAU / STEPS_PER_TURN as f64;
@@ -395,6 +397,16 @@ impl Settings {
         self.joints.iter().find(|joint| joint.name == name)
     }
 
+    /// 관절이나 그리퍼 서보를 이름으로 찾는다 (그리퍼는 [`GRIPPER_NAME`]). 영점과 값 적용이 쓴다.
+    pub fn servo(&self, name: &str) -> Option<&Joint> {
+        self.joint(name).or_else(|| {
+            self.gripper
+                .as_ref()
+                .map(|gripper| &gripper.joint)
+                .filter(|joint| joint.name == name)
+        })
+    }
+
     /// 사람이 볼 요약: 관절마다 한 줄.
     pub fn summary(&self) -> String {
         let mut lines = vec![format!(
@@ -648,7 +660,7 @@ impl GripperFile {
             registers: self.registers.clone(),
         };
         let rule = format!("{}~{} 가운데 하나", GRIPPER_IDS.start(), GRIPPER_IDS.end());
-        let joint = servo.check_servo("gripper", (GRIPPER_IDS, rule), clearance, models)?;
+        let joint = servo.check_servo(GRIPPER_NAME, (GRIPPER_IDS, rule), clearance, models)?;
         // 쥔 채 버티는 힘이 과부하 기준에 닿으면 서보 보호가 걸려 힘이 빠진다 (0024)
         let overload = joint
             .eeprom
@@ -1278,6 +1290,13 @@ mod tests {
         assert!(close(gripper.joint.upper, 60.0 / 25.0)); // 2.4 rad = 137.5°
         assert_eq!(gripper.joint.torque_limit, Some(150));
         assert!(Settings::parse(J3).unwrap().gripper.is_none());
+        // 영점과 값 적용은 그리퍼도 관절처럼 이름으로 고른다
+        let settings = Settings::parse(&format!("{J3}{TEST_GRIPPER}")).unwrap();
+        assert_eq!(settings.servo(GRIPPER_NAME).map(|joint| joint.id), Some(11));
+        assert_eq!(settings.servo("j3").map(|joint| joint.id), Some(3));
+        assert!(settings.joint(GRIPPER_NAME).is_none());
+        assert!(settings.servo("j6").is_none());
+        assert!(Settings::parse(J3).unwrap().servo(GRIPPER_NAME).is_none());
         let message = error(&format!(
             "{J3}{}",
             TEST_GRIPPER.replace("id = 11", "id = 5")

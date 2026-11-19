@@ -29,7 +29,7 @@ use horilab_controller::prepare::{self, Change};
 use horilab_controller::record::{self, Log};
 use horilab_controller::runloop::{Mode, RunLoop};
 use horilab_controller::runner::{Runner, Script, Status, Step};
-use horilab_controller::settings::{Direction, Joint, Settings};
+use horilab_controller::settings::{Direction, GRIPPER_NAME, Joint, Settings};
 use horilab_controller::zero;
 use horilab_servo::feetech::registers::BAUD_RATES;
 use horilab_servo::feetech::{Bus, Error, SerialLink, ServoBus};
@@ -51,14 +51,15 @@ const USAGE: &str = "\
                       --situation이 없으면 상황을 묻는다
   zero                영점 재기: 관절 하나(--joint)의 영점 핀 자리를 읽어 위치 오프셋을 굽는다.
                       --yes가 없으면 지금 상태와 할 일만 보여 준다. --yes가 있으면 방향을 재고(로봇
-                      설정에 방향이 없으면) 핀 자리를 읽어 굽는다. 토크가 꺼져 있어야 하고 움직이지 않는다
-  run                 시험 순서(--script)를 실행 루프로 돌린다. --yes가 없으면 순서를 검사해 보여 주고
+                      설정에 방향이 없으면) 핀 자리를 읽어 굽는다. 토크가 꺼져 있어야 하고 움직이지 않는다.
+                      그리퍼(--joint gripper)는 손가락끼리 맞닿은 자리를 읽고, 방향은 --direction으로 준다
+  run                시험 순서(--script)를 실행 루프로 돌린다. --yes가 없으면 순서를 검사해 보여 주고
                       서보 상태만 읽는다. --yes가 있으면 서보가 움직인다. 움직이는 동안 Enter로 멈춘다
 
 옵션:
   --settings <파일>   로봇 설정 파일. 기본 data/robot.toml (레포 루트에서 돌릴 때)
   --port <포트>       서보 어댑터 포트 (예: COM5, /dev/ttyACM0)
-  --joint <이름>      이 관절만 (여러 번 줄 수 있다). 기본은 로봇 설정의 모든 관절
+  --joint <이름>      이 관절만 (여러 번 줄 수 있다, 그리퍼는 gripper). 기본은 로봇 설정의 모든 관절
   --id <ID>           맨 서보의 ID (check, check-state)
   --yes               보여 준 대로 서보에 쓰거나 움직인다
   --only <단계,단계>  맨 서보 확인에서 이 단계만 한다 (예: state,overload_hold,voltage)
@@ -275,8 +276,9 @@ fn selected<'a>(settings: &'a Settings, names: &[String]) -> Result<Vec<&'a Join
     names
         .iter()
         .map(|name| {
+            // 그리퍼 서보도 관절처럼 이름으로 고른다 (영점, 값 적용)
             settings
-                .joint(name)
+                .servo(name)
                 .ok_or_else(|| format!("로봇 설정에 없는 관절이다: {name}"))
         })
         .collect()
@@ -569,12 +571,24 @@ fn measure_zero(options: &Options) -> Result<(), String> {
         joint.model,
         if torque_off { "꺼짐" } else { "켜짐" }
     );
-    println!(
-        "영점 핀 자리의 관절 각은 {:.1}°다 (설계 값). 핀 구멍의 틈은 + 쪽(관절 각이 느는 쪽)으로 붙인다.",
-        joint.pin.to_degrees()
-    );
+    // 그리퍼는 핀 대신 손가락끼리 맞닿은 자리(열림 폭 0)가 영점이다 (0030)
+    let gripper = joint.name == GRIPPER_NAME;
+    if gripper {
+        println!("그리퍼의 영점은 손가락끼리 맞닿은 자리다 (열림 폭 0).");
+    } else {
+        println!(
+            "영점 핀 자리의 관절 각은 {:.1}°다 (설계 값). 핀 구멍의 틈은 + 쪽(관절 각이 느는 쪽)으로 붙인다.",
+            joint.pin.to_degrees()
+        );
+    }
     match known {
         Some(direction) => println!("방향 {:+} (재지 않는다)", direction.number()),
+        // 그리퍼는 서보 기어가 뻑뻑해 손으로 벌리기 어렵다. 서보로 조금 돌려 본 사진으로 정한다
+        None if gripper => {
+            return Err(
+                "그리퍼는 방향을 --direction으로 준다 (벌리는 쪽으로 서보 값이 늘면 1)".to_owned(),
+            );
+        }
         None => println!("방향은 핀을 꽂기 전에 관절을 + 쪽으로 돌려 잰다"),
     }
     if !torque_off {
@@ -606,7 +620,11 @@ fn measure_zero(options: &Options) -> Result<(), String> {
             direction
         }
     };
-    console.ask("영점 핀을 꽂고, 핀 구멍의 틈을 + 쪽으로 밀어 붙인 채 Enter: ");
+    console.ask(if gripper {
+        "손가락끼리 맞닿게 닫힌 채 Enter: "
+    } else {
+        "영점 핀을 꽂고, 핀 구멍의 틈을 + 쪽으로 밀어 붙인 채 Enter: "
+    });
     let reading = zero::read_position(&mut bus, joint.id, zero::READS)?;
     let plan = zero::plan(
         joint,
@@ -658,9 +676,13 @@ fn measure_zero(options: &Options) -> Result<(), String> {
             let lines = zero::settings_lines(*zero_raw, direction, plan.offset_new);
             meta["settings_lines"] = json!(lines);
             meta["end"] = json!("normal");
+            let section = if gripper {
+                "[gripper]".to_owned()
+            } else {
+                format!("[joints.{}]", joint.name)
+            };
             println!(
-                "로봇 설정(data/robot.toml)의 [joints.{}]에 적는다:\n{lines}그다음 apply로 각도 한계를 굽는다 (영점에서 계산한다)",
-                joint.name
+                "로봇 설정(data/robot.toml)의 {section}에 적는다:\n{lines}그다음 apply로 각도 한계를 굽는다 (영점에서 계산한다)"
             );
         }
         Err(error) => {
