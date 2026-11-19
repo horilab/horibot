@@ -20,7 +20,7 @@ from horilab_design.guide.build import (
     resolve,
     write_site,
 )
-from horilab_design.guide.guides import cable_motion_300, first_joint, prints
+from horilab_design.guide.guides import first_joint, prints
 from horilab_design.guide.meshes import pack, tessellate, unpack
 from horilab_design.guide.model import Guide, Move, PrintGuide, ScenePart, Step, View
 from horilab_design.parts import joint as j
@@ -246,12 +246,7 @@ def test_built_site_has_every_file_its_guides_need(tmp_path: Path) -> None:
     page = (tmp_path / "index.html").read_text(encoding="utf-8")
     assert "/*@CSS@*/" not in page and "/*@JS@*/" not in page and "<title>작업 안내</title>" in page
     catalog = json.loads((tmp_path / "data" / "catalog.json").read_text(encoding="utf-8"))
-    assert [g["id"] for g in catalog["guides"]] == [
-        "first-joint",
-        prints.FIRST_JOINT.id,
-        prints.CABLE_MOTION.id,
-        "cable-motion-300",
-    ]
+    assert [g["id"] for g in catalog["guides"]] == ["first-joint", prints.FIRST_JOINT.id]
     for row in catalog["guides"]:
         guide = json.loads((tmp_path / row["file"]).read_text(encoding="utf-8"))
         # 처음 화면의 진행은 확인 칸(판은 Claude의 기록)으로 셈한다: 작업 단계와 판은 모두 track에 든다
@@ -290,6 +285,5 @@ def test_site_passes_its_selftest_in_a_headless_browser(tmp_path: Path) -> None:
     if not report["three"]:
         pytest.skip("three.js를 받지 못했다 (인터넷)")
     assert selftest.problems(report) == []
-    plates = sum(len(print_json(p)["steps"]) for p in (prints.FIRST_JOINT, prints.CABLE_MOTION))
-    steps = len(first_joint.STEPS) + len(cable_motion_300.STEPS) + plates
+    steps = len(first_joint.STEPS) + len(print_json(prints.FIRST_JOINT)["steps"])
     assert sum(g["steps"] for g in report["guides"]) == steps

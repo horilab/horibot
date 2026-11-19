@@ -2,10 +2,12 @@
 (status.md의 사용자 순서 1과 남은 질문 "서보 선이 관절을 넘는 방법").
 
 20 cm 선 시험에서 고칠 것을 넣었다: J6 서보 받침은 새것으로 바꾸고(옛 받침은 너트를 넣다 부러졌다), 손목 1의 발에는
-출력 원판을 실제 팔의 J4처럼 반 바퀴 돌려 단다(판지 대신 발을 막아, J5 → J6 선이 서보 먼 끝과 그 원판 사이 2.6 mm
-틈을 지난다). 손목 1의 뒷덮개는 첫 관절에 단 것을 떼었다 다시 단다. 먼저 아무것도 달지 않고 자세 넷을 돌리고, 이어서
-사용자가 생각한 방식으로 고무줄을 걸어 남는 선을 당겨 두고 다시 돌린다. 둘 다 녹화하고 Claude가 영상과 서보 기록을
-분석한다.
+가짜 아래팔 끝(parts/fake_forearm.py: J4 원판과 아래팔 끝을 J4가 범위 가운데일 때의 자리로 합친 시험 부품)을 단다.
+판지 대신 발을 막아 J5 → J6 선이 서보 먼 끝과 그 원판 사이 2.6 mm 틈을 지나고, 20 cm 선 시험에서 발 쪽으로 처진
+남는 선의 고리가 실제 팔처럼 아래팔 끝에 닿는다. 세워서는 손목 1의 뒷덮개 밑에 책을 괴고(이 부품의 멈춤 귀가 뒷덮개
+덮개 나사 머리보다 5.4 mm 낮다), 눕혀서 ①은 이 부품의 바깥 끝을 책상에 대고 세운다. 거꾸로와 눕혀서 ②는 사용자가 이
+부품의 바깥 끝을 잡는다. 손목 1의 뒷덮개는 첫 관절에 단 것을 떼었다 다시 단다. 먼저 아무것도 달지 않고 자세 넷을 돌리고, 이어서 사용자가 생각한 방식으로
+고무줄을 걸어 남는 선을 당겨 두고 다시 돌린다. 둘 다 녹화하고 Claude가 영상과 서보 기록을 분석한다.
 
 선은 손목 1 속(꽂는 커넥터, 서보 받침 판 위, 서보 먼 끝 앞, 앞벽 가운데 홈)과 J6 쪽 플러그만 그린다. 손목 2 겉의 길은
 사용자가 손으로 찾은 길이라 설계 코드에 없어서, 나가는 곳과 들어가는 곳을 이름표로 가리킨다.
@@ -15,9 +17,22 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+from horilab_design.guide.catalog import printed_items
 from horilab_design.guide.guides import cable_motion as cm
 from horilab_design.guide.guides import first_joint as fj
-from horilab_design.guide.model import Guide, Item, Label, Move, ScenePart, Step, Tag, Use, View
+from horilab_design.guide.model import (
+    Guide,
+    Item,
+    Label,
+    Move,
+    ScenePart,
+    Spot,
+    Step,
+    Tag,
+    Use,
+    View,
+)
+from horilab_design.parts import fake_forearm as ff
 from horilab_design.parts import joint as j
 from horilab_design.parts import wrist
 
@@ -37,9 +52,9 @@ TOOLS = (
 )
 
 # 장면 부품 이름
-DISC = "발 원판$"
-DISC_NUTS = "발 원판 너트"
-FOOT_SCREWS = "발 나사"
+FAKE = "가짜 아래팔 끝$"
+FAKE_NUTS = "발 나사 너트"
+FOOT_SCREWS = "발 나사 M3x12"
 PLUG = "서보 선 플러그$"
 INSIDE = "서보 선 (손목 1 속)"
 J6_PLUG = "선 플러그 (J6)"
@@ -47,20 +62,20 @@ _NEW_J6 = ("J6 서보 받침", "J6 너트 (서보 받침)")  # 이번에 새로 
 
 
 def scene() -> list[ScenePart]:
-    # 20 cm 선 시험 때 조립한 그대로다. 새로 드는 것은 J6 서보 받침과 그 너트, 발 원판과 너트, 발 나사, 300 mm 선이다
+    # 20 cm 선 시험 때 조립한 그대로다. 새로 드는 것은 J6 서보 받침과 그 너트, 가짜 아래팔 끝과 너트, 발 나사,
+    # 300 mm 선이다
     out: list[ScenePart] = []
     for p in cm.scene():
         if p.name.startswith("영점 핀"):
             continue
         out.append(replace(p, count=p.name.startswith(_NEW_J6)))
-    for p in wrist.foot_mount(fj.MODEL, flip=True):
-        if p.name == "앞 관절의 출력 원판":
-            out.append(ScenePart("발 원판", p.shape, "out_disc", p.color, False, True))
-        elif p.name.startswith("앞 관절의 너트"):
-            k = p.name.rsplit(" ", 1)[1]
-            out.append(ScenePart(f"발 원판 너트 {k}", p.shape, "nut_m3", p.color, False, True))
+    for p in ff.placed(fj.MODEL):
+        if p.name == "가짜 아래팔 끝":
+            out.append(ScenePart(p.name, p.shape, "fake_forearm", p.color, False, True))
+        elif p.name.startswith("발 나사 너트"):
+            out.append(ScenePart(p.name, p.shape, "nut_m3", p.color, False, True))
         else:
-            out.append(ScenePart(p.name, p.shape, "m3x10", p.color, False, True))
+            out.append(ScenePart(p.name, p.shape, "m3x12", p.color, False, True))
     plug, inside, _hang = fj.cable_parts()
     out.append(ScenePart("서보 선 플러그", plug, CABLE_ITEM.key, "plug", False, False))
     out.append(ScenePart(INSIDE, inside, CABLE_ITEM.key, "wire", False, False))
@@ -70,30 +85,48 @@ def scene() -> list[ScenePart]:
 
 CABLE = Use(CABLE_ITEM.key, note="손목 2 겉으로 감은 것", count=False)
 J6_SET = (fj.CHILD, *cm.J6_SERVO, "J6 벽 나사", "J6 뒷덮개", "J6 덮개 나사")
-FOOT = View((0, 1, 0), (-1, 0, 0.35), 12, 0)  # 발 쪽에서: 앞벽 가운데 홈이 위, 뒷덮개가 아래
-FOOT_UNDER = View((0, 1, 0), (-1, 0, 0), 15, 30)  # 발 원판의 밑면(가운데가 솟은 쪽)
-# 발 원판의 멈춤 귀: 반 바퀴 돌려 달아서 손목 1의 뒷덮개 쪽(-y)을 본다
+FAKE_TOP = View((0, 1, 0), (1, 0, 0.35), 20, 0)  # 가짜 아래팔 끝의 원판 면 (발에 닿는 면)
+FAKE_SIDE = View((0, 1, 0), (0.3, 0, 1), 15, 0)  # 옆면의 너트 홈
+MOUNT_VIEW = View((0, 1, 0), (-0.35, 0, 1), 15, 0)  # 옆에서: 손목 1의 발과 가짜 아래팔 끝
+# 가짜 아래팔 끝의 멈춤 귀는 손목 1의 뒷덮개 쪽(-y)을, 관은 앞벽 가운데 홈 쪽(+y)을 본다 (J4가 범위 가운데)
 EAR_TAG = Tag((wrist.X_FOOT - 2.0, wrist.AX_Y - j.R_POST - j.EAR_HW - 2.0, 0.0), "귀 (뒷덮개 쪽)")
+TUBE_TAG = Tag((-58.0, 70.0, 0.0), "관 (앞벽 가운데 홈 쪽)")
+GRIP_TAG = Tag((-98.0, 20.0, 0.0), "잡는 곳 (손목 1에서 먼 끝)")
+FACE_TAG = Tag((-98.0, 20.0, 0.0), "책상에 대는 면 (바깥 끝)")
+BOOK_TAG = Tag((0.0, -30.0, 0.0), "뒷덮개 밑에 책")
+EAR_FREE_TAG = Tag(
+    (wrist.X_FOOT - 4.0, wrist.AX_Y - j.R_POST - j.EAR_HW - 3.0, 0.0), "귀 (책 밖, 책상 위로 뜬다)"
+)
+STAND_WARN = "돌리는 동안 관절이 기울거나 넘어지려 하면 바로 창에서 Enter를 누릅니다."
 BAND_WARN = "고무줄이 풀리거나 미끄러지면 창에서 Enter를 눌러 멈추고 대화창에 알려 주세요."
+HOLD_WARN = (
+    "가짜 아래팔 끝의 바깥 끝만 잡습니다. 손가락이 관의 앞면(손목 2 쪽)이나 원판 둘레로 넘어오면 선이 손에 "
+    "얹혀 실제 팔과 다른 시험이 됩니다."
+)
 
 
 def _pose(
     sid: str,
     short: str,
     title: str,
-    hold: str,
+    setup: str,
     view: View,
     labels: tuple[Label, ...],
+    tags: tuple[Tag, ...],
+    held: bool,
     band: bool = False,
 ) -> Step:
-    warn = (cm.STOP_NOW, cm.FINGERS, BAND_WARN) if band else (cm.STOP_NOW, cm.FINGERS)
+    warn = (cm.STOP_NOW, cm.FINGERS, HOLD_WARN if held else STAND_WARN)
+    if band:
+        warn += (BAND_WARN,)
     return Step(
         sid,
         short,
         title,
         do=(
-            hold,
-            "휴대폰을 그림을 보는 쪽에 세워 두고, 관절과 선이 다 화면에 들어오게 녹화를 시작합니다.",
+            setup,
+            "휴대폰을 셀카봉이나 거치대로 그림을 보는 쪽에 고정하고, 관절과 선이 다 화면에 들어오게 녹화를 "
+            "시작합니다.",
             f"Claude가 띄운 창에서 Enter를 누르면 J5 서보(ID {fj.SERVO_ID})가 끝에서 끝까지 천천히 세 번 "
             "오갑니다. 2분 남짓 걸립니다.",
             "창에 끝났다고 나오면 녹화를 멈춥니다. 서보는 가운데에서 버티고 있습니다.",
@@ -109,51 +142,62 @@ def _pose(
         view=view,
         zoom=1.2,
         labels=labels,
-        tags=(fj.EXIT_TAG,),
+        tags=(fj.EXIT_TAG, *tags),
     )
 
 
 def _poses(band: bool) -> tuple[Step, ...]:
     pre, head = ("band-", "고무줄: ") if band else ("", "")
-    up = (Label(fj.CHILD, "손목 2 (위)"), Label(fj.HOUSE, "손목 1 (책상에 눌러 잡기)"))
-    down = (Label(fj.CHILD, "손목 2 (아래, 띄우기)"), Label(fj.HOUSE, "손목 1 (손으로 들기)"))
-    hand = (Label(fj.HOUSE, "손목 1 (손으로 들기)"),)
+    grip = Label(FAKE, "가짜 아래팔 끝 (바깥 끝을 잡기)")
     return (
         _pose(
             f"{pre}pose-up",
             "세워서",
             f"{head}세워서 돌리기",
-            "그림처럼 손목 1을 책상에 세우고 한 손으로 눌러 잡습니다. 손목 2가 위입니다.",
+            "책상에 두께 6 mm가 넘는 책을 놓고, 손목 2가 위로 오게 손목 1의 뒷덮개를 책 위에 세웁니다. 책 모서리는 "
+            "손목 1의 발 쪽 끝(가짜 아래팔 끝이 붙은 면)에 맞추거나 1 cm 안쪽에 둡니다. 가짜 아래팔 끝의 귀는 책 "
+            "밖에서 책상 위로 뜹니다.",
             cm.UP,
-            up,
-            band,
+            (Label(fj.CHILD, "손목 2 (위)"),),
+            (BOOK_TAG, EAR_FREE_TAG),
+            held=False,
+            band=band,
         ),
         _pose(
             f"{pre}pose-down",
             "거꾸로",
             f"{head}거꾸로 들고 돌리기",
-            "손목 1을 한 손으로 들어 뒤집습니다. 손목 2가 아래로 오고, 책상에 닿지 않게 띄웁니다.",
+            "가짜 아래팔 끝의 바깥 끝(손목 1에서 먼 쪽)을 한 손으로 잡고 뒤집어 듭니다. 손목 2가 아래로 오고, "
+            "책상에 닿지 않게 띄웁니다.",
             cm.DOWN,
-            down,
-            band,
+            (Label(fj.CHILD, "손목 2 (아래)"), grip),
+            (GRIP_TAG,),
+            held=True,
+            band=band,
         ),
         _pose(
             f"{pre}pose-slot-low",
             "눕혀서 ①",
             f"{head}눕혀서 돌리기: 앞벽 가운데 홈이 아래",
-            "손목 1을 한 손으로 들어 관절 축이 옆으로 눕게 돌립니다. 선이 나오는 앞벽 가운데 홈이 아래를 봅니다.",
+            "가짜 아래팔 끝의 바깥 끝(손목 1에서 먼 쪽의 납작한 면)을 책상에 대고 세웁니다. 관절 축이 옆으로 "
+            "눕고, 선이 나오는 앞벽 가운데 홈이 아래를 봅니다.",
             cm.SLOT_LOW,
-            hand,
-            band,
+            (Label(FAKE, "가짜 아래팔 끝 (바깥 끝을 책상에 댄다)"),),
+            (FACE_TAG,),
+            held=False,
+            band=band,
         ),
         _pose(
             f"{pre}pose-slot-high",
             "눕혀서 ②",
             f"{head}눕혀서 돌리기: 앞벽 가운데 홈이 위",
-            "앞의 자세에서 반 바퀴 돌려 앞벽 가운데 홈이 위를 보게 듭니다.",
+            "가짜 아래팔 끝의 바깥 끝을 한 손으로 잡고, 앞의 자세에서 반 바퀴 돌려 앞벽 가운데 홈이 위를 보게 "
+            "듭니다. 책상에 닿지 않게 띄웁니다.",
             cm.SLOT_HIGH,
-            hand,
-            band,
+            (grip,),
+            (GRIP_TAG,),
+            held=True,
+            band=band,
         ),
     )
 
@@ -168,19 +212,20 @@ STEPS: tuple[Step, ...] = (
         kind="prep",
         do=(
             "20 cm 선 시험 때 조립한 첫 관절을 책상에 놓습니다. J6 서보(ID 6)가 손목 2에 든 그대로입니다.",
-            "새로 뽑은 출력 원판 하나와 서보 받침 하나를 꺼냅니다. 같이 뽑은 받침 하나는 여분입니다.",
-            "M3 너트 6개(원판 넷, 받침 둘)와 M3 × 10 나사 4개를 꺼냅니다.",
+            "새로 뽑은 가짜 아래팔 끝 하나와 서보 받침 하나를 꺼냅니다. 같이 뽑은 받침 하나는 여분입니다.",
+            "M3 너트 6개(가짜 아래팔 끝 넷, 받침 둘)와 M3 × 12 나사 4개를 꺼냅니다.",
             "300 mm 서보 선과 900 mm 서보 선을 하나씩 꺼냅니다. 900 mm 선은 재기만 합니다.",
             "캘리퍼스, 자나 줄자, 저울, 육각렌치, 작은 십자 드라이버, 절연 테이프를 꺼냅니다.",
-            "어댑터와 서보 전원, 휴대폰을 세울 거치대, 뒤에서 쓸 고무줄을 준비합니다.",
+            "어댑터와 서보 전원, 휴대폰을 고정할 셀카봉이나 거치대, 세워서 돌릴 때 괼 책 한 권(두께 6 mm 넘게), "
+            "뒤에서 쓸 고무줄을 준비합니다.",
         ),
         check=(
             "20 cm 선 시험 때 조립한 첫 관절",
-            "새로 뽑은 출력 원판 하나와 서보 받침 하나",
-            "M3 너트 6개와 M3 × 10 나사 4개",
+            "새로 뽑은 가짜 아래팔 끝 하나와 서보 받침 하나",
+            "M3 너트 6개와 M3 × 12 나사 4개",
             "300 mm 선과 900 mm 선 하나씩",
             "캘리퍼스, 자나 줄자, 저울, 육각렌치, 작은 십자 드라이버, 절연 테이프",
-            "어댑터, 서보 전원, 휴대폰 거치대, 고무줄",
+            "어댑터, 서보 전원, 셀카봉이나 휴대폰 거치대, 책 한 권, 고무줄",
         ),
         stuck="모자라는 것이 있으면 무엇이 없는지 대화창에 적어 주세요.",
         uses=(
@@ -306,7 +351,7 @@ STEPS: tuple[Step, ...] = (
         ),
         warn=(
             "선이 덮개 테 밑에 끼이지 않게 봅니다.",
-            "서보 먼 끝 앞에서 선을 비틀지 않고 납작하게 눕힙니다. 다음 단계에서 발을 원판으로 막으면 이 틈이 "
+            "서보 먼 끝 앞에서 선을 비틀지 않고 납작하게 눕힙니다. 뒤에서 발을 가짜 아래팔 끝으로 막으면 이 틈이 "
             "2.6 mm입니다.",
         ),
         check=(
@@ -329,61 +374,87 @@ STEPS: tuple[Step, ...] = (
         tags=(fj.BACK_TAG, fj.EXIT_TAG),
     ),
     Step(
-        "foot-nuts",
-        "원판 너트",
-        "발 원판에 너트 넣기",
+        "fake-pierce",
+        "막 뚫기",
+        "가짜 아래팔 끝의 나사 구멍 막 뚫기",
         do=(
-            "새로 뽑은 출력 원판을 밑면(가운데가 둥글게 솟은 쪽)이 위로 오게 놓습니다.",
-            "테두리 가까이에 있는 육각 홈 넷에 너트를 하나씩 올립니다.",
-            "엄지로 눌러 끝까지 끼웁니다.",
-        ),
-        warn=("엄지로 안 들어가면 두드리지 않습니다. 사진을 보내 주세요.",),
-        check=("너트 넷이 모두 홈 속에 들어가, 면보다 튀어나오지 않는다.",),
-        stuck=fj.PHOTO,
-        adds=(DISC, DISC_NUTS),
-        still=(DISC,),
-        focus=(DISC, DISC_NUTS),
-        moves=tuple(
-            Move((f"{DISC_NUTS} {k}",), (-10.0, 0.0, 0.0), 0.45 * (k - 1)) for k in range(1, 5)
-        ),
-        view=FOOT_UNDER,
-        labels=(Label(f"{DISC_NUTS} 1", "M3 너트 × 4"),),
-    ),
-    Step(
-        "foot-disc",
-        "발 원판",
-        "손목 1의 발에 출력 원판 달기",
-        do=(
-            "손목 1을 발 쪽(납작한 끝)이 앞으로 오게 듭니다.",
-            "원판의 납작한 면을 발에 대고, 너트가 든 밑면이 밖을 보게 합니다. 원판의 멈춤 귀는 앞벽 가운데 홈의 "
-            "반대쪽(뒷덮개 쪽)으로 돌립니다. 실제 팔의 J4처럼 다는 방향입니다.",
-            "발 양옆 귀의 구멍 넷이 원판의 구멍과 맞으면, M3 × 10 나사를 귀 안쪽에서 하나씩 넣어 육각렌치로 "
-            "조입니다.",
+            "새로 뽑은 가짜 아래팔 끝을 둥근 돌기 넷이 있는 면(발에 대는 면)이 위로 오게 놓습니다.",
+            "돌기 바깥쪽에 나사 구멍이 넷 있습니다. 구멍마다 육각렌치의 짧은 끝을 넣고 꾹 눌러, 구멍 속의 얇은 막을 "
+            "뚫습니다.",
+            "렌치 끝이 막 밑으로 쑥 들어가면 됩니다.",
         ),
         warn=(
-            "선이 원판과 발 사이에 끼이지 않게 봅니다. 선은 앞벽 가운데 홈으로 나와 있어야 합니다.",
-            "멈춤 귀가 홈 쪽을 보면 홈에서 나오는 선 옆으로 귀가 솟습니다. 반대쪽인지 꼭 봅니다.",
+            "막은 출력할 때 너트 홈의 천장을 받치려고 둔 한 층입니다. 뚫어도 부품에는 지장이 없습니다.",
+        ),
+        check=("나사 구멍 넷의 막을 모두 뚫었다.",),
+        stuck=fj.PHOTO,
+        adds=(FAKE,),
+        still=(FAKE,),
+        focus=(FAKE,),
+        uses=(Use("hexkey"),),
+        view=FAKE_TOP,
+        labels=(Label(FAKE, "가짜 아래팔 끝 (발에 대는 면)"),),
+        spots=(Spot(FAKE, "막을 뚫을 구멍", tuple(ff.hole_tops())),),
+    ),
+    Step(
+        "fake-nuts",
+        "너트",
+        "가짜 아래팔 끝에 너트 넣기",
+        do=(
+            "발에 대는 면 바로 밑의 옆면에 납작한 홈이 양옆에 둘씩 있습니다.",
+            "홈마다 M3 너트를 눕혀서 끝까지 밀어 넣습니다. 홈 끝의 육각 자리에 걸려 멈춥니다.",
+            "위의 나사 구멍으로 들여다봐 너트 구멍이 보이면, 홈 입구에 테이프를 작게 한 조각씩 붙여 너트가 빠지지 "
+            "않게 합니다.",
+        ),
+        warn=("너트가 안 들어가면 밀어붙이지 말고 사진을 보내 주세요.",),
+        check=("너트 넷이 홈 끝까지 들어갔고, 홈 입구를 테이프로 막았다.",),
+        stuck=fj.PHOTO,
+        adds=(FAKE_NUTS,),
+        focus=(FAKE, FAKE_NUTS),
+        uses=(Use("tape", 4, "작은 조각 (홈 입구)"),),
+        moves=tuple(
+            Move((f"{FAKE_NUTS} {k}",), (0.0, 0.0, 12.0 if k <= 2 else -12.0), 0.45 * (k - 1))
+            for k in range(1, 5)
+        ),
+        view=FAKE_SIDE,
+        labels=(Label(f"{FAKE_NUTS} 1", "M3 너트 × 4 (눕혀서)"),),
+    ),
+    Step(
+        "fake-mount",
+        "발에 달기",
+        "손목 1의 발에 가짜 아래팔 끝 달기",
+        do=(
+            "손목 1을 발 쪽(납작한 끝)이 앞으로 오게 듭니다. 선은 앞벽 가운데 홈으로 나와 있습니다.",
+            "가짜 아래팔 끝의 돌기 넷이 있는 면을 발에 댑니다. 돌기는 발 속으로 들어갑니다. 관(긴 쪽)은 앞벽 가운데 "
+            "홈 쪽을, 멈춤 귀는 뒷덮개 쪽을 봅니다. 실제 팔의 J4가 범위 가운데일 때의 방향입니다.",
+            "발 양옆 귀의 구멍 넷이 나사 구멍과 맞으면, M3 × 12 나사를 귀 안쪽에서 하나씩 넣어 육각렌치로 조입니다.",
+            "다 조이면 홈 입구의 테이프를 뗍니다.",
+        ),
+        warn=(
+            "선이 가짜 아래팔 끝과 발 사이에 끼이지 않게 봅니다. 선은 앞벽 가운데 홈으로 나와 있어야 합니다.",
+            "반 바퀴 돌려 달아도 나사 구멍이 맞습니다. 그러면 관이 뒷덮개 쪽으로 가니, 관이 선이 나오는 홈 쪽인지 "
+            "꼭 봅니다.",
         ),
         check=(
-            "원판이 발에 붙어 흔들리지 않는다.",
-            "멈춤 귀가 뒷덮개 쪽을 본다.",
+            "가짜 아래팔 끝이 발에 붙어 흔들리지 않는다.",
+            "관이 앞벽 가운데 홈 쪽, 멈춤 귀가 뒷덮개 쪽을 본다.",
             "선이 끼이지 않고 홈으로 나와 있다.",
         ),
         stuck=fj.PHOTO,
         adds=(FOOT_SCREWS,),
-        mount=(DISC, DISC_NUTS, FOOT_SCREWS),
-        uses=(Use("hexkey"),),
+        mount=(FAKE, FAKE_NUTS, FOOT_SCREWS),
+        uses=(Use("hexkey"), Use("tape", note="떼어 낸다", count=False)),
         moves=(
-            Move((DISC, DISC_NUTS), (-25.0, 0.0, 0.0)),
+            Move((FAKE, FAKE_NUTS), (-25.0, 0.0, 0.0)),
             Move((FOOT_SCREWS,), (14.0, 0.0, 0.0), 1.0),
         ),
-        view=FOOT,
-        zoom=1.2,
+        view=MOUNT_VIEW,
+        zoom=1.1,
         labels=(
-            Label(DISC, "출력 원판 (너트가 밖)"),
-            Label(f"{FOOT_SCREWS} M3x10 1", "M3 × 10 × 4"),
+            Label(FAKE, "가짜 아래팔 끝"),
+            Label(f"{FOOT_SCREWS} 1", "M3 × 12 × 4"),
         ),
-        tags=(EAR_TAG, fj.EXIT_TAG),
+        tags=(EAR_TAG, TUBE_TAG, fj.EXIT_TAG),
     ),
     Step(
         "lay",
@@ -436,7 +507,8 @@ STEPS: tuple[Step, ...] = (
         do=(
             "앞의 네 자세 가운데 선이 가장 크게 움직였거나 가장 걸릴 뻔했던 자세를 대화창에 알려 주세요. Claude가 "
             "실제로 쓸 빠르기의 창을 띄웁니다.",
-            "그 자세로 들고 녹화를 시작한 뒤 창에서 Enter를 누릅니다. 끝에서 끝까지 세 번 빠르게 오갑니다.",
+            "그 자세로 세우거나 들고, 녹화를 시작한 뒤 창에서 Enter를 누릅니다. 끝에서 끝까지 세 번 빠르게 "
+            "오갑니다.",
             "끝나면 녹화를 멈춥니다. 마지막에 창이 시키면 위 몸통을 받치고 Enter를 누릅니다. 서보 힘이 꺼집니다. "
             "다음 단계에서 고무줄을 걸며 손으로 돌려 봅니다.",
         ),
@@ -455,6 +527,7 @@ STEPS: tuple[Step, ...] = (
         warn=(
             "고무줄은 세게 당기지 않습니다. 세게 당기면 커넥터가 늘 당겨집니다.",
             "고무줄이 멈춤 귀나 두 몸통 사이 틈, 손목 2의 튀어나온 곳에 닿지 않게 겁니다.",
+            "가짜 아래팔 끝에는 걸지 않습니다. 실제 팔에서는 J4가 돌며 움직이는 부분입니다.",
             "고무줄 자리를 옮기면 사진을 다시 찍고 대화창에 알려 주세요.",
         ),
         check=(
@@ -495,6 +568,7 @@ GUIDE = Guide(
     steps=STEPS,
     items={
         **cm.GUIDE.items,
+        **printed_items(ff.LABELS, ff.PRINT_SPEC),
         CABLE_ITEM.key: CABLE_ITEM,
         LONG_ITEM.key: LONG_ITEM,
         **{it.key: it for it in TOOLS},

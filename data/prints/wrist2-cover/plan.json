@@ -1,0 +1,31 @@
+{
+ "name": "wrist2-cover",
+ "made": "2026-11-19T10:07:19",
+ "studio": "02.09.01.70",
+ "profiles": "02.09.00.81",
+ "bed_type": "Textured PEI Plate",
+ "plates": [
+  {
+   "file": "01-black-0e6200.3mf",
+   "image": "01-black-0e6200.png",
+   "color": "black",
+   "preset": "0.20mm Standard @BBL X1C",
+   "minutes": 15,
+   "grams": 5.8,
+   "overnight": false,
+   "parts": [
+    {
+     "file": "wrist2_cover.stl",
+     "label": "뒷덮개 (손목 2)",
+     "module": "wrist",
+     "count": 1,
+     "sha": "f5b005106f3a",
+     "height_mm": 4.8,
+     "base_mm2": 2441,
+     "overhang_mm2": 0,
+     "slender": false
+    }
+   ]
+  }
+ ]
+}

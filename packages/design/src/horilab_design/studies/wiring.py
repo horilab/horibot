@@ -18,9 +18,16 @@
 
 from __future__ import annotations
 
+import functools
 import itertools
 import math
 from dataclasses import dataclass
+
+import numpy as np
+import shapely
+from build123d import Compound
+from shapely import LineString, MultiPoint, Polygon
+from shapely.geometry.base import BaseGeometry
 
 from horilab_design.parts import base as bp
 from horilab_design.parts import camera_mount as cmt
@@ -114,9 +121,113 @@ class Crossing:
         return self.longest(wire_d) - self.length(q_deg, wire_d)
 
 
+Flat = tuple[float, float]
+
+
+def around(hull: Polygon, a: Flat, b: Flat) -> list[Flat]:
+    """볼록한 둘레 hull 밖의 두 점을 잇는 가장 짧은 길 (둘레를 뚫지 않는다)."""
+    if LineString([a, b]).intersection(hull).length < 1e-6:
+        return [a, b]
+    tent = MultiPoint([*hull.exterior.coords, a, b]).convex_hull
+    ring = [(float(u), float(v)) for u, v in shapely.get_coordinates(tent)][:-1]
+    at = [min(range(len(ring)), key=lambda k, p=p: math.dist(ring[k], p)) for p in (a, b)]
+    if any(math.dist(ring[k], p) > 1e-6 for k, p in zip(at, (a, b), strict=True)):
+        return [a, b]  # 한 점이 다른 점과 둘레가 만든 볼록한 테 안에 있다: 곧게 보인다
+    i, k = at
+    one = [ring[(i + n) % len(ring)] for n in range((k - i) % len(ring) + 1)]
+    other = [ring[(i - n) % len(ring)] for n in range((i - k) % len(ring) + 1)]
+    return min(one, other, key=lambda c: sum(math.dist(p, q) for p, q in itertools.pairwise(c)))
+
+
+@dataclass(frozen=True)
+class OverBody(Crossing):
+    """자식 몸통의 겉으로 도는 선 (0031의 손목 관절). 테에 감기지 않고 자식 몸통의 단면 둘레를 돈다.
+
+    자리는 자식 몸통에서 본 (u, v)다: u = y - AX_Y(자식의 앞이 +), v = z. 높이 h는 자식의 발 바닥에서 잰다.
+    face는 선이 자식 몸통에서 나오는 자리, start는 거기서 나온 방향으로 곧게 간 끝이다 (그 사이는 몸통에 붙어
+    같이 돈다). hull은 선이 도는 높이에서 자식 몸통의 볼록한 둘레다. flip이면 자식을 반 바퀴 돌려 단 관절이다 (J4).
+    부모에서 나가는 자리(exit_r, exit_az)는 Crossing과 같다. drum_r은 둘레를 고르게 편 반지름이다 (표에만 쓴다).
+    """
+
+    face: Flat = (0.0, 0.0)
+    start: Flat = (0.0, 0.0)
+    h: float = 0.0
+    hull: tuple[Flat, ...] = ()
+    flip: bool = False
+
+    def parent_at(self, q_deg: float, r: float | None = None, az: float | None = None) -> Flat:
+        """부모에 붙은 점(반지름, 방위각. 기본은 선이 나가는 자리)이 관절 각 q에서 자식 몸통에서 보이는 자리."""
+        r = self.exit_r if r is None else r
+        a = math.radians((self.exit_az if az is None else az) - q_deg)
+        u, v = r * math.cos(a), -r * math.sin(a)
+        return (-u, -v) if self.flip else (u, v)
+
+    def outline(self, off: float) -> Polygon:
+        """선의 가운데가 도는 둘레: 몸통의 둘레에서 off만큼 띄운 것."""
+        grown = Polygon(self.hull).buffer(off, quad_segs=4)
+        assert isinstance(grown, Polygon)
+        return grown
+
+    def path(self, q_deg: float, off: float = j.WIRE_T / 2) -> list[Flat]:
+        """관절 각 q에서 start부터 부모의 나가는 자리까지 몸통 둘레를 도는 가장 짧은 길 (축에서 본 모습)."""
+        return around(self.outline(off), self.start, self.parent_at(q_deg))
+
+    def length(self, q_deg: float, wire_d: float = j.WIRE_T) -> float:
+        plane = sum(math.dist(a, b) for a, b in itertools.pairwise(self.path(q_deg, wire_d / 2)))
+        return math.hypot(plane, self.rise) + self.extra
+
+
+def j5_in_layer() -> Crossing:
+    """J5를 두 몸통 사이 층에서 테에 감아 넘기던 길 (2026-11-17 첫 시험의 길. 지금은 손목 2의 겉으로 돈다, over_wrist2).
+
+    손목 1 앞벽의 가운데 홈에서 나와 테에 감기고, 손목 2의 뒷덮개 쪽 모서리(앞 관절 원판 가장자리와 덮개 사이)로
+    들어간다. 그 시험의 작업 안내(guide/cables.py)가 쓴다.
+    """
+    r5, a5 = _az(j.BACK_IN + 1.5 - wp.AX_Y, wp.SIDE_LANE)
+    rise = j.ATOP + 1.5 - j.FRONT
+    return Crossing("J5", j.R_DRUM, -(wp.X_FOOT + 1.2), 180.0, r5, a5, rise)
+
+
 def _az(x: float, z: float) -> tuple[float, float]:
     """(x, z) → (반지름, 방위각 [°])."""
     return math.hypot(x, z), math.degrees(math.atan2(z, x)) % 360.0
+
+
+WRAP_OFF = (
+    j.WIRE_T / 2 + 0.5
+)  # 몸통 둘레를 도는 선의 가운데가 몸통 겉에서 뜬 거리 (선 반 두께 + 0.5)
+
+
+def over_wrist2() -> OverBody:
+    """J5: 손목 1 앞벽의 옆 홈(+z)에서 나와 손목 2의 겉을 돌아 뒷덮개의 창으로 들어가는 선 (parts/wrist.py).
+
+    부모에서 나가는 자리는 가운데 홈이 아니라 옆 홈이다: 선이 홈에서 곧게 올라오는 자리가 축에서 멀어서, 영점 핀
+    귀가 쓸고 가는 반지름(33.4)과 더 뜬다 (strand_gap). 손목 몸통은 그대로다 (옆 홈은 이미 있다).
+    """
+    foot_x = wp.X_FOOT + wp.NOTCH_H / 2
+    exit_r, exit_az = _az(foot_x, sum(wp.NOTCH) / 2)
+    out = wp.wrist2_wire()
+    (x0, y0, z0), (x1, y1, _z1) = out[0], out[1]
+    assert abs(x1 - x0) < 1e-9  # 덮개 밖에서는 축에서 멀어지는 쪽으로 곧게 간다
+    start, face = (y0 - wp.AX_Y, z0), (y1 - wp.AX_Y, z0)
+    h = x0 - wp.X_FOOT
+    side = j.NECK_HW + 2.0  # 뒷덮개의 테
+    back, skirt = j.BACK_OUT - wp.AX_Y, j.BACK_END + j.COVER_SKIRT - wp.AX_Y
+    front = j.FRONT - wp.AX_Y
+    hull = (
+        (back, -side),
+        (skirt, -side),
+        (front, -j.NECK_HW),
+        (front, j.NECK_HW),
+        (skirt, side),
+        (back, side),
+    )
+    entry_r, entry_az = _az(start[0], -start[1])  # 범위 가운데에서 부모가 보는 자리
+    even = Polygon(hull).length / (2 * math.pi)
+    rise = j.ATOP + h - j.FRONT
+    return OverBody(
+        "J5", even, exit_r, exit_az, entry_r, entry_az, rise, 0.0, j.STOP_DEG, face, start, h, hull
+    )
 
 
 def crossings() -> dict[str, Crossing]:
@@ -145,9 +256,8 @@ def crossings() -> dict[str, Crossing]:
     # J4: 손목 1은 반 바퀴 돌려 달아서 그 앞벽의 옆 홈이 살 쪽에 온다
     r4, a4 = _az(-(j.NECK_FRONT_IN + 1.2 - wp.AX_Y), wp.SIDE_LANE)
     out["J4"] = Crossing("J4", j.R_DRUM, -win, 180.0, r4, a4, rise)
-    # J5: 손목 2는 뒷덮개 쪽 모서리(앞 관절 원판 가장자리와 덮개 사이)로 들어온다
-    r5, a5 = _az(j.BACK_IN + 1.5 - wp.AX_Y, wp.SIDE_LANE)
-    out["J5"] = Crossing("J5", j.R_DRUM, -notch_x, 180.0, r5, a5, rise)
+    # J5: 손목 2의 겉을 돌아 뒷덮개의 창(발 위 13 mm)으로 들어온다
+    out["J5"] = over_wrist2()
     # J6: 그리퍼 몸통의 판을 튼 자리로 들어가 서보 뒷면 커넥터에 꽂힌다. 튼 자리는 폭이 21 mm라 선이 그 안에서
     # 짧은 쪽으로 온다. 가운데로 들어온다고 보면 어느 쪽으로 감겨도 실제보다 길게 센다
     r6, a6 = _az(-fp.ADAPTER_R, 0.0)
@@ -168,15 +278,20 @@ def _plug(side: int) -> list[Point]:
     return [(PLUG_X, PLUG_Y, side * PLUG_Z), (PLUG_X - 3.3, BACK_Y, side * PLUG_Z)]
 
 
-def wrist_out() -> list[Point]:
-    """손목 몸통: 커넥터 → 서보 먼 끝 밑(앞 관절 원판 위의 틈) → 앞벽 가운데 홈."""
+def wrist_out(side: bool = False) -> list[Point]:
+    """손목 몸통: 커넥터 → 서보 먼 끝 밑(앞 관절 원판 위의 틈) → 앞벽 가운데 홈. side면 +z 쪽 옆 홈으로 곧게 나간다 (손목 1)."""
     xg = (wp.X_FOOT - j.FAR) / 2  # 서보 먼 끝과 발 바닥 사이 틈의 가운데
     lane = wp.SIDE_LANE
-    return [
+    run: list[Point] = [
         *_plug(1),
         (-33.5, BACK_Y, lane),
         (xg, j.L1 - 2.0, lane),
         (xg, j.L0, lane),
+    ]
+    if side:
+        return [*run, (xg, j.FRONT, lane)]
+    return [
+        *run,
         (xg, 12.0, lane),  # 혼 볼트 머리를 지난 뒤 가운데로 온다
         (xg, j.NECK_FRONT_IN - 1.5, 0.0),
         (xg, j.FRONT, 0.0),
@@ -184,11 +299,11 @@ def wrist_out() -> list[Point]:
 
 
 def wrist_in(front: bool) -> list[Point]:
-    """손목 몸통으로 들어오는 선 → 커넥터. front면 앞벽 옆 홈(손목 1), 아니면 뒷덮개 쪽 모서리(손목 2)."""
+    """손목 몸통으로 들어오는 선 → 커넥터. front면 앞벽 옆 홈(손목 1), 아니면 뒷덮개의 창(손목 2: 덮개 밖 6 mm부터)."""
     xg = (wp.X_FOOT - j.FAR) / 2
     lane = -wp.SIDE_LANE
     if not front:
-        return [(wp.X_FOOT - 0.8, j.BACK_IN + 1.5, lane), (-35.5, BACK_Y, lane), *_plug(-1)[::-1]]
+        return wp.wrist2_wire()
     return [
         (wp.X_FOOT - 0.8, j.NECK_FRONT_IN - 1.0, lane),
         (xg, j.NECK_FRONT_IN - 4.0, lane),
@@ -363,7 +478,7 @@ def wires() -> list[Wire]:
         Wire(
             "J5 → J6",
             (
-                ("손목 1 속", length(wrist_out())),
+                ("손목 1 속", length(wrist_out(side=True))),
                 ("J5 넘기", over["J5"]),
                 ("손목 2 속", length(wrist_in(front=False))),
             ),
@@ -573,6 +688,239 @@ def wire_masses() -> dict[str, float]:
     }
 
 
+# ------------------------------------------------------------------------------------------------
+# 자식 몸통 겉으로 도는 선과, 그 몸통에 붙어 같이 도는 튀어나온 것 (영점 핀 귀, 발 나사 머리, D405 받침)
+#
+# 선의 두 끝은 형상이 정한다: 부모의 홈에서 축과 나란히 곧게 올라오는 구간(부모에 붙어 있다)과, 자식 몸통에서
+# 나와 곧게 가는 구간(자식과 같이 돈다). 그 사이는 자유로운 고리라 형상으로 정해지지 않는다. 그래서 따지는 것은 셋이다:
+#   1. 부모 쪽 구간과 자식의 귀가 쓸고 가는 자리 사이 (strand_gap)
+#   2. 자식 쪽 구간의 높이와 방향 (OverBody.h, face → start)
+#   3. 관절 각마다, 두 구간을 잇는 길 가운데 튀어나온 것들을 피하는 길이 선 길이 안에 있는지 (clear_routes)
+# 고리가 실제로 그 길로 가는지는 뽑은 뒤 돌려 봐야 안다.
+
+
+@dataclass(frozen=True)
+class Lump:
+    """자식 몸통에 붙어 같이 도는 튀어나온 것: 축에서 본 단면 (u, v)와 높이 범위 (발 바닥에서)."""
+
+    name: str
+    area: BaseGeometry
+    h0: float
+    h1: float
+
+
+def _box_lump(name: str, shape: Compound) -> Lump:
+    """형상을 감싸는 상자 (서보 좌표의 형상 → 자식 몸통에서 본 자리). 기운 형상은 실제보다 크게 잡힌다."""
+    bb = shape.bounding_box()
+    area = shapely.box(bb.min.Y - wp.AX_Y, bb.min.Z, bb.max.Y - wp.AX_Y, bb.max.Z)
+    return Lump(name, area, bb.min.X - wp.X_FOOT, bb.max.X - wp.X_FOOT)
+
+
+@functools.cache
+def wrist_lumps(post_front: bool, d405: bool) -> tuple[Lump, ...]:
+    """손목 몸통이 자식일 때 같이 도는 것들. post_front면 앞 관절 원판의 멈춤 귀가 이 몸통의 앞쪽에 있다 (손목 2).
+
+    d405면 손목 2에 단 D405 받침(클립 포함), 카메라, 플러그와 클립까지의 선, 받침을 다는 돋움도 넣는다.
+    """
+    top = j.EAR_T
+    heads = MultiPoint([(dy, z) for dy, z in j.RIM]).buffer(2.85)
+    sg = 1.0 if post_front else -1.0
+    u0, u1 = sorted((sg * j.R_STEP, sg * j.R_POST))
+    post = shapely.Point(sg * j.R_POST, 0.0).buffer(j.EAR_HW)
+    post = post.union(shapely.box(u0, -j.EAR_HW, u1, j.EAR_HW))
+    out = [
+        Lump("영점 핀 귀", Polygon(wp.ear_section(True)), 0.0, top),
+        Lump("반대쪽 귀", Polygon(wp.ear_section(False)), 0.0, top),
+        Lump("발 나사 머리", heads, top, top + wp.HEAD_H),
+        Lump("앞 관절의 멈춤 귀", post, j.POST_TIP - j.NUT_T - j.ATOP, 0.0),
+    ]
+    if d405:
+        section = Polygon([(y - wp.AX_Y, z) for y, z in cmt.profile()])
+        half = cmt.MOUNT_W / 2
+        out.append(Lump("D405 받침", section, -half - wp.X_FOOT, half - wp.X_FOOT))
+        y0, y1 = wp.MOUNT_Y
+        ramp = 1.1 * (wp.MOUNT_Z - 15.0)  # 돋움 밑의 비탈까지 (parts/wrist.py의 _mount_bosses)
+        for x, _y in wp.mount_xy():
+            boss = shapely.box(y0 - wp.AX_Y, -wp.MOUNT_Z, y1 + ramp - wp.AX_Y, -j.NECK_HW)
+            out.append(
+                Lump("받침 돋움", boss, x - wp.MOUNT_HW - wp.X_FOOT, x + wp.MOUNT_HW - wp.X_FOOT)
+            )
+        out += [
+            _box_lump("D405 선 클립", cmt.clip()),
+            _box_lump("D405", cmt.camera()),
+            _box_lump("D405 플러그", cmt.plug()),
+            _box_lump("D405 선", cmt.wire_stub()),
+        ]
+    return tuple(out)
+
+
+def strand_points(x_in: float, z_in: float) -> list[tuple[float, float]]:
+    """부모의 홈에서 곧게 올라오는 선이 축에 가장 가까이 놓일 때, 그 폭의 두 끝과 가운데의 (반지름, 방위각).
+
+    x_in은 홈의 축 쪽 가장자리, z_in은 홈의 가운데 쪽 가장자리다 (서보 좌표). 선은 홈에서 폭이 z 방향으로 눕는다.
+    """
+    x = x_in - j.WIRE_T / 2
+    return [_az(x, z_in + k * j.WIRE_W / 2) for k in (0, 1, 2)]
+
+
+def strand_gap(strand: list[tuple[float, float]], lumps: tuple[Lump, ...], name: str) -> float:
+    """부모 쪽 구간(축과 나란히 곧게 올라오는 선)의 면과, 이름이 name인 것이 쓸고 가는 반지름 사이 [mm].
+
+    그것이 살 위를 지나는 관절 각이 범위 안에 있으면(영점 핀 귀: 핀 자세) 쓸고 가는 자리는 고리 전체다.
+    """
+    reach = max(
+        math.hypot(u, v)
+        for lump in lumps
+        if lump.name == name
+        for u, v in shapely.get_coordinates(lump.area)
+    )
+    return min(r for r, _az in strand) - j.WIRE_T / 2 - reach
+
+
+@dataclass(frozen=True)
+class Route:
+    """관절 각 q에서 튀어나온 것들과 가장 멀리 띄운 길."""
+
+    q: float
+    gap: float  # 선의 겉과 가장 가까운 것 사이 [mm]
+    near: str  # 그것의 이름
+    length: float  # 그 길의 길이 [mm]
+    wrap_h: float  # 자식 몸통 둘레를 도는 높이
+    join_h: float  # 부모 쪽 구간으로 넘어가는 높이
+
+
+def _lump_gaps(
+    lumps: tuple[Lump, ...], uv: np.ndarray, h_lo: np.ndarray, h_hi: np.ndarray
+) -> tuple[float, str]:
+    """점들(uv, 높이 h_lo ~ h_hi로 선 것)과 가장 가까운 것 사이의 거리와 그 이름."""
+    best, near = math.inf, ""
+    pts = shapely.points(uv)
+    for lump in lumps:
+        flat = shapely.distance(lump.area, pts)
+        up = np.maximum(np.maximum(lump.h0 - h_hi, h_lo - lump.h1), 0.0)
+        d = float(np.min(np.hypot(flat, up)))
+        if d < best:
+            best, near = d, lump.name
+    return best, near
+
+
+def clear_route(
+    c: OverBody,
+    lumps: tuple[Lump, ...],
+    strand: list[tuple[float, float]],
+    q_deg: float,
+    wraps: tuple[float, ...],
+    floor: float,
+) -> Route:
+    """관절 각 q에서 자식 쪽 구간의 끝(start)과 부모 쪽 구간을 잇는 길 가운데 가장 멀리 띄운 것.
+
+    길의 모양: start에서 자식 몸통의 둘레까지 가며 도는 높이(wraps 가운데 하나)로 오르내리고, 둘레를 그 높이로
+    돌고, 둘레를 떠나 부모 쪽 구간까지 곧게 가며 넘어가는 높이로 오르내린다. 부모 쪽 구간은 홈(높이 floor)에서
+    그 높이까지 곧게 선다. 자유로운 구간은 선이 어느 쪽으로 누울지 몰라 반폭(WIRE_W / 2)을, 부모 쪽 구간은 축
+    쪽으로 반 두께를 뺀다. 넘어가는 높이는 2 mm 간격으로 찾는다.
+    """
+    flat = c.path(q_deg, WRAP_OFF)
+    seg = [math.dist(a, b) for a, b in itertools.pairwise(flat)]
+    n = [max(2, math.ceil(s) + 1) for s in seg]
+    uv = np.concatenate(
+        [np.linspace(a, b, k) for (a, b), k in zip(itertools.pairwise(flat), n, strict=True)]
+    )
+    part = np.concatenate([np.full(k, i) for i, k in enumerate(n)])
+    frac = np.concatenate([np.linspace(0.0, 1.0, k) for k in n])
+    posts = np.array([c.parent_at(q_deg, r, az) for r, az in strand])
+    last = len(seg) - 1
+    stub = np.linspace(c.face, c.start, 7)
+    stub_gap, stub_near = _lump_gaps(lumps, stub, np.full(7, c.h), np.full(7, c.h))
+    best: Route | None = None
+    for wrap in wraps if last > 0 else (c.h,):
+        for join in np.arange(floor + 2.0, 40.1, 2.0):
+            h = np.full(len(uv), wrap)
+            if last > 0:
+                h = np.where(part == 0, c.h + (wrap - c.h) * frac, h)
+                h = np.where(part == last, wrap + (join - wrap) * frac, h)
+            else:
+                h = c.h + (join - c.h) * frac
+            free, name = _lump_gaps(lumps, uv, h, h)
+            free -= j.WIRE_W / 2
+            lo, hi = np.full(len(posts), floor), np.full(len(posts), float(join))
+            fixed, name2 = _lump_gaps(lumps, posts, lo, hi)
+            fixed -= j.WIRE_T / 2
+            gap, near = min((free, name), (fixed, name2), (stub_gap - j.WIRE_W / 2, stub_near))
+            if last > 0:
+                rises = [wrap - c.h] + [0.0] * (last - 1) + [float(join) - wrap]
+            else:
+                rises = [float(join) - c.h]
+            run = sum(math.hypot(s, r) for s, r in zip(seg, rises, strict=True))
+            total = math.dist(c.face, c.start) + run + (join - floor)
+            if best is None or gap > best.gap + 1e-9:
+                best = Route(q_deg, gap, near, total, float(wrap), float(join))
+    assert best is not None
+    return best
+
+
+def clear_routes(
+    c: OverBody,
+    lumps: tuple[Lump, ...],
+    strand: list[tuple[float, float]],
+    wraps: tuple[float, ...],
+) -> list[Route]:
+    """멈춤 각에서 멈춤 각까지 1° 간격으로 본 clear_route."""
+    floor = j.FRONT - j.ATOP  # 부모의 앞면 (자식의 발 바닥에서)
+    stop = round(c.stop_deg)
+    return [clear_route(c, lumps, strand, float(q), wraps, floor) for q in range(-stop, stop + 1)]
+
+
+def wrist1_strand(side: bool) -> list[tuple[float, float]]:
+    """손목 1 앞벽의 홈에서 J5 쪽으로 곧게 올라오는 선이 J5 축에 가장 가까이 놓인 자리. side면 옆 홈, 아니면 가운데 홈."""
+    x_in = wp.X_FOOT + wp.NOTCH_H
+    return strand_points(x_in, wp.NOTCH[0] if side else -wp.EXIT_HW)
+
+
+def over_wrist1() -> OverBody:
+    """J4: 아래팔 끝 집의 선 창에서 나와 손목 1 앞벽의 옆 홈(-z, 영점 핀 귀의 반대쪽)으로 들어가는 선.
+
+    손목 1은 J4 원판에 반 바퀴 돌려 달아서(0029) 앞벽이 살 쪽에 온다. 옆 홈은 발 바닥에서 NOTCH_H까지라, 이
+    선은 귀와 같은 높이에서 축에서 멀어지는 쪽으로 나온다. 앞벽의 그 위는 J5의 멈춤 홈이라 더 올릴 자리가 없다.
+    """
+    win = sum(j.WIN_X) / 2
+    front = j.FRONT - wp.AX_Y
+    back = j.BACK_OUT - wp.AX_Y
+    face = (front, -wp.SIDE_LANE)
+    start = (front + 6.0, -wp.SIDE_LANE)
+    h = wp.NOTCH_H / 2
+    side = j.NECK_HW + 2.0
+    hull = ((back, -side), (front, -j.NECK_HW), (front, j.NECK_HW), (back, side))
+    entry_r, entry_az = _az(-start[0], start[1])
+    even = Polygon(hull).length / (2 * math.pi)
+    rise = j.ATOP + h - j.FRONT
+    return OverBody(
+        "J4",
+        even,
+        -win,
+        180.0,
+        entry_r,
+        entry_az,
+        rise,
+        0.0,
+        j.STOP_DEG,
+        face,
+        start,
+        h,
+        hull,
+        True,
+    )
+
+
+def forearm_strand() -> list[tuple[float, float]]:
+    """아래팔 끝 집의 선 창에서 J4 쪽으로 곧게 올라오는 선이 J4 축에 가장 가까이 놓인 자리 (창의 축 쪽 끝)."""
+    return strand_points(j.WIN_X[1], -j.WIN_Z)
+
+
+WRAP_OVER = (
+    j.EAR_T + wp.HEAD_H + j.WIRE_W / 2 + 2.0
+)  # 귀와 발 나사 머리 위로 도는 높이 (머리 위 2 mm)
+
+
 def report() -> None:
     x = crossings()
     print(
@@ -658,6 +1006,47 @@ def report() -> None:
     )
     print("  " + ", ".join(f"{n} {v:.0f}" for n, v in path))
     masses = wire_masses()
+    print()
+    print("## 손목 관절: 자식 몸통 겉으로 도는 선과 같이 도는 튀어나온 것 (선의 겉에서 잰 틈, mm)")
+    c5, c4 = over_wrist2(), over_wrist1()
+    bare, cam = wrist_lumps(True, False), wrist_lumps(True, True)
+    low = c5.h - j.WIRE_T / 2
+    print(
+        f"- J5 손목 2의 뒷덮개: 선이 발 위 {low:.2f} ~ {low + j.WIRE_T:.2f}에서 축에서 멀어지는 쪽으로 나온다 "
+        f"(귀 윗면에서 {low - j.EAR_T:.2f}, 발 나사 머리에서 {low - j.EAR_T - wp.HEAD_H:.2f}, 부모의 앞면에서 "
+        f"{low + j.ATOP - j.FRONT:.2f})"
+    )
+    print(
+        "- J5 손목 1의 홈에서 곧게 올라오는 선과 영점 핀 귀가 쓸고 가는 자리: "
+        f"옆 홈 {strand_gap(wrist1_strand(True), bare, '영점 핀 귀'):.2f}, "
+        f"가운데 홈 {strand_gap(wrist1_strand(False), bare, '영점 핀 귀'):.2f}"
+    )
+    for label, lumps in (("D405 없이", bare), ("D405를 달고", cam)):
+        routes = clear_routes(c5, lumps, wrist1_strand(True), (c5.h,))
+        worst = min(routes, key=lambda r: r.gap)
+        tight = [r.q for r in routes if r.gap < 2.0]
+        span = f", 2 mm보다 좁은 각 {tight[0]:+.0f} ~ {tight[-1]:+.0f}°" if tight else ""
+        print(
+            f"- J5 피하는 길 ({label}): 가장 좁은 곳 {worst.gap:.2f} ({worst.q:+.0f}°, {worst.near}){span}, "
+            f"가장 긴 길 {max(r.length for r in routes):.0f}"
+        )
+    plain = wrist_lumps(False, False)
+    ear = Polygon(wp.ear_section(True))
+    print(
+        f"- J4 손목 1의 옆 홈: 선이 발 위 {c4.h - j.WIRE_T / 2:.2f} ~ {c4.h + j.WIRE_T / 2:.2f}(귀와 같은 높이)에서 "
+        f"축에서 멀어지는 쪽으로 나온다. 축에서 본 귀까지 {ear.distance(LineString([c4.face, c4.start])):.1f}"
+    )
+    print(
+        "- J4 아래팔 끝 집의 선 창에서 곧게 올라오는 선과 영점 핀 귀가 쓸고 가는 자리: "
+        f"{strand_gap(forearm_strand(), plain, '영점 핀 귀'):.2f} (선이 창의 축 쪽 끝에 놓일 때)"
+    )
+    for label, wraps in (("발 높이로만", (c4.h,)), ("귀 위로 올라서", (c4.h, WRAP_OVER))):
+        routes = clear_routes(c4, plain, forearm_strand(), wraps)
+        worst = min(routes, key=lambda r: r.gap)
+        print(
+            f"- J4 피하는 길 ({label}): 가장 좁은 곳 {worst.gap:.2f} ({worst.q:+.0f}°, {worst.near}), "
+            f"가장 긴 길 {max(r.length for r in routes):.0f}"
+        )
     print()
     print(
         f"## 팔에 실리는 선의 무게 (J2 위쪽): {sum(masses.values()) * 1000:.0f} g = "

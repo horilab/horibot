@@ -253,9 +253,14 @@ WIN_X = (-45.0, -35.4)  # 링크의 선 창 (플러그 9.58 × 4.75가 지나간
 WIN_Z = 3.0
 
 # ---- 선 (0031) ----
-# 서보 선 한 줄이 차지하는 자리: 세 가닥을 나란히 놓은 폭과 두께 (딸려 온 20 cm 선을 잰 값, 4.75 × 1.5)
+# 서보 선 한 줄이 차지하는 자리: 세 가닥을 나란히 놓은 폭과 두께. 폭은 쓰는 선 가운데 넓은 쪽이다 (딸려 온
+# 20 cm 선 4.75, 손목 구간과 긴 구간에 쓰는 Waveshare 선 4.85). 두께는 둘 다 1.5다
 assert _MEASURED.servo_wire is not None
-WIRE_W, WIRE_T = _MEASURED.servo_wire.width_mm, _MEASURED.servo_wire.thickness_mm
+_BOUGHT_W = (
+    _MEASURED.waveshare_servo_wire.width_mm if _MEASURED.waveshare_servo_wire is not None else None
+)
+WIRE_W = max(_MEASURED.servo_wire.width_mm, _BOUGHT_W or 0.0)
+WIRE_T = _MEASURED.servo_wire.thickness_mm
 # 꽂은 플러그의 뒤 끝 (선이 나오는 곳): 눕힌 선의 밑이다. 커넥터가 있는 뒷면(L1)에서 2.6 나온다
 PLUG_TOP = WIRE_TOP + WIRE_T
 # 선은 살(180°) 위에서 출력 원판의 테로 건너가 테 둘레에 감긴다. 테 밑의 틈(GAP)으로 선이 빠지면 도는 원판과
@@ -731,17 +736,23 @@ def inner_hardware(model: ServoModel) -> list[Part]:
     return out
 
 
-def inner_parts(model: ServoModel, neck_x: float, end_skirt: bool) -> list[Part]:
-    """원통 속 부품과 서보, 출력 원판, 벽 나사 (몸통과 자식 몸통은 빼고)."""
+def inner_parts(
+    model: ServoModel, neck_x: float, end_skirt: bool, cover: Compound | None = None
+) -> list[Part]:
+    """원통 속 부품과 서보, 출력 원판, 벽 나사 (몸통과 자식 몸통은 빼고).
+
+    cover를 주면 뒷덮개를 그것으로 바꾼다 (손목 2: 선이 나오는 자리가 다른 덮개, parts/wrist.py).
+    """
     dy = servo_dy(model)
     sv = servo(model)
+    lid = back_cover(neck_x, end_skirt) if cover is None else cover
     parts = [
         Part("베어링 6806", bearing(), color="metal"),
         Part("허브 판", hub_plate(), moving=True, color="cap"),
         Part("출력 원판", out_disc(), moving=True, color="cap"),
         Part("누름 틀", retainer(), color="frame"),
         Part("서보 받침", solid(Pos(0, dy, 0) * carrier()), color="frame"),
-        Part("뒷덮개", solid(Pos(0, dy, 0) * back_cover(neck_x, end_skirt)), color="cap"),
+        Part("뒷덮개", solid(Pos(0, dy, 0) * lid), color="cap"),
         Part("서보 몸통", sv["body"], color="servo"),
         Part("혼", sv["horn"], moving=True, color="metal"),
         Part("플러그", sv["plugs"], color="plug"),

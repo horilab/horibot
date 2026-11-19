@@ -58,9 +58,10 @@ def test_wire_crosses_the_web_where_the_stop_never_sweeps() -> None:
     assert wr.exit_to_ear(0.0, j.STOP_DEG) - j.WIRE_W / 2 > 5.0
     # 손목 몸통의 가운데 홈과 링크의 선 창은 선 폭보다 넓고, 플러그는 창을 지나간다
     assert 2 * wrist.EXIT_HW > j.WIRE_W + 1.0
-    # 손목 몸통의 옆 홈과 링크 발의 선 틈도 선 폭(잰 값 4.75)보다 넓다. 긴 틈은 선을 세워 밀어 넣을 만큼 구멍과 겹친다
-    assert wrist.NOTCH[1] - wrist.NOTCH[0] > j.WIRE_W + 0.9
-    assert links.FOOT_SLOT_Z[1] - links.FOOT_SLOT_Z[0] > j.WIRE_W + 0.9
+    # 손목 몸통의 옆 홈과 링크 발의 선 틈(5.7)도 선 폭(넓은 쪽, Waveshare 선 4.85)보다 0.8 넘게 넓다. 긴 틈은 선을
+    # 세워 밀어 넣을 만큼 구멍과 겹친다
+    assert wrist.NOTCH[1] - wrist.NOTCH[0] > j.WIRE_W + 0.8
+    assert links.FOOT_SLOT_Z[1] - links.FOOT_SLOT_Z[0] > j.WIRE_W + 0.8
     assert links.FOOT_SLOT_OPEN > j.WIRE_T + 0.9 and links.FOOT_SLOT_H > j.WIRE_T + 1.0
     for foot in (links.STS_FOOT, links.SHOULDER_FOOT):
         assert (
@@ -73,6 +74,83 @@ def test_wire_crosses_the_web_where_the_stop_never_sweeps() -> None:
     assert wrist.HEAD > j.WIRE_T + 1.0
     assert 2 * j.WIN_Z >= wr.PLUG[2] + 1.0 and j.WIN_X[1] - j.WIN_X[0] >= wr.PLUG[1] + 0.5
     assert 2 * sp.WIN_Z >= wr.PLUG[2] + 1.0 and sp.WIN_X[1] - sp.WIN_X[0] >= wr.PLUG[1] + 0.5
+
+
+def test_wrist2_wire_leaves_the_cover_above_the_pin_ear() -> None:
+    c = wr.over_wrist2()
+    # 선은 덮개에서 축에서 멀어지는 쪽으로 곧게 나온다 (아래를 보고 나와 U자로 꺾이지 않는다)
+    assert c.face[1] == c.start[1] == wrist.EXIT_PLUG_Z and c.start[0] < c.face[0] < 0
+    # 귀 윗면에서 6 mm, 발 나사 머리에서 5 mm 넘게 위에서 나오고, 부모의 앞면(영점 핀 구멍이 있는 살)에서 18 mm 넘게 뜬다
+    low = c.h - j.WIRE_T / 2
+    assert low == pytest.approx(wrist.EXIT_H)
+    assert low - j.EAR_T > 6.0 and low - (j.EAR_T + wrist.HEAD_H) > 5.0
+    assert low + j.ATOP - j.FRONT > 18.0
+    # 몸통 둘레를 그 높이로 돌 때 선의 위 가장자리는 D405 받침의 돋움(발 위 21.2)보다 4 mm 넘게 아래다
+    boss_low = -wrist.MOUNT_X - wrist.MOUNT_HW - wrist.X_FOOT
+    assert boss_low - (c.h + j.WIRE_W / 2) > 4.0
+    # 범위 가운데에서 나가는 자리와 들어가는 자리가 거의 같은 방위각이다 (양쪽으로 비슷하게 감긴다)
+    assert abs(c.exit_az - c.entry_az) < 10.0
+    assert c.length(c.stop_deg) == pytest.approx(c.length(-c.stop_deg), abs=5.0)
+    # 손목 1의 홈에서 곧게 올라오는 선: 옆 홈이면 영점 핀 귀가 쓸고 가는 자리와 2.5 mm 넘게 뜨고, 가운데 홈이면 2 mm가 안 된다
+    lumps = wr.wrist_lumps(True, False)
+    reach = j.R_PIN + wrist.PIN_EAR_R
+    assert max(math.hypot(u, v) for u, v in wrist.ear_section(True)) == pytest.approx(
+        reach, abs=0.05
+    )
+    assert wr.strand_gap(wr.wrist1_strand(True), lumps, "영점 핀 귀") > 2.5
+    assert wr.strand_gap(wr.wrist1_strand(False), lumps, "영점 핀 귀") < 2.0
+    # J5 → J6 선: 손목 1에서는 +z 쪽 옆 홈으로 곧게 나가고, 손목 2 속은 창에서 플러그까지 20 mm가 안 된다
+    out = wr.wrist_out(side=True)
+    assert out[-1][2] == pytest.approx(wrist.SIDE_LANE) and out[-1][1] == j.FRONT
+    assert wrist.NOTCH[0] + j.WIRE_W / 2 < wrist.SIDE_LANE < wrist.NOTCH[1] - j.WIRE_W / 2
+    assert 10.0 < wr.length(wr.wrist_in(front=False)) < 20.0
+
+
+@pytest.mark.slow
+def test_wrist2_wire_has_a_clear_route_at_every_angle() -> None:
+    c = wr.over_wrist2()
+    strand = wr.wrist1_strand(True)
+    routes = wr.clear_routes(c, wr.wrist_lumps(True, False), strand, (c.h,))
+    assert [r.q for r in routes] == [float(q) for q in range(-163, 164)]
+    # 멈춤 각에서 멈춤 각까지 1° 간격으로, 귀와 발 나사 머리, 앞 관절의 멈춤 귀를 2.5 mm 넘게 피하는 길이 있다
+    assert min(r.gap for r in routes) > 2.5
+    # 그 길은 300 mm 선에서 두 몸통 속의 길을 뺀 길이보다 짧다
+    by = dict(next(w for w in wr.wires() if w.name == "J5 → J6").parts)
+    assert (
+        max(r.length for r in routes) < wr.usable(300.0) - by["손목 1 속"] - by["손목 2 속"] - 30.0
+    )
+    # 핀 자세(-90°)에서 귀는 부모 쪽 구간 바로 안쪽을 지난다: 그 각 근처의 가장 좁은 곳이 부모 쪽 구간과 귀 사이다
+    pin = routes[163 + round(wrist.PIN_POSE_DEG)]
+    assert pin.near == "영점 핀 귀" and pin.gap > 2.5
+    # D405를 달면 닿지 않는 길은 있지만, +93 ~ +121°에서 받침의 클립 밑으로 지나느라 2 mm보다 좁다 (받침과 선을 달고
+    # 돌려 볼 자리, 0031의 남은 확인). 클립은 상자로, 선은 지름이 폭인 둥근 선으로 본 값이라 실제보다 좁게 나온다
+    cam = wr.clear_routes(c, wr.wrist_lumps(True, True), strand, (c.h,))
+    assert min(r.gap for r in cam) > 0.0
+    narrow = [r.q for r in cam if r.gap < 2.0]
+    assert narrow and 90.0 <= narrow[0] and narrow[-1] <= 125.0
+    assert all(r.gap > 2.5 for r in cam if r.q < 0)  # 귀 쪽(-)은 D405와 상관없다
+
+
+@pytest.mark.slow
+def test_wrist1_wire_leaves_at_ear_height_but_away_from_the_ears() -> None:
+    # J4: 손목 1의 옆 홈(-z)은 귀와 같은 높이다 (앞벽의 그 위는 J5의 멈춤 홈이라 올릴 자리가 없다). 대신 축에서
+    # 멀어지는 쪽으로 나오고, 축에서 본 영점 핀 귀까지 25 mm 넘게 떨어져 있다
+    c = wr.over_wrist1()
+    assert c.flip and c.h + j.WIRE_T / 2 < j.EAR_T
+    assert c.face[1] == c.start[1] < 0 < c.face[0] < c.start[0]
+    assert math.dist(c.face, c.start) == pytest.approx(6.0)
+    ear = [(u, v) for u, v in wrist.ear_section(True)]
+    assert min(math.dist(c.start, p) for p in ear) > 25.0
+    # 홈 위로 J5의 멈춤 홈까지 남은 살(2.5 mm)을 다 써도 홈이 귀 윗면보다 낮다
+    assert wrist.NOTCH_H + (-j.CH_R1 - (wrist.X_FOOT + wrist.NOTCH_H)) < j.EAR_T
+    # 아래팔의 선 창에서 올라오는 선은 창의 축 쪽 끝에 놓여도 귀가 쓸고 가는 자리와 2 mm 뜬다
+    lumps = wr.wrist_lumps(False, False)
+    assert wr.strand_gap(wr.forearm_strand(), lumps, "영점 핀 귀") == pytest.approx(2.0, abs=0.05)
+    # 발 높이로만 돌면 귀에 닿고, 홈에서 나와 귀와 나사 머리 위로 올라서 돌면 2 mm 띄우는 길이 있다
+    low = wr.clear_routes(c, lumps, wr.forearm_strand(), (c.h,))
+    assert min(r.gap for r in low) < 0.0
+    over = wr.clear_routes(c, lumps, wr.forearm_strand(), (c.h, wr.WRAP_OVER))
+    assert min(r.gap for r in over) > 1.95
 
 
 def test_gap_under_the_brim_is_too_narrow_for_a_wire() -> None:

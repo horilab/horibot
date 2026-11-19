@@ -8,7 +8,7 @@ import pytest
 
 from horilab_design.parts import joint as j
 from horilab_design.parts import links, wrist
-from horilab_design.parts.shapes import cyl_y
+from horilab_design.parts.shapes import box, cyl_y, solid
 from horilab_design.printcheck import LAYER, air_walls, mid_layer_levels, overhangs, wall_settings
 from horilab_design.values import ServoModel, load_measured
 
@@ -55,6 +55,60 @@ def test_no_air_walls_block_the_first_joint_parts() -> None:
         assert [a.describe() for a in found if a.blocking] == [], name
         if name == "carrier":
             assert found == (), name  # 뒷면 전체가 바닥에 닿아 참고로 나오는 자리도 없다
+
+
+@pytest.mark.slow
+def test_wrist2_cover_lets_the_wire_out_above_the_ear() -> None:
+    old, new = wrist.wrist_cover(), wrist.wrist2_cover()
+    # 겉 크기와 나사 자리는 손목 몸통의 뒷덮개와 같다 (몸통은 그대로다)
+    a, b = old.bounding_box(), new.bounding_box()
+    for lo, hi in ((a.min, b.min), (a.max, b.max)):
+        assert (lo.X, lo.Y, lo.Z) == pytest.approx((hi.X, hi.Y, hi.Z), abs=0.01)
+    assert new.volume == pytest.approx(old.volume, rel=0.03)
+    x0 = wrist.X_FOOT + wrist.EXIT_H
+    zc, hw = wrist.EXIT_PLUG_Z, j.WIRE_W / 2
+    edge = -(j.NECK_HW + 2.0)
+    # 창: 선(폭 4.85, 두께 1.5)이 지나가고, 덮개의 -z 가장자리까지 트여 있다 (선을 옆에서 밀어 넣는다)
+    # (턱의 둥근 면은 덮개 안쪽 면 높이에서 0.25 들어와 있다: 선이 그 면에 얹혀 돈다)
+    slot = box(x0 + 0.3, x0 + 0.3 + j.WIRE_T, j.BACK_OUT, j.BACK_IN, edge - 1, zc + hw + 0.2)
+    assert solid(new & slot).volume < 0.01
+    assert wrist.EXIT_GAP - j.WIRE_T >= 0.6 and wrist.EXIT_Z[1] - (zc + hw) > 0.4
+    plate = box(x0 + 0.3, x0 + 0.3 + j.WIRE_T, j.BACK_OUT, j.BACK_IN, zc - hw, zc + hw)
+    assert solid(old & plate).volume == pytest.approx(plate.volume, rel=0.01)
+    # 턱: 덮개 안쪽 면에서 눕힌 선의 밑면 높이까지 솟아, 덮개 밑으로 발 쪽에 가는 길을 막는다 (뒤에 남는 틈이 선 두께의 절반)
+    dam = box(
+        x0 - 2.5,
+        x0 - 0.5,
+        j.BACK_IN,
+        j.PLUG_TOP - 0.05,
+        wrist.EXIT_Z[0] + 0.1,
+        wrist.EXIT_Z[1] - 0.1,
+    )
+    assert solid(new & dam).volume == pytest.approx(dam.volume, rel=0.01)
+    assert j.PLATEAU - j.PLUG_TOP < j.WIRE_T / 2
+    # 턱은 목의 안쪽 벽과 그리퍼로 가는 선(+z 쪽 커넥터) 사이에 든다
+    assert wrist.EXIT_Z[0] > -j.NECK_IN + 0.4 and wrist.EXIT_Z[1] < 0.45
+    # 창은 귀와 발 나사 머리 위, 플러그 밑에 있다: 눕힌 선이 턱의 둥근 면까지 2.5 mm 넘게 곧게 간다
+    assert wrist.EXIT_H > j.EAR_T + wrist.HEAD_H + 5.0
+    assert (-14.2 - 3.3) - (
+        x0 + wrist.EXIT_R
+    ) > 2.5  # 플러그 가운데에서 3.3 뒤부터 눕는다 (studies/wiring.py)
+    assert wrist.wrist2_wire()[-2][0] - wrist.wrist2_wire()[-3][0] > 2.5
+    for model in j.STS_MODELS:
+        parts = [*wrist.wrist2_inner(model), j.Part("손목 몸통", wrist.wrist_body())]
+        by = {p.name: p for p in parts}
+        cover, wire = by["뒷덮개"], by["선 (J5에서)"]
+        for other in parts:
+            if other is cover:
+                continue
+            # 선은 턱의 둥근 면에 얹힌다 (다각형으로 그린 면이라 0.05 mm³쯤 겹친다)
+            assert solid(cover.shape & other.shape).volume < 0.1, (model, other.name)
+            if other is wire or other.name in ("플러그", "서보 몸통"):
+                continue
+            assert solid(wire.shape & other.shape).volume < 0.01, (model, other.name)
+        assert cover.shape.distance_to(by["손목 몸통"].shape) > 0.3, model
+        assert cover.shape.distance_to(by["선 (그리퍼로)"].shape) > 1.0, model
+        assert wire.shape.distance_to(by["서보 몸통"].shape) > 0.6, model
 
 
 def test_head_pockets_keep_their_seat_and_thread() -> None:

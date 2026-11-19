@@ -60,14 +60,18 @@ def _slant(a: tuple[float, float], b: tuple[float, float]) -> Compound:
     return solid(plane * Box(d.length + _W, _T, _W))
 
 
-def cable_parts() -> tuple[Compound, Compound, Compound]:
-    """서보 선: (꽂은 플러그, 손목 몸통 속의 선, 앞벽 가운데 홈을 나와 발 쪽으로 늘어뜨린 끝)."""
+def cable_parts(exit_z: float = 0.0) -> tuple[Compound, Compound, Compound]:
+    """서보 선: (꽂은 플러그, 손목 몸통 속의 선, 앞벽 홈을 나와 발 쪽으로 늘어뜨린 끝).
+
+    exit_z는 선이 나가는 앞벽 홈의 z다: 0이면 가운데 홈, wrist.SIDE_LANE이면 +z 옆 홈 (0031의 고친 길).
+    """
+    z0, z1 = exit_z - _W / 2, exit_z + _W / 2
     plug = box(-16.6, -11.85, j.PLUG_TOP + DY, j.L1 + 0.5 + DY, *_PLUG_Z)
     inside = box(-26.0, -12.6, *_WY, _ZC - _W / 2, _ZC + _W / 2)  # 판 위, 발 쪽으로
-    inside += _slant((-26.0, _ZC), (-33.0, 0.0))  # 가운데로 모으며
-    inside += box(_XD - _T / 2, -33.0, *_WY, -_W / 2, _W / 2)
-    inside += box(_XD - _T / 2, _XD + _T / 2, _WY[0], j.FRONT + _T, -_W / 2, _W / 2)  # 먼 끝 앞으로
-    hang = box(-45.0, _XD + _T / 2, j.FRONT, j.FRONT + _T, -_W / 2, _W / 2)  # 홈을 나와 발 쪽으로
+    inside += _slant((-26.0, _ZC), (-33.0, exit_z))  # 나가는 홈 쪽으로 옮기며
+    inside += box(_XD - _T / 2, -33.0, *_WY, z0, z1)
+    inside += box(_XD - _T / 2, _XD + _T / 2, _WY[0], j.FRONT + _T, z0, z1)  # 먼 끝 앞으로
+    hang = box(-45.0, _XD + _T / 2, j.FRONT, j.FRONT + _T, z0, z1)  # 홈을 나와 발 쪽으로
     return solid(plug), solid(inside), solid(hang)
 
 

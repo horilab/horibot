@@ -22,6 +22,8 @@ THUMBS = {
     "retainer": View((0, -1, 0), (1, 0, 0), 28, 34),
     "carrier": View((0, -1, 0), (-1, 0, 0.4), 34, 0),
     "wrist_cover": View((0, -1, 0), (1, 0, 0), 45, 0),
+    "wrist2_cover": View((0, -1, 0), (1, 0, 0.5), 40, 0),
+    "fake_forearm": View((0, 1, 0), (0.6, 0, 1), 22, 0),
 }
 
 

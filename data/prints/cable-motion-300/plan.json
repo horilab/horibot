@@ -1,19 +1,30 @@
 {
- "name": "cable-motion-carrier",
- "made": "2026-11-17T23:24:57",
+ "name": "cable-motion-300",
+ "made": "2026-11-18T15:44:23",
  "studio": "02.09.01.70",
  "profiles": "02.09.00.81",
  "bed_type": "Textured PEI Plate",
  "plates": [
   {
-   "file": "01-black-c0d028.3mf",
-   "image": "01-black-c0d028.png",
+   "file": "01-black-ed814c.3mf",
+   "image": "01-black-ed814c.png",
    "color": "black",
    "preset": "0.20mm Strength @BBL X1C",
-   "minutes": 33,
-   "grams": 7.7,
+   "minutes": 144,
+   "grams": 98.3,
    "overnight": false,
    "parts": [
+    {
+     "file": "fake_forearm.stl",
+     "label": "가짜 아래팔 끝",
+     "module": "fake_forearm",
+     "count": 1,
+     "sha": "7083b93d9760",
+     "height_mm": 58.2,
+     "base_mm2": 3120,
+     "overhang_mm2": 55,
+     "slender": false
+    },
     {
      "file": "carrier.stl",
      "label": "서보 받침",

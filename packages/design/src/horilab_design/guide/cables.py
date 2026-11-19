@@ -110,7 +110,7 @@ def longest(rod: Rod) -> float:
 def servo_rod(spare: float = SPARE) -> Rod:
     """J5를 넘는 서보 선 (studies/wiring.py의 crossings): 손목 1 앞벽의 가운데 홈(살 쪽, 180°)에서 축 쪽으로 나와
     테에 감기고, 손목 2의 뒷덮개 쪽 모서리로 들어간다."""
-    c = w.crossings()["J5"]
+    c = w.j5_in_layer()
     a_out, a_in = math.radians(c.exit_az), math.radians(c.entry_az)
     rod = Rod(
         start=(c.exit_r * math.cos(a_out), c.exit_r * math.sin(a_out)),

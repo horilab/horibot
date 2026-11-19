@@ -18,6 +18,9 @@ FIRST_JOINT = PrintGuide(
 CABLE_MOTION = PrintGuide(
     id="cable-motion-print",
     title="선 돌려 보기 출력",
-    sub="J6 서보 받침과 뒷덮개 둘 (J5, J6). 부러진 서보 받침은 다시 뽑는다 (여분 하나 더)",
-    bundles=("cable-motion", "cable-motion-carrier"),
+    sub=(
+        "J6 서보 받침과 뒷덮개 둘 (J5, J6). 300 mm 선 시험의 가짜 아래팔 끝과, 부러진 받침을 바꿀 새 서보 받침 둘. "
+        "선이 영점 핀 귀를 피하는 손목 2의 새 뒷덮개"
+    ),
+    bundles=("cable-motion", "cable-motion-300", "wrist2-cover"),
 )
