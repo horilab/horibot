@@ -62,7 +62,10 @@ class Flex:
 class ScenePart:
     """장면에 놓인 부품 하나. key는 부품 목록(catalog)의 키, count가 거짓이면 쓰는 것의 개수에 넣지 않는다
     (서보에 딸린 혼처럼 다른 부품의 일부). flex가 있으면 화면이 형상 대신 그 선을 관절 각에 맞춰 그린다 (shape는
-    그 선이 지나는 상자로, 부품 고르기에만 쓴다)."""
+    그 선이 지나는 상자로, 부품 고르기에만 쓴다).
+
+    moving은 장면의 관절(첫째 관절)과 같이 도는 부품이다. moving2는 그 자식 몸통 속 관절(둘째 관절, Guide.axis2)과도
+    같이 도는 부품이다 (예: J5 장면에서 J6의 원판과 도구). moving2인 부품은 moving도 참이어야 한다."""
 
     name: str
     shape: Compound
@@ -71,6 +74,7 @@ class ScenePart:
     moving: bool = False
     count: bool = True
     flex: Flex | None = None
+    moving2: bool = False
 
 
 @dataclass(frozen=True)
@@ -152,6 +156,9 @@ class Step:
     주면 그것만 보인다 (따로 놓고 하는 단계). 이번 부품(색을 입히는 것)은 adds에서 still을 뺀 것과 움직이는
     부품이다. 3D는 보이는 부품이 다 들어오게 맞추고, zoom을 주면 그만큼 다가가며 center(장면 좌표)를 가운데에 둔다
     (작은 자리를 볼 때).
+
+    joint와 turn은 첫째 관절의 각과 돌리는 범위, joint2와 turn2는 둘째 관절(Guide.axis2)의 것이다 [°]. 둘 다 돌리면
+    첫째 관절을 돌린 뒤 둘째 관절을 돌린다.
     """
 
     id: str
@@ -181,12 +188,18 @@ class Step:
     turn: tuple[float, float] | None = None
     zoom: float = 1.0
     center: Vec | None = None
+    joint2: float = 0.0
+    turn2: tuple[float, float] | None = None
 
 
 @dataclass(frozen=True)
 class Guide:
     """안내 하나. scene은 장면 부품을 만드는 함수(설계 코드를 부른다), items는 공통 목록에 더할 이 안내의 출력
-    부품, bundle은 출력 묶음 이름(출력 부품마다 어느 판에서 나오는지와 뽑았는지를 그 묶음의 출력 안내에서 찾는다)."""
+    부품, bundle은 출력 묶음 이름(출력 부품마다 어느 판에서 나오는지와 뽑았는지를 그 묶음의 출력 안내에서 찾는다).
+
+    printed_before는 앞의 다른 묶음에서 이미 뽑아 둔 출력 부품의 키다 (이 안내의 묶음에 없어도 되고, 판 상태 없이
+    보인다). axis2는 둘째 관절의 축(지나는 점, 방향)이다: 첫째 관절 각 0의 장면 좌표이고, 둘째 관절 각 q는 이 방향
+    둘레로 -q만큼 돈 것이다 (첫째 관절과 같은 뜻, parts/joint.py의 turned)."""
 
     id: str
     kind: str
@@ -196,6 +209,8 @@ class Guide:
     steps: tuple[Step, ...]
     items: dict[str, Item] = field(default_factory=dict)
     bundle: str = ""
+    printed_before: tuple[str, ...] = ()
+    axis2: tuple[Vec, Vec] | None = None
 
 
 @dataclass(frozen=True)

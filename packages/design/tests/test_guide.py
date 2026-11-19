@@ -20,7 +20,7 @@ from horilab_design.guide.build import (
     resolve,
     write_site,
 )
-from horilab_design.guide.guides import first_joint, prints
+from horilab_design.guide.guides import first_joint, prints, wrist_end
 from horilab_design.guide.meshes import pack, tessellate, unpack
 from horilab_design.guide.model import Guide, Move, PrintGuide, ScenePart, Step, View
 from horilab_design.parts import joint as j
@@ -145,6 +145,77 @@ def test_first_joint_guide_counts_match_the_parts_list() -> None:
     }
 
 
+def test_second_joint_parts_turn_inside_the_first() -> None:
+    def scene() -> list[ScenePart]:
+        return [
+            ScenePart("집", solid(Box(40.0, 40.0, 40.0)), "wrist_body", "body"),
+            ScenePart(
+                "자식", solid(Pos(0, 50, 0) * Box(30.0, 30.0, 30.0)), "wrist_body", "body", True
+            ),
+            ScenePart(
+                "도구",
+                solid(Pos(30, 50, 0) * Box(10.0, 5.0, 5.0)),
+                "nut_m3",
+                "metal",
+                True,
+                moving2=True,
+            ),
+        ]
+
+    steps = (
+        _work("all", adds=("집", "자식", "도구")),
+        replace(_work("turn"), turn2=(-90.0, 90.0), uses=()),
+    )
+    axis = ((0.0, 50.0, 0.0), (1.0, 0.0, 0.0))
+    items = first_joint.GUIDE.items
+    guide = Guide("two", "assembly", "둘째 관절", "시험", scene, steps, items=items, axis2=axis)
+    data = guide_json(resolve(guide), {})
+    assert [row["m"] for row in data["scene"]] == [False, True, 2]
+    assert data["axis2"] == {"o": [0.0, 50.0, 0.0], "d": [1.0, 0.0, 0.0]}
+    assert data["steps"][1]["turn2"] == [-90.0, 90.0] and data["steps"][0]["turn2"] is None
+    with pytest.raises(GuideError, match="axis2가 없"):
+        resolve(replace(guide, axis2=None))
+
+
+@pytest.mark.slow
+def test_wrist_end_guide_counts_match_the_parts_list() -> None:
+    prints_ = [prints.FIRST_JOINT, prints.WRIST_END]
+    r = resolve(wrist_end.GUIDE, prints_)
+    # 손목 끝 판의 열세 개와 뽑아 둔 서보 받침 하나 (조립해 둔 첫 관절의 부품은 세지 않는다)
+    printed = {k: n for k, n in r.totals.items() if r.items[k].kind == "printed"}
+    assert printed == {
+        "carrier": 1,
+        "retainer": 1,
+        "flange_disc": 1,
+        "hub_plate": 1,
+        "tool_adapter": 1,
+        "d405_mount": 1,
+        "gripper_frame": 1,
+        "gripper_floor": 1,
+        "gripper_pinion": 1,
+        "gripper_finger": 2,
+        "gripper_tub": 1,
+        "gripper_slider": 2,
+    }
+    hardware = {k: n for k, n in r.totals.items() if r.items[k].kind == "hardware"}
+    assert hardware == {
+        "nut_m3": 16,
+        "washer_m3": 1,
+        "m3x6": 6,
+        "m3x8": 9,
+        "m3x10": 3,
+        "m3x12": 4,
+        "m3x20": 4,
+    }
+    assert r.totals["pin_tool"] == 2 and r.totals["pin_msh3_20"] == 1
+    # 서보는 ID가 이름에 있고, 그리퍼 서보는 ID 11이다
+    assert "ID 11" in wrist_end.GUIDE.items[wrist_end.GRIP_ITEM.key].name
+    kinds = [s["kind"] for s in r.steps]
+    assert kinds[0] == "prep" and kinds[-1] == "end" and kinds.count("work") == 56
+    # 이미 뽑아 둔 서보 받침 말고는 출력 부품이 모두 손목 끝 판에서 나온다
+    assert all(r.items[k].file in r.plates for k in printed if k != "carrier")
+
+
 def test_servo_cable_wraps_outside_the_rim_with_its_ends_held() -> None:
     rod = cables.servo_rod()
     # 손목 2로 들어가는 자리가 살에서 156° 쪽이라 -163°에서 가장 길게 감긴다. 선은 그 길이에 맞춘다 (0031)
@@ -246,7 +317,12 @@ def test_built_site_has_every_file_its_guides_need(tmp_path: Path) -> None:
     page = (tmp_path / "index.html").read_text(encoding="utf-8")
     assert "/*@CSS@*/" not in page and "/*@JS@*/" not in page and "<title>작업 안내</title>" in page
     catalog = json.loads((tmp_path / "data" / "catalog.json").read_text(encoding="utf-8"))
-    assert [g["id"] for g in catalog["guides"]] == ["first-joint", prints.FIRST_JOINT.id]
+    assert [g["id"] for g in catalog["guides"]] == [
+        "first-joint",
+        prints.FIRST_JOINT.id,
+        prints.WRIST_END.id,
+        wrist_end.GUIDE.id,
+    ]
     for row in catalog["guides"]:
         guide = json.loads((tmp_path / row["file"]).read_text(encoding="utf-8"))
         # 처음 화면의 진행은 확인 칸(판은 Claude의 기록)으로 셈한다: 작업 단계와 판은 모두 track에 든다
@@ -285,5 +361,6 @@ def test_site_passes_its_selftest_in_a_headless_browser(tmp_path: Path) -> None:
     if not report["three"]:
         pytest.skip("three.js를 받지 못했다 (인터넷)")
     assert selftest.problems(report) == []
-    steps = len(first_joint.STEPS) + len(print_json(prints.FIRST_JOINT)["steps"])
+    plates = sum(len(print_json(p)["steps"]) for p in (prints.FIRST_JOINT, prints.WRIST_END))
+    steps = len(first_joint.STEPS) + plates + len(wrist_end.STEPS)
     assert sum(g["steps"] for g in report["guides"]) == steps

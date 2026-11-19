@@ -24,3 +24,10 @@ CABLE_MOTION = PrintGuide(
     ),
     bundles=("cable-motion", "cable-motion-300", "wrist2-cover"),
 )
+
+WRIST_END = PrintGuide(
+    id="wrist-end-print",
+    title="손목 끝 출력",
+    sub="J6 플랜지와 도구 어댑터 판, 평행 그리퍼, D405 받침 (클립 없이, D405 선을 볼 시험용)",
+    bundles=("wrist-end",),
+)

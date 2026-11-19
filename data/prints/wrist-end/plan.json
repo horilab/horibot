@@ -1,0 +1,141 @@
+{
+ "name": "wrist-end",
+ "made": "2026-11-19T12:31:12",
+ "studio": "02.09.01.70",
+ "profiles": "02.09.00.81",
+ "bed_type": "Textured PEI Plate",
+ "plates": [
+  {
+   "file": "01-black-d6e8c3.3mf",
+   "image": "01-black-d6e8c3.png",
+   "color": "black",
+   "preset": "0.20mm Strength @BBL X1C",
+   "minutes": 218,
+   "grams": 98.0,
+   "overnight": false,
+   "parts": [
+    {
+     "file": "gripper_frame.stl",
+     "label": "그리퍼 몸통",
+     "module": "gripper",
+     "count": 1,
+     "sha": "81ad6629f4a1",
+     "height_mm": 40.2,
+     "base_mm2": 1256,
+     "overhang_mm2": 0,
+     "slender": false
+    },
+    {
+     "file": "d405_mount.stl",
+     "label": "D405 받침",
+     "module": "camera_mount",
+     "count": 1,
+     "sha": "71d2d2ea3eff",
+     "height_mm": 34.0,
+     "base_mm2": 291,
+     "overhang_mm2": 34,
+     "slender": false
+    },
+    {
+     "file": "gripper_floor.stl",
+     "label": "그리퍼 바닥판",
+     "module": "gripper",
+     "count": 1,
+     "sha": "d93245bb6dc9",
+     "height_mm": 2.4,
+     "base_mm2": 2512,
+     "overhang_mm2": 0,
+     "slender": false
+    },
+    {
+     "file": "gripper_tub.stl",
+     "label": "랙 집",
+     "module": "gripper",
+     "count": 1,
+     "sha": "cf7536e2d173",
+     "height_mm": 12.8,
+     "base_mm2": 2399,
+     "overhang_mm2": 0,
+     "slender": false
+    },
+    {
+     "file": "flange_disc.stl",
+     "label": "플랜지 원판",
+     "module": "flange",
+     "count": 1,
+     "sha": "f9b403836f37",
+     "height_mm": 14.4,
+     "base_mm2": 1757,
+     "overhang_mm2": 0,
+     "slender": false
+    },
+    {
+     "file": "tool_adapter.stl",
+     "label": "도구 어댑터 판",
+     "module": "flange",
+     "count": 1,
+     "sha": "8a87cbc06a5e",
+     "height_mm": 6.2,
+     "base_mm2": 1353,
+     "overhang_mm2": 0,
+     "slender": false
+    },
+    {
+     "file": "retainer.stl",
+     "label": "누름 틀",
+     "module": "wrist",
+     "count": 1,
+     "sha": "b3d422352a90",
+     "height_mm": 16.6,
+     "base_mm2": 377,
+     "overhang_mm2": 70,
+     "slender": false
+    },
+    {
+     "file": "gripper_slider.stl",
+     "label": "손가락 받침",
+     "module": "gripper",
+     "count": 2,
+     "sha": "98aba65e8814",
+     "height_mm": 10.2,
+     "base_mm2": 471,
+     "overhang_mm2": 0,
+     "slender": false
+    },
+    {
+     "file": "hub_plate.stl",
+     "label": "허브 판",
+     "module": "wrist",
+     "count": 1,
+     "sha": "271224fcea79",
+     "height_mm": 2.8,
+     "base_mm2": 778,
+     "overhang_mm2": 0,
+     "slender": false
+    },
+    {
+     "file": "gripper_pinion.stl",
+     "label": "피니언",
+     "module": "gripper",
+     "count": 1,
+     "sha": "2f00c49b9230",
+     "height_mm": 5.6,
+     "base_mm2": 358,
+     "overhang_mm2": 0,
+     "slender": false
+    },
+    {
+     "file": "gripper_finger.stl",
+     "label": "손가락",
+     "module": "gripper",
+     "count": 2,
+     "sha": "45381182dc6e",
+     "height_mm": 10.0,
+     "base_mm2": 480,
+     "overhang_mm2": 9,
+     "slender": false
+    }
+   ]
+  }
+ ]
+}

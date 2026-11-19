@@ -179,7 +179,7 @@ def _check_step_text(gid: str, step: Step) -> None:
             raise GuideError(f"{where}: 작업 단계에는 다 하면 확인할 것이 있어야 한다")
         if step.view is None:
             raise GuideError(f"{where}: 작업 단계에는 손에 드는 방향(view)이 있어야 한다")
-        if not (step.adds or step.moves or step.turn or step.uses or step.spots):
+        if not (step.adds or step.moves or step.turn or step.turn2 or step.uses or step.spots):
             raise GuideError(f"{where}: 이 단계에서 하는 일(나타나는 부품, 움직임, 쓰는 것)이 없다")
     if step.kind == "end" and step.view is None:
         raise GuideError(f"{where}: 끝 단계에도 손에 드는 방향(view)이 있어야 한다")
@@ -214,13 +214,22 @@ def resolve(guide: Guide, prints: Sequence[PrintGuide] = (), plans: Path = PLANS
             raise GuideError(
                 f"{guide.id}: 서보 '{it.name}'에 ID가 없다. 안내의 items에서 이름에 ID를 쓴다"
             )
+    # 둘째 관절과 같이 도는 부품은 그 축이 있어야 하고, 첫째 관절과도 같이 돈다 (화면에서 그 안에 든다)
+    for p in parts:
+        if p.moving2 and (guide.axis2 is None or not p.moving):
+            raise GuideError(
+                f"{guide.id}: '{p.name}'는 둘째 관절과 같이 도는데 axis2가 없거나 moving이 거짓이다"
+            )
+    if guide.axis2 is None and any(s.joint2 or s.turn2 for s in guide.steps):
+        raise GuideError(f"{guide.id}: 둘째 관절을 돌리는 단계가 있는데 axis2가 없다")
     plates = plate_refs(guide.bundle, prints, plans) if guide.bundle else {}
     warnings: list[str] = []
-    used_printed = {p.key for p in parts if items[p.key].kind == "printed"}
+    # 이 안내에서 새로 쓰는 출력 부품(개수에 드는 것)만 묶음에서 찾는다. 이미 조립해 둔 부품은 다른 묶음에서 뽑았다
+    used_printed = {p.key for p in parts if items[p.key].kind == "printed" and p.count}
     if guide.bundle and not plates:
         warnings.append(f"출력 묶음 '{guide.bundle}'을 담은 출력 안내가 없어 판을 잇지 않았다")
     for key in sorted(used_printed):
-        if plates and items[key].file not in plates:
+        if plates and items[key].file not in plates and key not in guide.printed_before:
             raise GuideError(
                 f"{guide.id}: 출력 부품 '{items[key].file}'가 묶음 '{guide.bundle}'의 판에 없다"
             )
@@ -346,6 +355,8 @@ def resolve(guide: Guide, prints: Sequence[PrintGuide] = (), plans: Path = PLANS
                 "kit": kit,
                 "joint": step.joint,
                 "turn": list(step.turn) if step.turn else None,
+                "joint2": step.joint2,
+                "turn2": list(step.turn2) if step.turn2 else None,
                 "zoom": step.zoom,
                 "center": _r(step.center) if step.center else None,
             }
@@ -452,7 +463,8 @@ def guide_json(r: Resolved, meshes: dict[str, Mesh]) -> dict[str, Any]:
                 "mesh": m.id,
                 "t": _r(m.origin, 4),
                 "c": p.color,
-                "m": p.moving,
+                # 2면 둘째 관절과도 같이 돈다 (화면이 첫째 관절 안의 축 둘레로 다시 돌린다)
+                "m": 2 if p.moving2 else p.moving,
             }
         )
     used = {row[0] for s in r.steps for row in s["kit"]} | {
@@ -465,6 +477,7 @@ def guide_json(r: Resolved, meshes: dict[str, Mesh]) -> dict[str, Any]:
         "title": g.title,
         "sub": g.sub,
         "bundle": f"build/print/{g.bundle}/" if g.bundle else "",
+        "axis2": {"o": _r(g.axis2[0]), "d": _r(g.axis2[1])} if g.axis2 else None,
         "items": {k: _item_json(r.items[k], r.parts, r.plates) for k in sorted(used)},
         "scene": scene,
         "meshes": sorted({row["mesh"] for row in scene if "mesh" in row}),

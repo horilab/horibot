@@ -113,6 +113,9 @@
     scale: '<rect x="5" y="19" width="34" height="6" rx="2" fill="currentColor"/><path d="M9 15H35" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/><path d="M22 15V19" stroke="currentColor" stroke-width="2"/>',
     band: '<ellipse cx="22" cy="15" rx="15" ry="8" fill="none" stroke="currentColor" stroke-width="2.6"/>',
     ruler: '<rect x="3" y="9" width="38" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="M9 9V14M15 9V16M21 9V14M27 9V16M33 9V14" stroke="currentColor" stroke-width="1.6"/>',
+    pliers: '<path d="M3 9L20 14L3 21M20 14L41 13.2M20 16L41 16.8" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="20" cy="15" r="2.2" fill="currentColor"/>',
+    phone: '<rect x="14" y="3" width="16" height="24" rx="2.5" fill="none" stroke="currentColor" stroke-width="2.4"/><circle cx="22" cy="23" r="1.4" fill="currentColor"/>',
+    book: '<path d="M6 8H20a2 2 0 0 1 2 2V24a2 2 0 0 0-2-2H6Z M38 8H24a2 2 0 0 0-2 2V24a2 2 0 0 1 2-2H38Z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/>',
   };
   const THUMBS = {};
   function itemOf(key) { return (S.guide && S.guide.items[key]) || { name: key, kind: 'tool', meta: '' }; }
@@ -727,8 +730,10 @@
       const fill = new T.DirectionalLight(0xffffff, 0.22); fill.position.set(220, -120, -240); scene.add(fill);
       const root = new T.Group(); scene.add(root);
       const spin = new T.Group(); root.add(spin);  // 자식 쪽 부품: 관절 각만큼 출력축(y) 둘레로 돈다
+      // 둘째 관절(자식 몸통 속의 관절, 예: J5 장면의 J6)의 부품: 첫째 관절과 같이 돌고, 안내 데이터의 axis2 둘레로 또 돈다
+      const spin2 = new T.Group(); spin.add(spin2);
       G = {
-        T: T, renderer: renderer, scene: scene, camera: camera, controls: controls, root: root, spin: spin, stage: stage, canvas: canvas, items: [],
+        T: T, renderer: renderer, scene: scene, camera: camera, controls: controls, root: root, spin: spin, spin2: spin2, axis2: new T.Vector3(1, 0, 0), stage: stage, canvas: canvas, items: [],
         clip: new T.Plane(new T.Vector3(0, 0, -1), 0.01),
         arrowMat: new T.MeshBasicMaterial({ color: 0xe0560b, depthTest: false, transparent: true, opacity: 0.92 }),
         spotMat: new T.MeshBasicMaterial({ color: 0xe0560b, depthTest: false, transparent: true, opacity: 0.95 }),
@@ -827,18 +832,24 @@
     G.spin.rotation.set(0, -deg(a), 0);
     G.items.forEach((it) => { if (it.flex) shapeFlex(it.flex, a); });
   }
+  function setJoint2(b) { G.spin2.quaternion.setFromAxisAngle(G.axis2, -deg(b)); }
   function buildItems() {
     const T = G.T;
     clearItems();
+    // 둘째 관절의 축: 지나는 점에 spin2를 두고, 그 부품은 그 점에서 잰 자리에 놓는다
+    const ax = S.guide.axis2;
+    G.spin2.position.set(0, 0, 0); G.spin2.quaternion.identity(); G.axis2.set(1, 0, 0);
+    if (ax) { G.spin2.position.fromArray(ax.o); G.axis2.fromArray(ax.d).normalize(); }
     G.items = S.guide.scene.map((p, i) => {
       const flex = p.flex ? makeFlex(p.flex) : null;
       const M = flex || MESH[p.mesh];
       const mat = newMat(p.c), mesh = new T.Mesh(M.g, mat);
       const emat = new T.LineBasicMaterial({ color: 0x6f7a87 });
       if (!flex) mesh.add(new T.LineSegments(M.e, emat));
-      mesh.userData.i = i; (p.m ? G.spin : G.root).add(mesh);
-      return { i: i, p: p, mesh: mesh, mat: mat, emat: emat, hidden: false, t: new T.Vector3().fromArray(p.t), ctr: M.box.getCenter(new T.Vector3()), box: M.box,
-        basePos: new T.Vector3(), baseQuat: new T.Quaternion(), flex: flex };
+      const lv = p.m === 2 ? 2 : p.m ? 1 : 0;
+      mesh.userData.i = i; (lv === 2 ? G.spin2 : lv ? G.spin : G.root).add(mesh);
+      return { i: i, p: p, lv: lv, off: lv === 2 ? G.spin2.position.clone() : new T.Vector3(), mesh: mesh, mat: mat, emat: emat, hidden: false,
+        t: new T.Vector3().fromArray(p.t), ctr: M.box.getCenter(new T.Vector3()), box: M.box, basePos: new T.Vector3(), baseQuat: new T.Quaternion(), flex: flex };
     });
   }
   function styleAll() {
@@ -883,17 +894,20 @@
     G.items.forEach((it) => {
       it.hidden = false;
       const pl = places[it.i];
-      if (pl) { it.baseQuat.copy(holdQuat(pl)); it.basePos.fromArray(pl.pos).sub(it.ctr.clone().applyQuaternion(it.baseQuat)); }
-      else { it.baseQuat.identity(); it.basePos.copy(it.t); }
+      if (pl) { it.baseQuat.copy(holdQuat(pl)); it.basePos.fromArray(pl.pos).sub(it.ctr.clone().applyQuaternion(it.baseQuat)).sub(it.off); }
+      else { it.baseQuat.identity(); it.basePos.copy(it.t).sub(it.off); }
       it.mesh.quaternion.copy(it.baseQuat); it.mesh.position.copy(it.basePos);
     });
     G.joint = step.joint || 0;
     setJoint(G.joint);
+    setJoint2(step.joint2 || 0);
     G.moves = step.moves.map((m) => ({ idx: m.p, by: new T.Vector3().fromArray(m.by), delay: m.delay || 0 }));
     const last = G.moves.reduce((a, m) => Math.max(a, m.delay + MOVE_S), 0);
-    let turn = null, end = last;
-    if (step.turn) { turn = { a: step.turn[0], b: step.turn[1], t0: last, t1: last + TURN_S }; end = turn.t1; }
-    G.tl = end > 0 ? { start: LEAD_S, end: LEAD_S + end, period: LEAD_S + end + HOLD_S, turn: turn } : null;
+    // 돌리기: 첫째 관절(turn)을 돌린 뒤 둘째 관절(turn2)을 돌린다
+    let turn = null, turn2 = null, end = last;
+    if (step.turn) { turn = { a: step.turn[0], b: step.turn[1], t0: end, t1: end + TURN_S }; end = turn.t1; }
+    if (step.turn2) { turn2 = { a: step.turn2[0], b: step.turn2[1], t0: end, t1: end + TURN_S }; end = turn2.t1; }
+    G.tl = end > 0 ? { start: LEAD_S, end: LEAD_S + end, period: LEAD_S + end + HOLD_S, turn: turn, turn2: turn2 } : null;
     G.playing = !!G.tl && !REDUCED && !SELFTEST;
     G.clock = G.tl && (REDUCED || SELFTEST) ? G.tl.end : 0;
     G.scrubbing = false; G.lastPct = -1;
@@ -970,15 +984,21 @@
     const T = G.T, box = new T.Box3(), v = new T.Vector3();
     const angles = step.turn ? [step.turn[0], step.turn[1], 0] : [step.joint || 0];
     const spins = angles.map((a) => new T.Quaternion().setFromAxisAngle(new T.Vector3(0, 1, 0), -deg(a)));
+    const angles2 = step.turn2 ? [step.turn2[0], step.turn2[1], 0] : [step.joint2 || 0];
+    const spins2 = angles2.map((b) => new T.Quaternion().setFromAxisAngle(G.axis2, -deg(b)));
+    const still = [new T.Quaternion()];
     G.items.forEach((it) => {
       if (!G.vis.has(it.i)) return;
       const offs = [new T.Vector3()];
       G.moves.forEach((m) => { if (m.idx.indexOf(it.i) >= 0) offs.push(m.by); });
-      const rots = it.p.m ? spins : [new T.Quaternion()];
+      const rots = it.lv ? spins : still, rots2 = it.lv === 2 ? spins2 : still;
       for (let k = 0; k < 8; k += 1) {
         v.set(k & 1 ? it.box.max.x : it.box.min.x, k & 2 ? it.box.max.y : it.box.min.y, k & 4 ? it.box.max.z : it.box.min.z);
         v.applyQuaternion(it.baseQuat).add(it.basePos);
-        offs.forEach((o) => rots.forEach((r) => box.expandByPoint(v.clone().add(o).applyQuaternion(r).applyQuaternion(q))));
+        offs.forEach((o) => rots2.forEach((r2) => {
+          const w = v.clone().add(o).applyQuaternion(r2).add(it.off);
+          rots.forEach((r) => box.expandByPoint(w.clone().applyQuaternion(r).applyQuaternion(q)));
+        }));
       }
     });
     if (box.isEmpty()) box.set(new T.Vector3(-50, -50, -50), new T.Vector3(50, 50, 50));
@@ -1071,6 +1091,10 @@
     if (tl.turn) {
       let k = (t - tl.start - tl.turn.t0) / (tl.turn.t1 - tl.turn.t0); k = k < 0 ? 0 : k > 1 ? 1 : k;
       setJoint(tl.turn.a + (tl.turn.b - tl.turn.a) * ease(k));
+    }
+    if (tl.turn2) {
+      let k = (t - tl.start - tl.turn2.t0) / (tl.turn2.t1 - tl.turn2.t0); k = k < 0 ? 0 : k > 1 ? 1 : k;
+      setJoint2(tl.turn2.a + (tl.turn2.b - tl.turn2.a) * ease(k));
     }
     const done = t >= tl.end - 1e-6;
     G.arrows.forEach((a) => { a.visible = !done; });
