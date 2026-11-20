@@ -61,6 +61,15 @@
 
 서보를 쓰는 팔 중에 J1에 크로스 롤러 베어링을 쓰거나 ST-3120을 쓰는 예는 찾지 못했다.
 
+## 쉬는 자세
+
+전원을 끌 때 팔을 어떻게 두는지 찾아봤다 ([0037](decisions/0037-rest-pose.md)). 2026-11-21에 검색 결과의 요약으로 봤고, 원문은 열어 읽지 않았다.
+
+- UR: 관절마다 브레이크가 있다. 끌 때와 비상 정지 때 모터 전원을 끊기 전에 브레이크가 걸렸는지 확인하고, 브레이크가 고장 나면 그 관절이 팔을 버티지 못한다고 설명서에 적혀 있다 ([Safe Brake System](https://www.universal-robots.com/manuals/EN/HTML/SW5_24/Content/prod-serv-man/UR20/serv-man-safe-brake.htm)). 끌 때 팔이 처지는 UR10e 사용자에게 홈 자세 근처에 도구를 받치는 받침대를 만들라는 답이 있었다 ([포럼](https://forum.universal-robots.com/t/arm-drops-at-power-off/27343)).
+- Interbotix(Trossen) X 시리즈: 잠자는 자세(sleep pose)를 설정 파일에 두고, 토크를 끄기 전에 그 자세로 보낸다. 그 자세가 아니면 팔이 무너진다고 적혀 있다 ([xs_sdk](https://docs.trossenrobotics.com/interbotix_xsarms_docs/ros_interface/ros2/overview/xs_sdk.html), [ALOHA 켜고 끄기](https://docs.trossenrobotics.com/aloha_docs/operation/bringup_shutdown.html)). 그 자세에서 팔이 어디에 얹히는지는 찾지 못했다.
+- SO-101 (LeRobot): 연결을 끊으면 기본으로 토크를 끈다 (`disable_torque_on_disconnect`). 받침이나 쉬는 절차는 찾지 못했다 ([문서 미러](https://www.mintlify.com/huggingface/lerobot/robots/so-101)).
+- AL5D (취미용 서보 팔): 전원을 끄면 뻗은 팔이 떨어지니, 끄기 전에 천천히 쉬는 자세로 보내라는 답이 있었다 ([포럼](https://community.robotshop.com/forum/t/position-of-arm-when-power-is-off/25511)).
+
 ## 외형
 
 협동로봇처럼 보이게 하는 방법이다. 이 팔은 UR식으로 정했다 ([0019](decisions/0019-ur-look.md)).
