@@ -756,7 +756,7 @@ def offset_table(look: Look) -> None:
 
 
 LETTER_HEIGHT = 8.0 * MM  # 관 글자 높이 (0019, 어림)
-LETTER_DEPTH = 0.5 * MM  # 같은 색으로 파서 새기는 깊이 (0019)
+LETTER_DEPTH = 0.5 * MM  # 옆면에서 파낸 띠의 깊이: 옆면이 굽힘을 거의 받지 않는지 보는 값 (0019)
 
 
 def groove_stiffness_loss(
