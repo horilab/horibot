@@ -20,7 +20,7 @@ from horilab_design.guide.build import (
     resolve,
     write_site,
 )
-from horilab_design.guide.guides import first_joint, prints, wrist_end
+from horilab_design.guide.guides import base_measure, first_joint, prints, wrist_end
 from horilab_design.guide.meshes import pack, tessellate, unpack
 from horilab_design.guide.model import Guide, Move, PrintGuide, ScenePart, Step, View
 from horilab_design.parts import joint as j
@@ -318,6 +318,7 @@ def test_built_site_has_every_file_its_guides_need(tmp_path: Path) -> None:
     assert "/*@CSS@*/" not in page and "/*@JS@*/" not in page and "<title>작업 안내</title>" in page
     catalog = json.loads((tmp_path / "data" / "catalog.json").read_text(encoding="utf-8"))
     assert [g["id"] for g in catalog["guides"]] == [
+        base_measure.GUIDE.id,
         "first-joint",
         prints.FIRST_JOINT.id,
         prints.WRIST_END.id,
@@ -362,5 +363,5 @@ def test_site_passes_its_selftest_in_a_headless_browser(tmp_path: Path) -> None:
         pytest.skip("three.js를 받지 못했다 (인터넷)")
     assert selftest.problems(report) == []
     plates = sum(len(print_json(p)["steps"]) for p in (prints.FIRST_JOINT, prints.WRIST_END))
-    steps = len(first_joint.STEPS) + plates + len(wrist_end.STEPS)
+    steps = len(base_measure.STEPS) + len(first_joint.STEPS) + plates + len(wrist_end.STEPS)
     assert sum(g["steps"] for g in report["guides"]) == steps

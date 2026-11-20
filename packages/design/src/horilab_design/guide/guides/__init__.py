@@ -9,10 +9,11 @@
 
 from __future__ import annotations
 
-from horilab_design.guide.guides import first_joint, prints, wrist_end
+from horilab_design.guide.guides import base_measure, first_joint, prints, wrist_end
 from horilab_design.guide.model import Guide, PrintGuide
 
 ALL: tuple[Guide | PrintGuide, ...] = (
+    base_measure.GUIDE,
     first_joint.GUIDE,
     prints.FIRST_JOINT,
     prints.WRIST_END,
