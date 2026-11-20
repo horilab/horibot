@@ -147,6 +147,11 @@ class ServoBody(_Values):
     # 옆면 커넥터에 꽂은 플러그: 혼 쪽 끝 면 ~ 플러그의 먼 쪽 면, 뒷면 ~ 플러그의 앞쪽 면
     side_plug_far_mm: float | None = Field(default=None, gt=0)
     side_plug_front_mm: float | None = Field(default=None, gt=0)
+    # 혼 가운데 돋움과 나사 머리의 지름, 옆면 ~ 꽂은 플러그의 바깥 면, 옆면 ~ 꺾어 몸체를 따라 눕힌 선의 가장 바깥
+    horn_boss_diameter_mm: float | None = Field(default=None, gt=0)
+    horn_screw_head_diameter_mm: float | None = Field(default=None, gt=0)
+    side_plug_out_mm: float | None = Field(default=None, gt=0)
+    side_wire_out_mm: float | None = Field(default=None, gt=0)
 
 
 class ServoDepth(_Values):
@@ -219,6 +224,40 @@ class ServoPlug(_Values):
     thickness_mm: float = Field(gt=0)
 
 
+class PiCase(_Values):
+    """적층 아크릴 케이스(파이 덮개에 쓴다)의 판, 기둥, 나사, 팬 [mm]."""
+
+    plate_mm: tuple[float, float]  # 판 바깥 (긴 변, 짧은 변)
+    plate_thickness_mm: float = Field(gt=0)
+    hole_pitch_mm: tuple[float, float]  # 귀퉁이 구멍 가운데 사이 (긴 변 쪽, 짧은 변 쪽)
+    hole_diameter_mm: float = Field(gt=0)
+    post_body_mm: float = Field(gt=0)  # 황동 육각 기둥의 몸통 (한 끝 M3 수나사, 다른 끝 암나사)
+    post_stud_mm: float = Field(gt=0)  # 수나사가 몸통에서 나온 길이
+    post_thread_mm: float = Field(gt=0)  # 수나사 바깥 지름
+    fan_mm: tuple[float, float]  # 팬 한 변, 두께
+    fan_hole_pitch_mm: float = Field(gt=0)  # 팬 나사 구멍 가운데 사이
+    fan_hole_diameter_mm: float = Field(gt=0)
+    fan_opening_mm: float = Field(gt=0)  # 판의 팬 자리 둥근 구멍 지름
+    pi_screw_mm: tuple[float, float]  # 파이를 다는 M2.5 접시머리 나사 (나사산 바깥 지름, 전체 길이)
+    pi_spacer_mm: tuple[float, float]  # 파이 밑 나일론 링 (높이, 바깥 지름)
+
+
+class Desk(_Values):
+    """로봇을 놓을 책상 [mm]."""
+
+    back_gap_mm: float = Field(
+        gt=0
+    )  # 상판 뒤 가장자리 ~ 벽 (상판 윗면 높이). 책상을 옮겨 바꿀 수 있다
+
+
+class BasePlug(_Values):
+    """베이스에서 꽂는 플러그 [mm]. 사진으로 어림한 값은 measured.toml의 주석에 적는다."""
+
+    width_mm: float = Field(gt=0)  # 몸통 폭 (단자의 넓은 쪽과 나란히)
+    thickness_mm: float = Field(gt=0)  # 몸통 두께
+    out_mm: float = Field(gt=0)  # 끝까지 꽂았을 때 단자 면 ~ 딱딱한 끝 (고무 꼬리까지)
+
+
 class Measured(_Values):
     servo_mass_g: dict[ServoModel, float] = {}  # 서보 몸통 (혼 빼고)
     servo_horn_mass_g: dict[ServoModel, float] = {}  # 혼 두 개 (출력 혼과 뒷면 혼, 나사 포함)
@@ -234,6 +273,10 @@ class Measured(_Values):
     d405_usb2_plug: AnglePlug | None = None  # 그 선의 카메라 쪽 ㄱ자 플러그
     servo_plug: ServoPlug | None = None
     servo_back_screw: BackScrew | None = None
+    pi_case: PiCase | None = None  # 적층 아크릴 케이스 (파이 덮개)
+    desk: Desk | None = None
+    base_plug: dict[str, BasePlug] = {}  # 베이스에서 꽂는 플러그 (pi_power, lan, d405_usb_a)
+    pi_adapter_cable: ThinCable | None = None  # 파이와 서보 어댑터를 잇는 USB A–C 선
     bearing_mass_g: dict[str, float] = {}  # 베어링 하나의 무게 (호칭 번호마다, 예: "6806")
     # 조립한 무게 (조립 이름 → g). 팔 모델의 무게와 맞춰 본다
     assembly_mass_g: dict[str, float] = {}

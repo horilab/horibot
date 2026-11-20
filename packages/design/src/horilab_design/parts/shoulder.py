@@ -16,7 +16,8 @@ STS 관절(parts/joint.py)과 같은 짜임이고, 다른 점은 이렇다:
 방위각은 x-z 평면에서 +x가 0°, +z가 90°다.
 
 서보 치수: 두께, 혼의 높이 셋, 뒷면 베어링, 꽂은 플러그의 자리는 잰 값이다 (2026-11-15, data/measured.toml).
-몸체 단면(65 × 30), 축 자리, 뒷면 구멍 자리는 공식 도면 값이다. 재지 않은 값은 가정이고 ASSUMED에 모았다.
+몸체 단면(65 × 30), 축 자리, 뒷면 구멍 자리는 공식 도면 값이다 (2026-11-20에 재서 0.3 mm 안에서 맞는 것을 봤다).
+재지 않은 값은 가정이고 ASSUMED에 모은다.
 뽑기 전에 재서 숫자를 바꾼다 (형상은 그 숫자를 따라간다).
 
 조립 순서: 베어링 → 누름 틀(옆 홈에 너트 셋을 먼저 넣는다)과 앞줄 벽 나사 셋 → 출력 원판(귀의 머리 자리 막을
@@ -83,8 +84,8 @@ HORN_BOSS_H = _need(_BODY.horn_boss_to_back_mm) - _BODY.horn_to_back_mm
 HORN_HEAD_H = (
     _need(_BODY.horn_screw_to_back_boss_mm) - _need(_BODY.back_boss_mm) - _BODY.horn_to_back_mm
 )
-HORN_BOSS_R = 7.0  # 가정: 가운데 돋움의 반지름 (테 밑의 허브와 같은 지름 14로 보았다)
-HORN_HEAD_R = 3.0  # 가정: 가운데 나사 머리의 반지름 (지름 6 이하로 보았다)
+HORN_BOSS_R = _need(_BODY.horn_boss_diameter_mm) / 2  # 가운데 돋움의 반지름 (지름 13.94)
+HORN_HEAD_R = _need(_BODY.horn_screw_head_diameter_mm) / 2  # 가운데 나사 머리의 반지름 (지름 5.36)
 # 뒷면 가운데: 보스에 꽉 끼어 남은 베어링 (바깥 지름 11.17, 면이 뒷면에서 4.24)
 BOSS_R = _need(_BODY.back_bearing_diameter_mm) / 2
 BOSS_TIP = -HT - _need(_BODY.back_boss_mm)
@@ -102,8 +103,10 @@ _PLUG_X0 = NEAR - _need(_BODY.side_plug_far_mm)
 _PLUG_Y1 = -HT + _need(_BODY.side_plug_front_mm)
 CONN_X = (_PLUG_X0, _PLUG_X0 + _PLUG.width_mm)
 CONN_Y = (_PLUG_Y1 - _PLUG.thickness_mm, _PLUG_Y1)
-PLUG_OUT = 4.2  # 가정: 꽂은 플러그가 옆면에서 나온 길이 (STS 서보의 뒷면 커넥터에서 본 값)
-WIRE_OUT = 9.2  # 가정: 플러그 끝에서 꺾여 내려가는 선의 바깥 (옆면에서)
+PLUG_OUT = _need(_BODY.side_plug_out_mm)  # 꽂은 플러그가 옆면에서 나온 길이 (2.74)
+WIRE_OUT = _need(
+    _BODY.side_wire_out_mm
+)  # 플러그 끝에서 꺾여 몸체를 따라 눕힌 선의 바깥, 옆면에서 (8.68)
 
 # ---- 공차 (공차 시험편 값: data/measured.toml. 집은 흰색, 속 부품은 검정이다) ----
 BEARING_BORE = _need(
@@ -116,13 +119,9 @@ JOURNAL_D = _need(_BLACK.bearing_6808_shaft_mm)  # 검정, 안쪽 링 속 저널
 # 도면 값이라 M3 구멍(0.1)보다 넉넉히 둔다. 머리(지름 4.5쯤)는 구멍 둘레에 0.7 폭으로 앉는다
 M25_FREE = 3.1
 M25_HEAD = 2.0  # M2.5 둥근머리의 높이
-# 재지 않아 가정으로 둔 값. 뽑기 전에 재서 바꾼다 (docs/status.md의 사용자 순서)
-ASSUMED = (
-    "HORN_BOSS_R (혼 가운데 돋움의 반지름 7.0)",
-    "HORN_HEAD_R (혼 가운데 나사 머리의 반지름 3.0 이하)",
-    "PLUG_OUT, WIRE_OUT (옆면 플러그가 나온 길이 4.2와 꺾인 선 9.2: STS 값)",
-    "BACK_HOLES와 몸체 단면 65 × 30 (도면 값)",
-)
+# 재지 않아 가정으로 둔 값. 뽑기 전에 재서 바꾼다 (docs/status.md의 사용자 순서). 2026-11-20에 모두 쟀다:
+# BACK_HOLES와 몸체 단면은 도면 값과 0.3 mm 안에서 맞아 도면 값을 그대로 쓴다 (data/measured.toml)
+ASSUMED: tuple[str, ...] = ()
 PROVISIONAL = ASSUMED  # 다른 부품 모듈과 같은 이름
 
 # ---- 베어링과 축 방향 쌓임 ----
@@ -201,7 +200,7 @@ COVER_PILLAR = (
 
 # ---- 목 (J1 몸통의 윗부분) ----
 NECK_TOP_X = -8.0  # 목 상자가 원통 속에서 시작하는 x
-# 목 안쪽 반폭 24.5: 옆면 15 + 꺾인 선의 바깥 9.2(가정) + 틈 0.3. 선이 더 나오면 목이 그만큼 넓어진다
+# 목 안쪽 반폭 23.98: 옆면 15 + 꺾인 선의 바깥 8.68 + 틈 0.3. 선이 더 나오면 목이 그만큼 넓어진다
 # (10.7을 넘으면 목이 원통보다 넓어져 배치를 다시 본다)
 NECK_IN = HW + WIRE_OUT + 0.3
 NECK_HW = NECK_IN + 2.6  # 목 바깥 반폭 27.1
@@ -745,7 +744,7 @@ def report() -> None:
         f"출력 원판 {SEAM:.2f} ~ {ATOP:.2f}, 베어링 {B0:.2f} ~ {B0 + BRG_B:.2f}, 길이 {ATOP - BACK_OUT:.1f}, "
         f"J1 축에서 {BACK_OUT - J1_AXIS_Y:.1f} ~ {ATOP - J1_AXIS_Y:.1f}"
     )
-    print("가정한 값 (뽑기 전에 잰다): " + "; ".join(ASSUMED))
+    print("가정한 값 (뽑기 전에 잰다): " + ("; ".join(ASSUMED) or "없음"))
     print("\n뽑는 부품 (무게는 뽑아서 잰 부품에 맞춘 어림, 걸침은 바닥에 닿지 않고 아래를 보는 면)")
     made = printed()
     for name, (shape, up, color, preset) in made.items():
