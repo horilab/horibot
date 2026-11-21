@@ -179,15 +179,38 @@ RUN_X = -MOUNT_W / 2 - WIRE_D / 2 - 3.0
 LEAD_Y = j.BACK_OUT - WIRE_D / 2  # 뒷덮개 바깥 면에 붙어 내려가는 선의 가운데
 
 
+# 카메라 쪽에서 D405 선을 잡는 자리 (가정: 잡는 방법은 아직 정하지 않았다, status.md 설계 0). 선은 플러그에서 J5 쪽으로
+# 나와 바깥(J5 축에서 멀어지는 쪽)으로 굽어, 카메라 바닥면 밑에서 잡힌다. J5 축에서 HOLD_R, 손목 2의 발 바닥에서 위로
+# HOLD_H인 곳이다. 굽는 반지름은 선 지름의 4배(HOLD_BEND)다. 거기서부터가 J4·J5를 넘는 고리다 (studies/wiring.py)
+HOLD_R = 62.0
+HOLD_BEND = 4.0 * WIRE_D
+HOLD_H = (
+    (CAM_H / 2 - PLUG_TOP - PLUG_LEN) - HOLD_BEND - wrist.X_FOOT
+)  # 플러그 끝에서 한 번 굽어 내려온 높이 (6.7)
+
+
 def wire_run() -> list[tuple[float, float, float]]:
-    """플러그에서 나온 선이 손목 2 몸통을 따라 뒷덮개 가운데까지 가는 길 (서보 좌표의 꺾은선, 어림).
+    """플러그에서 나온 선이 카메라 쪽 잡는 자리까지 가는 길 (서보 좌표의 꺾은선, 가정).
+
+    플러그 끝에서 J5 쪽으로 곧게 나와, 바깥(J5 축에서 멀어지는 쪽, -z)으로 한 번 굽어 카메라 바닥면 밑을 지나
+    잡는 자리(HOLD_R, HOLD_H)에서 끝난다. 그 뒤는 J4·J5를 넘는 고리다 (관절 밖 길, 0031).
+    플러그에서 곧게 내려가면 J5의 이음매 둘레(멈춤 기둥과 귀가 쓸고 가는 반지름 33.4 mm 안)로 들어간다:
+    2026-11-22에 선이 낀 자리다. 그래서 잡는 자리를 바깥에 둔다.
+    """
+    ex, ey, ez = to_servo(wire_exit())
+    r = HOLD_BEND
+    arc = [
+        (ex - r * math.sin(math.radians(a)), ey, ez - r * (1.0 - math.cos(math.radians(a))))
+        for a in (0.0, 30.0, 60.0, 90.0)
+    ]
+    return [*arc, (ex - r, ey, -HOLD_R)]
+
+
+def wire_run_layer() -> list[tuple[float, float, float]]:
+    """선을 두 몸통 사이의 층으로 넘길 때의 길 (0031의 "안 될 때": 고리가 자꾸 걸리는 관절만 층으로 넘긴다).
 
     플러그 끝에서 J5 쪽으로 곧게 나와 받침의 발 밑에서 뒤로 돌고, 목의 뒤 모서리를 돌아 뒷덮개의 가운데에서
-    끝난다. 그 밑으로는 J5를 넘는 느슨한 구간이다 (studies/wiring.py).
-
-    선을 두 몸통 사이의 층으로 넘기던 때의 길이다. 배선 계산(studies/wiring.py)과 팔 전체 모델(studies/ur_arm.py)이
-    아직 이 길을 쓴다. 지금은 선이 관절 밖으로 넘고(0031), 플러그 밑에서는 받침의 클립이 문다 (clip, wire_stub).
-    클립 밑으로 가는 길은 그 둘을 고칠 때 그린다.
+    끝난다. 그 밑으로는 J5를 넘는 느슨한 구간이다 (studies/wiring.py의 d405_crossings).
     """
     ex, ey, ez = to_servo(wire_exit())
     side = -(j.NECK_HW + WIRE_D / 2 + 4.0)  # 목의 옆벽에서 조금 뜬 자리

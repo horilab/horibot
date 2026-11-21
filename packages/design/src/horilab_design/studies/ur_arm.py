@@ -46,7 +46,10 @@ from horilab_design.parts import flange as fp
 from horilab_design.parts import gripper as gp
 from horilab_design.parts import joint as jp
 from horilab_design.parts import links as lp
+from horilab_design.parts import pi_mount as pim
+from horilab_design.parts import rest_shelf as rs
 from horilab_design.parts import shoulder as sp
+from horilab_design.parts import wire_clamps as wc
 from horilab_design.parts import wrist as wp
 from horilab_design.robot import Joint, Robot, Vec3, rotation
 from horilab_design.statics import FLANGE, GRAVITY, PointMass, frame_poses, holding_torques
@@ -115,6 +118,7 @@ LINK_TUBE: dict[
 }
 # D405 받침 9.8과 선을 무는 클립 0.3 (parts/camera_mount.py), 나사 넷과 너트 둘 3.6
 D405_PLATE_MASS = 13.7 * G
+SHELF_MASS = 40.0 * G  # 쉬는 자세의 선반 (parts/rest_shelf.py, 나사 둘 포함. J1과 같이 돈다)
 # J6의 자식 쪽 (uv run python -m horilab_design.parts.flange): 플랜지 원판 12.6, 허브 판 1.3, 혼 2.0, 혼 볼트 넷 5.4,
 # 너트 둘 0.7, 멈춤 나사와 너트 1.2, 도구 핀 둘 2.2. 손나사 둘과 손잡이는 도구의 무게에 들어 있다
 FLANGE_MASS = 25.4 * G
@@ -731,29 +735,70 @@ def build(c: Concept, tool: Tool) -> tuple[Robot, list[Prim]]:
             mass=0.0,
             group="베이스",
         )
-    # 책상에 무는 판의 날개와, 그 위를 무는 클램프 둘. 클램프는 가진 금속 클램프의 위 턱(사진으로 어림:
-    # 두께 약 7, 폭 약 10, 가장자리에서 28 mm)을 넉넉히 덮는 상자다
-    wing_top = (bp.PLATE_T + bp.RING_H) * MM
-    for sg in (1, -1):
+    # 띠에 감긴 서보 선 둘 (0031): 띠의 높이 전체를 선 두께만큼 두껍게 본다 (턱과 같은 반지름이다)
+    band0 = base_h - bp.BAND_H * MM
+    b.cyl(
+        0,
+        "base_band_wires",
+        (0.0, 0.0, (band0 + base_h) / 2),
+        Z,
+        (bp.R_CORE + jp.WIRE_T) * MM,
+        base_h - band0,
+        mass=0.0,
+        group="베이스",
+    )
+    # 책상에 무는 판의 날개(파이 받침)와 그 위의 파이 두 대: 날개의 두꺼운 띠, 앞쪽의 얇은 바닥, 파이 판부터 덮개
+    # 위(팬 나사 머리 몫 3 mm)까지를 감싸는 상자, 파이 옆으로 나온 젠더와 전원 플러그 (parts/pi_mount.py의 자리).
+    # 클램프와 서보 어댑터는 파이 판 밑이라 이 상자들 안에 든다
+    cover_top = (pim.Y_COVER - bp.Y_DESK + pim.COVER[2] + 3.0) * MM
+    half_l, half_w = pim.COVER[0] / 2, pim.COVER[1] / 2
+    plug = jp._MEASURED.base_plug["pi_power"]
+    x_usbc = bp.PI_FRONT - 11.2
+    for sg in (1, -1):  # sg: 로봇 y의 부호 (+가 왼쪽)
         y0, y1 = sorted((sg * bp.WING_IN * MM, sg * bp.WING_Z * MM))
         b.box(
             0,
             f"wing{sg:+d}",
             (-bp.EDGE * MM, y0, 0.0),
-            (bp.WING_X * MM, y1, wing_top),
+            (bp.WING_X * MM, y1, (bp.WING_T + bp.STIFF_H) * MM),
             mass=0.0,
             group="베이스",
         )
-        c0, c1 = sorted(
-            (sg * (bp.CLAMP_Z - bp.CLAMP_HW) * MM, sg * (bp.CLAMP_Z + bp.CLAMP_HW) * MM)
-        )
+        y0, y1 = sorted((sg * bp.PAD_IN * MM, sg * bp.WING_Z * MM))
         b.box(
             0,
-            f"clamp{sg:+d}",
-            ((-bp.EDGE - 14.0) * MM, c0, wing_top),
-            ((-bp.EDGE + bp.CLAMP_IN + 8.0) * MM, c1, wing_top + 0.012),
+            f"wing_pad{sg:+d}",
+            (bp.WING_X * MM, y0, 0.0),
+            (bp.PAD_X * MM, y1, bp.PLATE_T * MM),
             mass=0.0,
-            group="클램프",
+            group="베이스",
+        )
+        y0, y1 = sorted((sg * (bp.PI_CZ - half_w) * MM, sg * (bp.PI_CZ + half_w) * MM))
+        b.box(
+            0,
+            f"pi{sg:+d}",
+            ((bp.PI_CX - half_l) * MM, y0, bp.WING_T * MM),
+            ((bp.PI_CX + half_l) * MM, y1, cover_top),
+            mass=0.0,
+            group="파이",
+        )
+        # 전원 쪽 긴 변은 두 파이 모두 로봇 왼쪽(+y)을 본다: 왼쪽 파이는 바깥, 오른쪽 파이는 몸통 쪽
+        edge = sg * bp.PI_CZ + bp.PI_BOARD[1] / 2
+        b.box(
+            0,
+            f"pi_power{sg:+d}",
+            (
+                (x_usbc + bp.GENDER_END - bp.GENDER_BODY[0] - plug.out_mm) * MM,
+                edge * MM,
+                (pim.Y_BOARD - bp.Y_DESK - 3.0) * MM,
+            ),
+            (
+                (x_usbc + bp.GENDER_END) * MM,
+                (edge + bp.USBC_OUT + bp.GENDER_OUT) * MM,
+                (pim.Y_BOARD - bp.Y_DESK + 9.0) * MM,
+            ),
+            mass=0.0,
+            group="파이",
         )
     table0 = (bp.SEAM - bp.Y_DESK) * MM
     b.cyl(
@@ -779,6 +824,55 @@ def build(c: Concept, tool: Tool) -> tuple[Robot, list[Prim]]:
         group="J1 몸통",
     )
     neck_x = -(h - TABLE_TOP)
+    # 쉬는 자세의 선반 (parts/rest_shelf.py): 뿌리 판과 위 띠·밑 보를 한 볼록 껍질로, 받침을 또 하나의 볼록 껍질로
+    # 넣는다 (받침의 속까지 막힌 것으로 본다: 쉬는 자세는 이 모델로 보지 않는다)
+    r_out = rs.HOUSE_R + rs.RELIEF + rs.SHELL
+    frame_pts = [
+        (rs.WALL_X, rs.EAR_TOP),
+        (rs.WALL_X, rs.ROOT_TOP),
+        (rs.WALL_X + rs.ROOT_T, rs.ROOT_TOP),
+        rs._at(rs.ARC[1], r_out),
+        rs._at(0.0, r_out),
+        (40.0, rs.EAR_TOP),
+    ]
+    arc = np.linspace(rs.ARC[0], rs.ARC[1], 9)
+    cradle_pts = [rs._at(float(a), r_out) for a in arc] + [rs.j4_axis()]
+    for name, pts in (("shelf_frame", frame_pts), ("shelf_cradle", cradle_pts)):
+        verts = np.array([(x * MM, y * MM, z * MM) for y in rs.SIDE for x, z in pts])
+        b.prims.append(
+            Prim(
+                name,
+                1,
+                "hull",
+                verts.mean(axis=0),
+                np.eye(3),
+                (0.0, 0.0, 0.0),
+                "pla",
+                SHELF_MASS / 2,
+                "선반",
+                verts,
+            )
+        )
+    # J1 몸통의 선 자리 (0031): 뒤쪽 귀 위의 누르개와 선, 왼쪽 면의 누르개와 선 둘 (높이 3.8 mm 안)
+    ex, ez = bp.EAR_CLAMP
+    ear_top = (bp.TOP_H + jp.EAR_T) * MM
+    b.box(
+        1,
+        "j1_ear_clamp",
+        ((ex - 8.0) * MM, (-ez - 8.0) * MM, ear_top),
+        (-sp.NECK_HW * MM, (-ez + 8.0) * MM, ear_top + 0.005),
+        mass=0.0,
+        group="J1 몸통",
+    )
+    left = (sp.FRONT - sp.J1_AXIS_Y) * MM
+    b.box(
+        1,
+        "j1_strip_wires",
+        (-sp.NECK_HW * MM, left, bp.TOP_H * MM),
+        (12.0 * MM, left + wc.STRIP_LIMIT * MM, (bp.TOP_H + wc.STRIP_REACH + 6.0) * MM),
+        mass=0.0,
+        group="J1 몸통",
+    )
 
     # J2: 서보 출력이 +y. 위팔 = 발 + 납작한 관 + J3 집
     joint(
@@ -889,10 +983,9 @@ def build(c: Concept, tool: Tool) -> tuple[Robot, list[Prim]]:
             group="D405 플러그",
             frame=fcam,
         )
-        # 선: 플러그에서 받침의 발 밑을 돌아 뒷덮개 가운데까지, 거기서 발 바닥까지 내려간다. 그 밑(J5의 두 몸통
-        # 사이)은 관절을 따라 움직이는 구간이라 넣지 않는다
+        # 선: 플러그에서 바깥으로 굽어 카메라 바닥면 밑의 잡는 자리까지 (가정한 자리, parts/camera_mount.py).
+        # 그 뒤는 J4·J5를 넘는 고리라 넣지 않는다 (자세마다 모양이 다르다)
         run = [np.array(p) * MM for p in cmt.wire_run()]
-        run.append(np.array([wp.X_FOOT * MM, run[-1][1], run[-1][2]]))
         for k, (p0, p1) in enumerate(itertools.pairwise(run)):
             b.cyl(
                 5,

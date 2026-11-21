@@ -56,11 +56,15 @@ def test_plug_fits_between_the_camera_and_the_drum(parts: list[j.Part]) -> None:
     near = cm.plug_clearance(parts)
     assert min(near.values()) >= cm.PLUG_GAP, near
     assert near["손목 몸통"] < cm.PLUG_GAP + 1.0  # 카메라를 더 밖으로 내지 않았다
-    # 선은 플러그의 J5 쪽(-x) 끝에서 나와 받침의 발 밑으로 돈다
+    # 선은 플러그의 J5 쪽(-x) 끝에서 나와 바깥(J5 축에서 멀어지는 쪽)으로 한 번 굽어, 카메라 바닥면 밑의 잡는 자리로 간다
     run = cm.wire_run()
     assert run[1][0] < run[0][0] and run[0][0] == pytest.approx(cm.to_servo(cm.wire_exit())[0])
-    assert all(p[0] <= -cm.MOUNT_W / 2 - cm.WIRE_D / 2 - 1.0 for p in run[2:])
-    assert run[-1][2] == 0.0 and run[-1][1] == pytest.approx(j.BACK_OUT - cm.WIRE_D / 2)
+    assert run[-1][2] == pytest.approx(-cm.HOLD_R) and run[-1][0] < -cm.CAM_H / 2 - cm.WIRE_D / 2
+    assert run[-1][0] - wrist.X_FOOT == pytest.approx(cm.HOLD_H) and cm.HOLD_H > 5.0
+    # 층으로 넘기는 길(안 될 때의 길)은 받침의 발 밑으로 돌아 뒷덮개 가운데에서 끝난다
+    layer = cm.wire_run_layer()
+    assert all(p[0] <= -cm.MOUNT_W / 2 - cm.WIRE_D / 2 - 1.0 for p in layer[2:])
+    assert layer[-1][2] == 0.0 and layer[-1][1] == pytest.approx(j.BACK_OUT - cm.WIRE_D / 2)
 
 
 @pytest.mark.slow

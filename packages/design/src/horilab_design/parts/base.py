@@ -180,17 +180,84 @@ TABLE_LIP = (
 # ---- 책상에 무는 판 ----
 EDGE = 60.0  # 책상 뒤 가장자리에서 J1 축까지 (0018의 검토에 쓴 값)
 DESK_T = 40.0  # 책상 상판 두께 (0014)
+DESK_W, DESK_D = (
+    550.0,
+    340.0,
+)  # 책상 가로(로봇을 무는 긴 변)와 앞뒤 (0014). 로봇은 긴 변의 가운데에 있다고 본다 (가정)
 SEAT_GAP = 0.2  # 몸통과 판의 자리 사이
 RING_H = 6.0  # 몸통 둘레의 턱과 날개가 바닥 위로 올라온 높이 (날개 두께는 바닥까지 10)
 RING_W = 5.5  # 턱의 폭
-WING_Z = 76.0  # 판의 반폭
 WING_IN = 30.0  # 날개가 시작하는 |z| (그 사이는 선이 나가는 바닥이다)
-WING_X = -15.0  # 날개의 앞 끝
-# 클램프가 무는 자리: 날개 위에 비워 둔 폭 20 mm의 띠다 (가장자리에서 35 mm까지).
-# 몸통(반지름 40.5)을 비키는 가장 가까운 자리라, 뒤쪽 판 나사와 클램프 사이가 짧다
-CLAMP_Z = 50.0
+WING_X = -15.0  # 날개의 두꺼운 띠(클램프가 무는 띠)의 앞 끝
+WING_T = PLATE_T + RING_H  # 날개의 두께 (책상에서 윗면까지 10)
+
+# ---- 파이 자리 (날개 위, 몸통 양옆. 2026-11-22 사용자 결정) ----
+# 두 파이는 같은 방향으로 놓는다: USB·랜 단자가 뒤(-x, 책상 뒤 가장자리 쪽), 전원 단자(USB-C)가 로봇 왼쪽을 보는
+# 긴 변에 있다 (hardware.md의 라즈베리파이 4). 그래서 왼쪽 파이는 전원이 바깥을, 오른쪽 파이는 몸통을 본다.
+# 전원은 ㄱ자 USB-C 젠더로 꺾어 파이 가장자리를 따라 뒤로 보낸다 (두 파이 모두). 겉모양은 좌우 대칭이다.
+_CASE = j._MEASURED.pi_case
+assert _CASE is not None
+PI_BOARD = (85.0, 56.0)  # 기판 (x 쪽, 옆 쪽). 공식 도면
+PI_PORTS = 3.0  # USB·랜 단자가 기판 뒤 끝 밖으로 나온 길이 (도면의 축척으로 어림, hardware.md)
+USBC_OUT = 1.2  # USB-C 단자가 기판 긴 변 밖으로 나온 길이 (가정: 도면에 치수가 없다)
+# ㄱ자 USB-C 젠더: 마하링크 ML-CCSG3 (판매 페이지의 도면 값이다. 받으면 잰다, 2026-11-22).
+# 몸통은 단자 면에 수직으로 12.30, 꺾인 쪽으로 20.0(18.00에 소켓 쪽 끝의 TPE 2.00), 두께 6.70이다. 플러그(6.75 ± 0.2)는
+# 두께 가운데에서 나오고, 플러그가 나오는 면에 TPE 깃이 약 1.35 있다. 플러그 가운데는 닫힌 끝에서 약 5.2, 소켓 면에서
+# 약 14.8이다 (깃과 플러그 자리는 치수가 없어 도면의 비례로 읽은 값). 소켓은 뒤(책상 가장자리 쪽)를 본다.
+# 단자 면에서 나온 길이 GENDER_OUT = 몸통 12.30 + 깃 1.35 + 단자 밖에 남는 플러그 약 0.5. 파이 자리가 이 값을 따라간다
+GENDER_BODY = (
+    20.0,
+    12.3,
+    6.7,
+)  # 꺾인 쪽 길이 (파이 가장자리와 나란하다), 단자 면에 수직인 길이, 두께
+GENDER_COLLAR = 1.35
+GENDER_PLUG_LEFT = 0.5
+GENDER_END = 5.2  # 플러그 가운데에서 닫힌 끝까지
+GENDER_OUT = GENDER_BODY[1] + GENDER_COLLAR + GENDER_PLUG_LEFT  # 14.15
+BODY_GAP = 3.0  # 오른쪽 파이의 젠더와 베이스 몸통 사이에 둘 틈
+PI_IN = R_CORE + BODY_GAP + GENDER_OUT + USBC_OUT  # 기판 안쪽 긴 변의 |z| (58.85)
+# 기판 앞 끝의 x. 파이 덮개 기둥(기판 가운데에서 ±44.1)이 책상 뒤 가장자리 안에 선다
+PI_FRONT = 30.5
+PI_CX = PI_FRONT - PI_BOARD[0] / 2  # 기판 가운데의 x (-12.0)
+PI_CZ = PI_IN + PI_BOARD[1] / 2  # 기판 가운데의 |z| (86.85)
+COVER_PITCH = _CASE.hole_pitch_mm  # 덮개(아크릴 판) 귀퉁이 기둥의 간격 88.2 × 62.7 (잰 값)
+TRAY_HX = (
+    COVER_PITCH[0] / 2 + 3.9
+)  # 파이 판(작은 판)의 반길이 48.0: 덮개 기둥의 육각 몸통을 다 받친다
+TRAY_HZ = COVER_PITCH[1] / 2 + 4.15  # 반폭 35.5
+TRAY_T = 3.0
+# 날개 위의 기둥 넷이 파이 판을 받친다 (판 나사 M3 × 8을 기둥에 조여 넣는다). 기둥은 기판 긴 변의 밖, 덮개 기둥과
+# 같은 줄에 선다: 파이를 단 채로 위에서 드라이버가 닿는다. 기둥의 무늬가 기판 가운데에 대해 앞뒤·좌우 대칭이라
+# 두 파이 판이 같은 부품이고 두 날개가 거울상이다
+POST_DX, POST_DZ = 30.0, COVER_PITCH[1] / 2
+POST_R = 4.0
+# 파이 판 밑면의 높이 (책상에서). 그 밑에 서보 어댑터와 클램프의 위 턱이 든다.
+# 가정: 서보 어댑터에서 가장 높은 곳이 기판 위 11 mm (잰 값이 아니다. 뽑기 전에 잰다)
+ADAPTER_SEAT = 3.0  # 어댑터 기판을 날개 위로 띄우는 돋움의 높이
+ADAPTER_TALL = 11.0
+TRAY_UNDER = 27.0
+POST_TAP = 10.0  # 기둥 속 조여 넣는 구멍의 깊이
+WING_Z = PI_CZ + TRAY_HZ  # 판의 반폭 (122.35)
+PAD_X = PI_CX + POST_DX + POST_R + 1.0  # 앞쪽 기둥을 받치는 얇은 바닥의 앞 끝 (17.0)
+PAD_IN = R_CORE + SEAT_GAP + RING_W + 4.3  # 그 바닥이 시작하는 |z| (몸통 둘레의 턱 밖)
+# 클램프가 무는 자리: 파이 판 밑, 안쪽 기둥 줄(|z| 55.5)의 바깥이다 (가장자리에서 35 mm까지 비운 폭 20 mm의 띠).
+# 파이 밑에서 물려 위 턱이 파이 판에 덮인다. 몸통에서 멀어진 만큼(뒤쪽 판 나사에서 49 mm) 날개가 더 휘므로,
+# 몸통과 클램프 사이의 날개를 STIFF_H만큼 더 두껍게 한다 (wing_bend)
+CLAMP_Z = 70.0
 CLAMP_HW = 10.0
 CLAMP_IN = 25.0  # 책상 가장자리에서 띠의 가운데까지 (design.md: 2 ~ 3 cm 안쪽)
+THICK_OUT = CLAMP_Z + 12.0  # 두께 WING_T인 띠의 바깥 끝. 그 밖은 얇은 바닥(PLATE_T)이다
+STIFF_OUT = 62.0  # 더 두꺼운 띠의 바깥 끝 (클램프 위 턱 65.1과 3 mm 띄운다)
+STIFF_H = 6.0  # 그 띠가 날개 윗면보다 높은 만큼 (책상에서 16)
+# 서보 어댑터 (42 × 33, 구멍 37 × 28, 지름 2.5: Waveshare 치수 그림). 컨트롤러 파이 밑에 눕힌다. 긴 변이 x 쪽이고
+# 서보 단자가 있는 긴 변이 몸통을, 전원·USB 쪽 긴 변이 바깥을 본다. 돋움은 두 날개에 다 낸다 (판이 좌우 대칭)
+ADAPTER = (42.0, 33.0)
+ADAPTER_HOLES = (37.0, 28.0)
+# 어댑터는 x로는 앞뒤 기둥 사이(-38 ~ 14)에 든다. 몸통 쪽 긴 변의 플러그가 변의 어디에 있어도 위 턱의 끝(x -31.3)과
+# 2 mm 떨어지게 앞으로 당겼다. 옆 자리(ADAPTER_CZ)는 클램프 위 턱에 맞춘다 (아래). 바깥 쪽 긴 변의 플러그와 선은
+# 앞뒤 기둥 사이로 나간다
+ADAPTER_CX = PI_CX + 3.8  # 어댑터 가운데의 x (-8.2)
+M2_BOSS_R = 3.0
 # 가진 금속 클램프 (다 벌린 틈과 위 턱은 캘리퍼스, 나머지는 사진으로 어림한 값, hardware.md). 등을 책상 가장자리에
 # 붙이면 위 턱이 가장자리에서 JAW_REACH까지 날개를 누르고, 나사가 그 밑(JAW_AXIS)에서 받침으로 책상 밑면을 민다
 JAW_REACH = 28.67  # 위 턱이 등 안쪽 면에서 나온 길이 (2026-11-21 캘리퍼스)
@@ -199,6 +266,8 @@ JAW_HW = 4.88  # 각재의 반폭 (위 턱의 폭 9.76, 2026-11-21 캘리퍼스)
 JAW_T, SPINE_T = 7.93, 9.0  # 위 턱의 두께 (2026-11-21 캘리퍼스), 등과 아래 턱의 두께
 PAD_R, PAD_T = 20.0, 10.7  # 나사 끝 받침의 반지름, 받침의 높이 (나사를 다 풀었을 때 아래 턱 위로)
 CLAMP_OPEN = 55.88  # 금속 클램프를 다 벌린 틈 (2026-11-13 캘리퍼스, hardware.md)
+# 서보 어댑터의 옆 자리: 몸통 쪽 긴 변이 클램프 위 턱의 바깥 면(|z| 74.9)에서 2.1 mm 바깥이다 (턱이 뒤에서 드나든다)
+ADAPTER_CZ = CLAMP_Z + JAW_HW + 2.1 + ADAPTER[1] / 2  # |z| 93.5
 R_PLATE = (
     33.0  # 몸통을 판에 묶는 나사 넷 (45° 대각선: 서보 먼 끝 자리와 선 구멍, 벽 나사 굴을 비킨다)
 )
@@ -206,14 +275,35 @@ PLATE_SCREW = 10.0  # M3 × 10
 PLATE_RECESS = 2.2  # 판 밑면의 머리 자리: 둥근머리 1.65 + 와셔 0.5 (머리가 밑면보다 0.05 안에 있다)
 PLATE_NUT_UP = 4.2  # 몸통 밑면에서 너트 홈까지의 살
 PLATE_HOLE = 8.8  # 몸통 밑면에서 나사 구멍의 깊이 (나사 끝 7.7에 1.1 여유. 몸통을 뽑을 때 구멍 끝이 층 경계다)
-ACC_X = (-28.0, -52.0)  # 날개 바깥 가장자리의 부속 자리 (스프링 기둥, 선 정리 부품): 날개마다 M3 둘
-ACC_Z = 69.0
+# 부속 자리 (스프링 기둥, 선 정리 부품): 날개마다 M3 둘. 더 두꺼운 띠의 뒤쪽, 파이 판과 클램프 밖이다
+ACC_X = -52.0
+ACC_Z = (35.0, 47.0)
 ACC_NUT = 2.6  # 그 밑면의 너트 자리 깊이
 
+# ---- 쉬는 자세의 선반을 다는 자리 (0037): J1 몸통의 목 앞벽(로봇 앞) 안쪽에 낸 너트 둘 ----
+# 선반의 뿌리 판이 앞 귀 윗면에 앉고 목 앞벽에 붙는다. M3 × 12 둘이 벽을 지나 목 속 살의 너트에 물린다.
+# 너트는 J1 몸통을 뽑는 방향에서 위로 열린 홈(뒷덮개가 입구를 가린다)에 떨어뜨리고, 자리의 마지막 SHELF_GRIP은
+# 흰색 fit1_nut_drops의 t2.6 칸(폭 5.7 × 두께 2.6: 살짝 밀어야 내려가고 뒤집어도 안 나온다)이라 선반을 떼어도
+# 너트가 제자리에 남는다. 아래 너트는 서보 먼 끝을 잡는 턱 속, 위 너트는 새로 낸 살 속이다
+SHELF_NUT_UP = (117.5, 136.0)  # 너트 둘의 높이 (책상에서)
+SHELF_NUT_Y = -2.0  # 너트의 옆 자리 (로봇 좌표 y: 왼쪽이 +)
+SHELF_WALL = 3.4  # 너트가 기대는 벽 (목 앞벽 2.6 + 살 0.8)
+SHELF_SEAT = (5.7, 2.6)  # 너트 자리: 폭, 두께
+SHELF_GRIP = 6.1  # 꼭 끼는 자리의 길이. 그 끝이 J1 몸통을 뽑을 때 층 경계에 온다 (바닥에서 43.8)
+SHELF_SKIN = 1.6  # 홈 안쪽에 남는 살
+SHELF_SCREW = 12.0
+# ---- J1 몸통 왼쪽 면의 누르개 나사 자리 (0031) ----
+# 바닥판의 왼쪽 면(어깨 좌표 y = FRONT, J1 몸통을 뽑을 때 바닥)에 조여 넣는 구멍. 바닥판 높이의 아래쪽에 두어,
+# 누르개의 팔이 그 위를 지나는 선 둘(바닥판 윗부분과 그 위의 벽)을 누른다. 뒤 왼쪽 모서리와 선 창 사이다
+STRIP_SCREW_UP = 97.9  # 나사 구멍의 높이 (책상에서. 바닥판은 95.0 ~ 104.8)
+STRIP_SCREW_X = -14.0  # 나사 구멍의 앞뒤 자리 (로봇 좌표 x)
+STRIP_TAP = 9.0
+
 PROVISIONAL = (
-    "선 누르개의 모양 (쓸 선의 굵기가 정해진 뒤에 그린다. 나사 자리는 냈다)",
-    "책상에 무는 판의 구멍과 너트 자리 (흰색 값을 쓴다. 판을 다시 그릴 때 바꾼다)",
-    "M2_TAP (스프링 줄을 묶는 나사 구멍. 시험편 값이 없다)",
+    "ㄱ자 USB-C 젠더 ML-CCSG3의 크기 (GENDER_*: 판매 페이지의 도면 값이고 깃과 플러그 자리는 도면의 비례다. 받으면 잰다)",
+    "서보 어댑터의 높이 (ADAPTER_TALL)와 단자가 긴 변의 어디에 있는지 (재지 않았다)",
+    "USB-C 단자가 파이 기판 밖으로 나온 길이 (USBC_OUT)",
+    "M2_TAP (스프링 줄과 서보 어댑터의 M2 나사를 조여 넣는 구멍. 시험편 값이 없다)",
 )
 
 
@@ -317,44 +407,120 @@ def plate_xz() -> list[tuple[float, float]]:
 
 
 def mount_xz() -> list[tuple[float, float]]:
-    """날개 바깥 가장자리의 부속 자리 넷 (x, z)."""
-    return [(x, s * ACC_Z) for s in (1, -1) for x in ACC_X]
+    """날개의 부속 자리 넷 (x, z)."""
+    return [(ACC_X, s * z) for s in (1, -1) for z in ACC_Z]
+
+
+def post_xz() -> list[tuple[float, float]]:
+    """파이 판을 받치는 기둥 여덟 (x, z): 날개마다 넷."""
+    return [
+        (PI_CX + sx * POST_DX, s * (PI_CZ + sz * POST_DZ))
+        for s in (1, -1)
+        for sx in (1, -1)
+        for sz in (1, -1)
+    ]
+
+
+def adapter_xz() -> list[tuple[float, float]]:
+    """서보 어댑터의 돋움 여덟 (x, z): 날개마다 넷 (어댑터의 고정 구멍 37 × 28)."""
+    hx, hz = ADAPTER_HOLES[0] / 2, ADAPTER_HOLES[1] / 2
+    return [
+        (ADAPTER_CX + sx * hx, s * (ADAPTER_CZ + sz * hz))
+        for s in (1, -1)
+        for sx in (1, -1)
+        for sz in (1, -1)
+    ]
+
+
+def _side(x0: float, x1: float, y0: float, y1: float, s0: float, s1: float, sg: int) -> Compound:
+    """|z|가 s0 ~ s1인 상자를 sg 쪽에 (판은 z = 0에 대해 거울상이다)."""
+    z0, z1 = sorted((sg * s0, sg * s1))
+    return box(x0, x1, y0, y1, z0, z1)
 
 
 def plate() -> Compound:
-    """책상에 무는 판. 밑면(책상에 닿는 면)을 바닥에 두고 뽑는다.
+    """책상에 무는 판 (날개가 곧 파이 받침이다). 밑면(책상에 닿는 면)을 바닥에 두고 뽑는다.
 
     바닥(PLATE_T) 위로 몸통 둘레의 턱과 날개가 RING_H만큼 올라와 있다. 몸통은 턱 안에 앉아 자리를 잡고,
-    밑에서 올라온 나사 넷이 몸통 속 너트에 물린다. 클램프는 날개 윗면을 책상 가장자리에서 문다.
+    밑에서 올라온 나사 넷이 몸통 속 너트에 물린다. 클램프는 파이 판 밑에서 날개 윗면을 책상 가장자리에서 문다.
+    날개에서 클램프가 무는 띠까지는 두께 WING_T이고(몸통 쪽은 STIFF_H만큼 더 두껍다), 그 밖과 앞은 얇은 바닥이다.
+    얇은 바닥 위로 파이 판을 받치는 기둥 넷과 서보 어댑터의 돋움 넷이 선다.
     """
     r_seat = R_CORE + SEAT_GAP
     r_out = r_seat + RING_W
     y0, y1, y2 = Y_DESK, Y_FLOOR, Y_FLOOR + RING_H
+    y3 = y2 + STIFF_H
+    y_tray = Y_DESK + TRAY_UNDER
     floor = cyl_y(r_out, y0, y1) + box(-EDGE, WING_X, y0, y1, -WING_Z, WING_Z)
-    ring = j.ring(r_out, r_seat, y1 - 0.01, y2)
-    wings = box(-EDGE, WING_X, y1 - 0.01, y2, WING_IN, WING_Z)
-    wings += box(-EDGE, WING_X, y1 - 0.01, y2, -WING_Z, -WING_IN)
-    raised = solid(ring + solid(solid(wings) - cyl_y(r_seat, y1 - 1, y2 + 1)))
-    p = solid(solid(floor) + raised)
+    raised = j.ring(r_out, r_seat, y1 - 0.01, y2)
+    for sg in (1, -1):
+        floor += _side(WING_X - 0.01, PAD_X, y0, y1, PAD_IN, WING_Z, sg)
+        wing = _side(-EDGE, WING_X, y1 - 0.01, y2, WING_IN, THICK_OUT, sg)
+        wing += _side(-EDGE, WING_X, y2 - 0.01, y3, WING_IN, STIFF_OUT, sg)
+        raised += solid(solid(wing) - cyl_y(r_seat, y1 - 1, y3 + 1))
+    p = solid(solid(floor) + solid(raised))
     # 선이 나가는 길: 몸통 뒤 아래의 선 구멍 앞에서 턱을 튼다
     hw = WIRE_EXIT[0] + 1.0
     p = solid(p - box(-r_out - 1, -r_seat + 1, y1, y2 + 1, -hw, hw))
+    for x, z in post_xz():  # 파이 판의 기둥: 밑동을 원뿔로 넓히고, 위에서 M3 × 8을 조여 넣는다
+        post = cyl_y(POST_R, y1 - 0.01, y_tray, x, z)
+        if abs(z) > THICK_OUT or x > WING_X:  # 얇은 바닥에 선 기둥
+            foot = Pos(x, y1 + 1.5, z) * (Rot(-90, 0, 0) * Cone(POST_R + 2.5, POST_R, 3.0))
+            # 판 밖으로 나가는 밑동은 잘라 낸다 (바닥 없이 뜨지 않게)
+            foot = solid(foot) & box(-EDGE, PAD_X, y1 - 1, y1 + 4, -WING_Z, WING_Z)
+            post = solid(post + solid(foot))
+        p = solid(p + post)
+        p = solid(p - cyl_y(j.M3_TAP / 2, y_tray - POST_TAP, y_tray + 1, x, z))
+    y_ad = y2 + ADAPTER_SEAT
+    for x, z in adapter_xz():  # 서보 어댑터의 돋움: M2 나사를 조여 넣는다
+        p = solid(p + cyl_y(M2_BOSS_R, y1 - 0.01, y_ad, x, z))
+        p = solid(p - cyl_y(M2_TAP / 2, y_ad - 6.0, y_ad + 1, x, z))
     for x, z in plate_xz():  # 나사 구멍과 밑면의 머리 자리. 그 사이에 막 한 층이 남는다
-        p = solid(p - cyl_y(j.M3_FREE / 2, y0 + PLATE_RECESS + SKIN, y1 + 1, x, z))
+        p = solid(p - cyl_y(j.K_M3_FREE / 2, y0 + PLATE_RECESS + SKIN, y1 + 1, x, z))
         p = solid(p - cyl_y(SINK_R, y0 - 1, y0 + PLATE_RECESS, x, z))
     for x, z in mount_xz():  # 부속 자리: 위에서 조이는 M3 나사와 밑면의 너트 자리
-        p = solid(p - cyl_y(j.M3_FREE / 2, y0 + ACC_NUT + SKIN, y2 + 1, x, z))
-        p = solid(p - j.hex_y(x, z, y0 - 1, y0 + ACC_NUT, j.NUT_AF))
-    if not p.is_valid:
+        p = solid(p - cyl_y(j.K_M3_FREE / 2, y0 + ACC_NUT + SKIN, y3 + 1, x, z))
+        p = solid(p - j.hex_y(x, z, y0 - 1, y0 + ACC_NUT, j.K_NUT_AF))
+    if not p.is_valid or len(p.solids()) != 1:
         raise RuntimeError("책상에 무는 판 형상이 깨졌다")
     return p
+
+
+def wing_bend(force_n: float = 70.0, e_gpa: float = 2.5) -> dict[str, float]:
+    """클램프가 누르는 힘에 날개가 휘는 양 [mm] (어림: 뒤쪽 판 나사에서 클램프까지 뻗은 외팔보).
+
+    0029의 어림과 같은 식이다: 팔이 뒤로 뻗을 때 클램프 하나가 약 70 N을 버틴다. 두꺼운 띠(STIFF_OUT까지)와
+    그 밖(클램프까지 두께 WING_T)을 이어 붙인 보로 셈한다. 견줄 값은 클램프가 몸통 바로 옆(|z| 50)에 있고 날개가
+    한 두께(WING_T)이던 앞선 배치다.
+    """
+    e = e_gpa * 1e3
+    width = WING_X + EDGE  # 날개의 앞뒤 폭 45
+    x_c = -EDGE + JAW_AXIS
+    px, pz = plate_xz()[1]  # 뒤쪽 판 나사 (-23.3, 23.3)
+
+    def tip(z_clamp: float, thick_to: float, thick: float) -> float:
+        # 뿌리에서 a까지 두께 thick, 그 밖은 WING_T인 외팔보의 끝 처짐
+        length = math.hypot(x_c - px, z_clamp - pz)
+        a = min(length, max(0.0, (thick_to - pz) / max(z_clamp - pz, 1e-9) * length))
+        i1, i2 = width * thick**3 / 12, width * WING_T**3 / 12
+        b = length - a
+        # 끝에 힘 F: 굵은 구간의 끝 처짐과 기울기, 가는 구간의 처짐을 더한다
+        d1 = force_n * a**2 * (3 * length - a) / (6 * e * i1)
+        th1 = force_n * a * (2 * length - a) / (2 * e * i1)
+        return d1 + th1 * b + force_n * b**3 / (3 * e * i2)
+
+    return {
+        "지금 (클램프 |z| 70, 몸통 쪽 띠를 두껍게)": tip(CLAMP_Z, STIFF_OUT, WING_T + STIFF_H),
+        "두껍게 하지 않으면": tip(CLAMP_Z, 0.0, WING_T),
+        "앞선 배치 (클램프 |z| 50, 한 두께)": tip(50.0, 0.0, WING_T),
+    }
 
 
 def desk_parts() -> list[j.Part]:
     """책상과 금속 클램프 둘 (그림에만 쓴다). 클램프는 사진으로 어림한 치수다. 등을 책상 가장자리에 붙여 그린다."""
     top = Y_FLOOR + RING_H
     under = Y_DESK - DESK_T  # 책상 밑면
-    desk = box(-EDGE, 150.0, under, Y_DESK, -130.0, 130.0)
+    desk = box(-EDGE, DESK_D - EDGE, under, Y_DESK, -DESK_W / 2, DESK_W / 2)
     out = [j.Part("책상", desk, color="desk")]
     arm_top = top - (CLAMP_OPEN + PAD_T)  # 아래 턱의 윗면
     x_back, x_tip, x_axis = -EDGE - SPINE_T, -EDGE + JAW_REACH, -EDGE + JAW_AXIS
@@ -475,6 +641,31 @@ def retainer() -> Compound:
     return j.retainer(B0)
 
 
+# ---- 베어링을 미는 도구 ----
+# 베이스 몸통은 뒤집어 놓고 밑(열린 쪽)에서 베어링을 넣는다. 위 베어링은 아래 자리(깊이 46.4 mm부터 6.6 mm)를
+# 눌러 지나 위 자리(깊이 76.4 mm부터)의 턱까지, 아래 베어링은 아래 자리까지 들어간다. 손가락이 닿지 않아
+# 바깥 링만 미는 통으로 민다. 통의 끝이 턱에 앉은 위 베어링에 닿았을 때 손잡이 테가 몸통 밑면에서 PUSH_STOP만큼 뜬다:
+# 테가 밑면에 닿으려 하면 다 들어간 것이다 (테는 멈춤이 아니라 눈금이다. 베어링은 몸통의 턱이 세운다)
+PUSH_R = j.R_BORE - 0.3  # 통의 바깥 반지름 20.8: 좁은 자리(반지름 21.1)를 0.3 틈으로 지난다
+PUSH_BORE = 19.6  # 통의 안 반지름: 바깥 링(안쪽 지름 약 37.6)만 밀고 옆 덮개(ZZ)에는 닿지 않는다 (가정: 링 두께는 어림)
+PUSH_STOP = 0.4
+PUSH_GRIP = (24.0, 3.0)  # 손잡이 테의 반지름과 두께
+
+
+def bearing_pusher() -> Compound:
+    """베어링을 미는 도구. 손잡이 테를 바닥에 두고 세워 뽑는다 (미는 끝이 맨 위 층이다).
+
+    좌표는 도구의 것이다: 축이 y, 미는 끝이 y = 0, 손잡이 테의 안쪽 면이 y = -(깊이)다.
+    """
+    reach = (B1 - Y_FLOOR) + PUSH_STOP  # 몸통 밑면에서 턱에 앉은 위 베어링의 밑면까지 76.0
+    grip_r, grip_t = PUSH_GRIP
+    tool = j.ring(PUSH_R, PUSH_BORE, -reach - 0.01, 0.0) + cyl_y(grip_r, -reach - grip_t, -reach)
+    tool = solid(tool - cyl_y(4.0, -reach - grip_t - 1, -reach + 1))  # 공기가 빠지는 구멍
+    if not tool.is_valid:
+        raise RuntimeError("베어링을 미는 도구 형상이 깨졌다")
+    return solid(tool)
+
+
 # ------------------------------------------------------------------------------------------------
 # J1 몸통 (흰색): 어깨 집 + 목 + 돌림판에 앉는 발. 어깨의 서보 좌표로 그린다
 
@@ -524,9 +715,88 @@ def j1_body() -> Compound:
     # 뒤쪽 귀의 누르개 나사 구멍 (0031): J1을 넘는 선을 여기서 잡는다. 베이스의 (x, z) → 어깨의 (y, z)
     cx, cz = EAR_CLAMP
     h = solid(h - cyl_x(j.M3_TAP / 2, x0 - 1, x_ear + 1, sh.J1_AXIS_Y - cz, -cx))
-    if not h.is_valid:
+    # 왼쪽 면의 누르개 나사 구멍 (0031): 왼쪽 면에서 바닥판 속으로 조여 넣는다 (뽑을 때 세로 구멍)
+    h = solid(
+        h
+        - cyl_y(
+            j.M3_TAP / 2,
+            sh.FRONT - STRIP_TAP,
+            sh.FRONT + 1,
+            STRIP_SCREW_UP - SHOULDER_H,
+            -STRIP_SCREW_X,
+        )
+    )
+    # 쉬는 자세의 선반을 다는 너트 둘 (0037): 목 앞벽 안쪽의 살과, 뒤 끝에서 떨어뜨리는 홈
+    z_wall, z_in = -(sh.NECK_IN + 0.01), _SHELF_RIB_IN
+    z_out = -(sh.NECK_HW - SHELF_WALL)  # 너트가 기대는 면 (홈의 벽 쪽 면)
+    lower, upper = shelf_nut_seats()
+    y_n = lower[1]
+    rib = j.prism_x(
+        [
+            (sh.BACK_END, z_wall),
+            (sh.BACK_END, z_in),
+            (sh.PAD_Y[0] + 0.01, z_in),
+            (sh.PAD_Y[0] + 0.01, z_wall),
+        ],
+        sh.PAD_X[0],
+        sh.PAD_X[1],
+    )
+    h = solid(h + rib)
+    # 위 너트의 살: 앞쪽(+y, 뽑을 때 아래)은 벽에서 45°로 선다 (서보 먼 끝을 잡는 턱과 같다)
+    y_end = y_n + 4.0
+    rib = j.prism_x(
+        [
+            (sh.BACK_END, z_wall),
+            (sh.BACK_END, z_in),
+            (y_end, z_in),
+            (y_end + (z_in - z_wall), z_wall),
+        ],
+        upper[0] - _SHELF_RIB_HX,
+        upper[0] + _SHELF_RIB_HX,
+    )
+    h = solid(h + rib)
+    half = FOOT_NUT_SLOT[0] / 2
+    for x_n, _y, z_c in (lower, upper):
+        seat = nut_trap((x_n, y_n, z_c), (0.0, 0.0, 1.0), (0.0, -1.0, 0.0), SHELF_GRIP, *SHELF_SEAT)
+        h = solid(h - seat)
+        drop = box(
+            x_n - half,
+            x_n + half,
+            sh.BACK_END - 1,
+            y_n - SHELF_GRIP + 0.6,  # 꼭 끼는 자리와 0.6 겹친다 (끝이 층 경계: 바닥에서 43.2)
+            z_out,
+            z_out + FOOT_NUT_SLOT[1],
+        )
+        h = solid(h - drop)
+        h = solid(h - cyl_z(j.M3_FREE_H / 2, -sh.NECK_HW - 1, z_in + 1, x_n, y_n))
+    if not h.is_valid or len(h.solids()) != 1:
         raise RuntimeError("J1 몸통 형상이 깨졌다")
     return h
+
+
+# 선반 너트의 살: 홈 안쪽 면에서 SHELF_SKIN만큼 더 들어온다 (어깨 좌표 z). 어깨 서보의 옆면(15.0)과는 3.8 뜬다
+_SHELF_RIB_IN = -(sh.NECK_HW - SHELF_WALL - FOOT_NUT_SLOT[1] - SHELF_SKIN)
+_SHELF_RIB_HX = 4.4  # 위 너트의 살의 반높이 (너트 홈 폭 5.6에 위아래 살 1.6)
+
+
+def shelf_nut_seats() -> list[Point]:
+    """선반 너트 둘의 가운데 (어깨의 서보 좌표): (아래, 위). 너트는 목 앞벽(-z)의 안쪽 살에 든다."""
+    z_c = -(sh.NECK_HW - SHELF_WALL - SHELF_SEAT[1] / 2)
+    return [(up - SHOULDER_H, SHELF_NUT_Y + sh.J1_AXIS_Y, z_c) for up in SHELF_NUT_UP]
+
+
+def j1_cover() -> Compound:
+    """J1 뒷덮개 (검정): 어깨 집의 뒷덮개를 목의 아래 끝까지 내린 것. 어깨의 서보 좌표다.
+
+    J1 몸통의 둥근 귀는 목의 뒤 끝보다 1.5 mm 더 나와서(돌림판과 같은 반지름), 덮개 판의 안쪽 면과 0.6 mm 겹친다.
+    그 자리의 안쪽 면을 귀의 둥근 면대로 얕게 따낸다 (판 2 mm에 깊이 0.9 mm, 틈 0.3 mm. 뽑을 때 윗면이라 걸치지 않는다).
+    """
+    cover = sh.back_cover(NECK_X)
+    ear = cyl_x(R_TABLE + 0.3, NECK_X - 1, NECK_X + j.EAR_T + 0.3, sh.J1_AXIS_Y, 0.0)
+    out = solid(cover - ear)
+    if not out.is_valid or len(out.solids()) != 1:
+        raise RuntimeError("J1 뒷덮개 형상이 깨졌다")
+    return out
 
 
 def foot_nut_slots() -> list[tuple[Point, Point, float]]:
@@ -770,6 +1040,7 @@ LABELS = {  # 뽑는 부품의 한글 이름 (출력 안내에 쓴다, horilab_d
     "base_retainer": "베이스 누름 틀",
     "j1_body": "J1 몸통",
     "j1_cover": "J1 뒷덮개",
+    "base_bearing_pusher": "베어링을 미는 도구",
 }
 
 
@@ -783,7 +1054,9 @@ def printed() -> dict[str, tuple[Compound, tuple[float, float, float], str, str]
         "base_spacer": (spacer(), (0.0, 1.0, 0.0), "black", "strength"),
         "base_retainer": (retainer(), (0.0, -1.0, 0.0), "black", "strength"),
         "j1_body": (j1_body(), (0.0, -1.0, 0.0), "white", "strength"),
-        "j1_cover": (sh.back_cover(NECK_X), (0.0, 1.0, 0.0), "black", "standard"),
+        "j1_cover": (j1_cover(), (0.0, 1.0, 0.0), "black", "standard"),
+        # 팔에 달리지 않는 조립 도구다. 검정 판에 같이 뽑는다 (색은 상관없다)
+        "base_bearing_pusher": (bearing_pusher(), (0.0, 1.0, 0.0), "black", "standard"),
     }
 
 
@@ -826,6 +1099,26 @@ def report(model: ServoModel = "STS3215") -> None:
     print(f"나사와 너트 {metal:.1f} g")
     for name, value in screw_checks(model).items():
         print(f"  {name}: {value:.2f}")
+    bend = wing_bend()
+    print(
+        "클램프 하나가 70 N을 버틸 때 날개가 휘는 양 [mm] (어림): "
+        + ", ".join(f"{k} {v:.3f}" for k, v in bend.items())
+    )
+    plate_box = made["base_plate"][0].bounding_box()
+    print(
+        f"책상에 무는 판 {plate_box.size.X:.1f} × {plate_box.size.Z:.1f} mm (출력 판 256 mm), 파이 기판 안쪽 변 |z| "
+        f"{PI_IN:.1f}, 파이 판 밑면 높이 {TRAY_UNDER:.1f}"
+    )
+    drops = [
+        j.nut_entry_overlap(
+            body, c, (0.0, 0.0, 1.0), (0.0, -1.0, 0.0), reach=c[1] - sh.BACK_END + 2.0
+        )
+        for c in shelf_nut_seats()
+    ]
+    print(
+        "선반 너트 둘을 뒤 끝에서 자리까지 곧게 밀 때 겹침 [mm³]: "
+        + ", ".join(f"{v:.2f}" for v in drops)
+    )
     hits = overlaps([p for p in parts if "핀" not in p.name])
     print(
         "\n겹침 [mm³]: " + (", ".join(f"{a} ∩ {b} {v:.2f}" for (a, b), v in hits.items()) or "없음")

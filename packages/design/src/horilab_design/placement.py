@@ -33,7 +33,18 @@ import numpy as np
 from build123d import Compound, Location, Plane, Pos, Rot
 from numpy.typing import ArrayLike
 
-from horilab_design.parts import base, flange, links, shoulder, wrist
+from horilab_design.parts import (
+    base,
+    camera_mount,
+    flange,
+    gripper,
+    links,
+    pi_mount,
+    rest_shelf,
+    shoulder,
+    wire_clamps,
+    wrist,
+)
 from horilab_design.parts import joint as j
 from horilab_design.parts.shapes import far_apart, solid
 from horilab_design.robot import Mat, Vec3
@@ -233,7 +244,35 @@ def _wrist2() -> list[ArmPart]:
     return [body, *_from_joint("손목 2", 6, inner + j.inner_hardware("STS3215"))]
 
 
-# 묶음 이름 → 그 묶음의 부품을 만드는 함수. 새 부품(파이 받침, 도구, 선)은 여기에 묶음을 더한다
+def _wrist_end() -> list[ArmPart]:
+    """손목 끝: 손목 2 몸통에 단 D405와 받침(J6와 같이 돌지 않는다), 플랜지에 단 평행 그리퍼 (손가락을 닫은 모습)."""
+    cam = [
+        j.Part("D405 받침", camera_mount.mount(), color="cap"),
+        j.Part("D405", camera_mount.camera(), color="servo"),
+        j.Part("D405 플러그", camera_mount.plug(), color="plug"),
+        *camera_mount.hardware(),
+    ]
+    return _from_joint("D405", 6, cam) + _from_joint("그리퍼", 6, gripper.gripper_parts(0.0))
+
+
+def _rest_shelf() -> list[ArmPart]:
+    """쉬는 자세의 선반 (0037): J1 몸통에 달려 J1과 같이 돈다."""
+    return _from_joint("선반", 1, rest_shelf.parts())
+
+
+def _wire_clamps() -> list[ArmPart]:
+    """선 누르개 셋 (0031): 띠 밑(베이스), 귀와 왼쪽 면(J1 몸통)."""
+    return _from_joint("누르개", 1, wire_clamps.base_parts()) + _from_joint(
+        "누르개", 2, wire_clamps.shoulder_parts()
+    )
+
+
+def _pi() -> list[ArmPart]:
+    """날개 위의 파이 판 둘, 파이 두 대와 덮개, 꽂힌 플러그, 서보 어댑터 (베이스에 서 있다. 자리만 그린 것이 섞여 있다)."""
+    return _from_joint("파이", 1, pi_mount.parts())
+
+
+# 묶음 이름 → 그 묶음의 부품을 만드는 함수. 새 부품(도구, 선)은 여기에 묶음을 더한다
 GROUPS: dict[str, Callable[[], list[ArmPart]]] = {
     "base": _base,
     "shoulder": _shoulder,
@@ -241,7 +280,17 @@ GROUPS: dict[str, Callable[[], list[ArmPart]]] = {
     "forearm": _forearm,
     "wrist1": _wrist1,
     "wrist2": _wrist2,
+    "wrist_end": _wrist_end,
+    "rest_shelf": _rest_shelf,
+    "wire_clamps": _wire_clamps,
+    "pi": _pi,
 }
+
+
+@functools.cache
+def desk_parts() -> tuple[ArmPart, ...]:
+    """책상과 금속 클램프 둘 (팔의 부품이 아니다. 닿음을 볼 때만 더한다). 클램프의 일부는 사진으로 어림한 치수다."""
+    return tuple(_from_joint("책상", 1, base.desk_parts()))
 
 
 @functools.cache

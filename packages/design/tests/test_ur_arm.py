@@ -45,7 +45,9 @@ def test_upright_arm_is_clear_and_stops_on_the_webs() -> None:
         lo, hi, why_lo, why_hi = ranges[joint - 1]
         assert (lo, hi) == pytest.approx((-j.STOP_DEG, j.STOP_DEG), abs=1.0)
         assert why_lo == why_hi == f"J{joint} 귀와 나사 ↔ J{joint} 집"
-    assert ranges[1][1] == pytest.approx(j.STOP_DEG, abs=1.0)
+    # J2는 위팔의 관이 날개 위의 파이(덮개)에 먼저 닿는다. 팔꿈치 집이 책상에 닿는 128°보다 뒤라 쓰는 범위 밖이다
+    lo2, hi2, why_lo2, why_hi2 = ranges[1]
+    assert why_lo2 == why_hi2 == "파이 ↔ 관" and hi2 > 128.0 and lo2 < -128.0
     # 프로그램 한계(160°)까지는 어느 관절도 자기 멈춤에 닿지 않는다
     for lo, hi, why_lo, why_hi in ranges[1:]:
         for end, why in ((lo, why_lo), (hi, why_hi)):
@@ -74,7 +76,7 @@ def test_model_includes_what_sticks_out_of_the_joints() -> None:
     for name in ("J5/boss0", "J6/boss1", "d405", "d405_plate", "d405_seat", "d405_plug", "adapter"):
         assert name in by, name
     wire = [p for p in prims if p.group == "D405 선"]
-    assert len(wire) == len(cmt.wire_run()) and all(p.link == 5 for p in wire)
+    assert len(wire) == len(cmt.wire_run()) - 1 and all(p.link == 5 for p in wire)
     assert by["d405_plate"].mass == pytest.approx(ur_arm.D405_PLATE_MASS)
     assert by["J6/cap"].mass == pytest.approx(ur_arm.FLANGE_MASS)
 

@@ -38,7 +38,8 @@ def test_printed_parts_are_single_valid_solids_without_steep_overhang() -> None:
         assert max(bb.size.X, bb.size.Y, bb.size.Z) < BED, name
         # 바닥에 닿지 않고 아래를 보는 면은 양쪽이 붙은 다리와 작은 가로 구멍 윗변뿐이어야 한다
         over = overhangs(shape, up)
-        assert over.total - over.flat < 80.0, (name, over.total, over.flat)
+        # (J1 몸통은 작은 가로 구멍이 많다: 돌림판 나사 넷, 벽 나사, 선반 나사 둘의 윗변이 90 mm²쯤이다)
+        assert over.total - over.flat < 100.0, (name, over.total, over.flat)
 
 
 @pytest.mark.slow
@@ -243,13 +244,24 @@ def test_plate_bolts_and_clamp_zones() -> None:
     for x, z in b.plate_xz():
         assert abs(z) - 1.6 > j.NECK_IN + 3.0
         assert (x * x + z * z) ** 0.5 - 1.6 > j.R_BORE + 3.0
-    # 클램프가 무는 자리는 몸통을 비키고 날개 안에 있다 (가장자리에서 25 mm 들어온 곳까지)
+    # 클램프가 무는 자리는 몸통을 비키고 날개의 두께 10 mm인 띠 안에 있다 (가장자리에서 25 mm 들어온 곳까지)
     x_in = -b.EDGE + b.CLAMP_IN + b.CLAMP_HW
     near = (x_in**2 + (b.CLAMP_Z - b.CLAMP_HW) ** 2) ** 0.5
     assert near > b.R_CORE + b.SEAT_GAP + 2.0
     assert b.WING_IN <= b.CLAMP_Z - b.CLAMP_HW
-    assert b.CLAMP_Z + b.CLAMP_HW <= b.ACC_Z - 3.2 - 2.0  # 부속 자리의 너트와 2 mm 넘게 떨어진다
     assert x_in <= b.WING_X
+    # 위 턱은 더 두꺼운 띠(몸통 쪽), 안쪽 기둥, 서보 어댑터와 2 mm 넘게 떨어져 있어 뒤에서 끼우고 뺀다
+    jaw = (b.CLAMP_Z - b.JAW_HW, b.CLAMP_Z + b.JAW_HW)
+    assert jaw[0] - b.STIFF_OUT >= 2.0
+    assert jaw[0] - (b.PI_CZ - b.POST_DZ + b.POST_R) >= 2.0
+    assert (b.ADAPTER_CZ - b.ADAPTER[1] / 2) - jaw[1] >= 2.0
+    assert jaw[1] + 2.0 <= b.THICK_OUT
+    # 위 턱은 파이 기판 밑에 있다 (파이 판이 덮는다)
+    assert b.PI_IN <= jaw[0] and jaw[1] <= b.PI_IN + b.PI_BOARD[1]
+    assert b.WING_T + b.JAW_T + 2.0 <= b.TRAY_UNDER
+    # 부속 자리는 더 두꺼운 띠 위, 파이 판과 클램프 밖이다
+    assert max(b.ACC_Z) + 3.2 <= min(b.STIFF_OUT, b.PI_CZ - b.TRAY_HZ)
+    assert min(b.ACC_Z) - 3.2 >= b.WING_IN
     # 가진 금속 클램프(사진으로 어림한 치수)는 그 띠 안에 든다: 위 턱의 끝과 폭, 나사 축
     assert b.JAW_REACH <= b.CLAMP_IN + b.CLAMP_HW - 2.0
     assert b.JAW_HW <= b.CLAMP_HW - 2.0
@@ -293,3 +305,75 @@ def test_arm_model_uses_the_j1_stack_and_masses(parts: list[j.Part]) -> None:
     assert table == pytest.approx(ur_arm.J1_TABLE_MASS * 1000, abs=2.0)
     house = printed_mass_g(sh.house(), (0.0, -1.0, 0.0))
     assert printed["j1_body"] - house == pytest.approx(ur_arm.J1_FOOT_MASS * 1000, abs=2.0)
+
+
+def test_wings_carry_the_pi_trays_inside_the_bed_and_the_desk() -> None:
+    plate = b.plate()
+    bb = plate.bounding_box()
+    # 판은 좌우 대칭이고 출력 판(256 mm)에 든다
+    assert bb.max.Z == pytest.approx(-bb.min.Z, abs=1e-6) == pytest.approx(b.WING_Z)
+    assert 2 * b.WING_Z < 256.0 - 4.0
+    assert bb.min.X == pytest.approx(-b.EDGE)  # 책상 뒤 가장자리 밖으로 나가지 않는다
+    # 오른쪽 파이의 젠더(가정한 크기)와 몸통 사이에 3 mm가 남는다
+    assert b.PI_IN - b.USBC_OUT - b.GENDER_OUT - b.R_CORE == pytest.approx(b.BODY_GAP)
+    # 기둥 여덟은 날개마다 넷, 기판 가운데에 대해 대칭이다. 속의 조여 넣는 구멍이 위로 열려 있다
+    posts = b.post_xz()
+    assert len(posts) == 8 and {(x, -z) for x, z in posts} == set(posts)
+    solid = plate.solids()[0]
+    top = b.Y_DESK + b.TRAY_UNDER
+    for x, z in posts:
+        assert not solid.is_inside((x, top - 1.0, z))
+        assert solid.is_inside((x + b.POST_R - 0.6, top - 1.0, z))
+        assert solid.is_inside((x, top - b.POST_TAP - 1.0, z)) or top - b.POST_TAP - 1.0 < b.Y_FLOOR
+    # 파이 판 밑에 서보 어댑터(가정한 높이)가 든다
+    assert b.WING_T + b.ADAPTER_SEAT + 1.6 + b.ADAPTER_TALL + 1.0 <= b.TRAY_UNDER
+    # 몸통 쪽을 두껍게 해서, 클램프를 파이 밑으로 옮기고도 날개가 앞선 배치만큼만 휜다 (어림)
+    bend = b.wing_bend()
+    now, thin, before = bend.values()
+    assert now < 1.1 * before and thin > 3.0 * now
+
+
+@pytest.mark.slow
+def test_j1_body_holds_the_shelf_nuts_and_the_strip_clamp_screw() -> None:
+    body = b.j1_body().solids()[0]
+    lower, upper = b.shelf_nut_seats()
+    for x, y, z in (lower, upper):
+        # 너트 자리는 비어 있고, 벽 쪽(선반 쪽)에 살 SHELF_WALL, 안쪽에 살 SHELF_SKIN이 있다
+        assert not body.is_inside((x, y, z))
+        # (나사 구멍을 비켜 너트의 모서리 쪽에서 본다)
+        assert body.is_inside((x + 2.4, y, z - b.SHELF_SEAT[1] / 2 - 0.5))
+        assert body.is_inside((x + 2.4, y, z + b.SHELF_SEAT[1] / 2 + 0.5))
+        # 뒤 끝(뽑을 때 위)에서 자리까지 너트가 곧게 내려간다
+        reach = y - sh.BACK_END + 2.0
+        assert (
+            j.nut_entry_overlap(
+                b.j1_body(), (x, y, z), (0.0, 0.0, 1.0), (0.0, -1.0, 0.0), reach=reach
+            )
+            < 0.01
+        )
+    # 살은 어깨 서보의 옆면에서 3 mm 넘게 떨어져 있다 (서보가 힘 없이 드나든다)
+    assert -b._SHELF_RIB_IN - sh.HW >= 3.0
+    servo = sh.servo()["body"]
+    assert servo.distance_to(b.j1_body()) > 0.3
+    # 왼쪽 면의 누르개 나사 구멍은 바닥판의 왼쪽 면에서 깊이 STRIP_TAP까지다
+    x, z = b.STRIP_SCREW_UP - b.SHOULDER_H, -b.STRIP_SCREW_X
+    assert not body.is_inside((x, sh.FRONT - 1.0, z))
+    assert body.is_inside((x, sh.FRONT - b.STRIP_TAP - 1.0, z))
+    assert b.NECK_X + 1.4 + 1.2 <= x <= b.NECK_X + b.FLOOR_T - 1.4 - 1.2
+
+
+def test_bearing_pusher_reaches_the_upper_seat() -> None:
+    tool = b.bearing_pusher()
+    bb = tool.bounding_box()
+    reach = b.B1 - b.Y_FLOOR
+    # 통은 좁은 자리를 지나고 바깥 링만 민다. 손잡이 테는 위 베어링이 턱에 앉았을 때 몸통 밑면에서 0.4 뜬다
+    assert b.PUSH_R < j.R_BORE and b.PUSH_BORE > j.BRG_D / 2 + 3.0
+    assert -bb.min.Y == pytest.approx(reach + b.PUSH_STOP + b.PUSH_GRIP[1])
+    assert reach > 46.4 + j.BRG_B  # 아래 자리(깊이 46.4 mm부터)를 지나 위 자리까지
+
+
+@pytest.mark.slow
+def test_j1_cover_clears_the_round_ear_of_the_j1_body() -> None:
+    # 뒷덮개는 J1 몸통과 겹치지 않는다 (둥근 귀가 목의 뒤 끝보다 더 나온 자리를 덮개에서 따냈다. 서보 받침에 달린다)
+    cover, body = b.j1_cover(), b.j1_body()
+    assert cover.distance_to(body) >= 0.25
