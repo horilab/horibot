@@ -1,0 +1,31 @@
+{
+ "name": "st3120-coupon",
+ "made": "2026-11-21T07:35:21",
+ "studio": "02.09.01.70",
+ "profiles": "02.09.00.81",
+ "bed_type": "Textured PEI Plate",
+ "plates": [
+  {
+   "file": "01-black-a4d901.3mf",
+   "image": "01-black-a4d901.png",
+   "color": "black",
+   "preset": "0.20mm Strength @BBL X1C",
+   "minutes": 44,
+   "grams": 19.3,
+   "overnight": false,
+   "parts": [
+    {
+     "file": "fit2_st3120_horn.stl",
+     "label": "시험편 fit2_st3120_horn",
+     "module": "coupons",
+     "count": 1,
+     "sha": "f5367fb03329",
+     "height_mm": 4.0,
+     "base_mm2": 5340,
+     "overhang_mm2": 0,
+     "slender": false
+    }
+   ]
+  }
+ ]
+}

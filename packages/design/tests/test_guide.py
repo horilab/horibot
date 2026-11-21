@@ -20,7 +20,7 @@ from horilab_design.guide.build import (
     resolve,
     write_site,
 )
-from horilab_design.guide.guides import base_measure, first_joint, prints, wrist_end
+from horilab_design.guide.guides import base_measure, first_joint, prints, st3120_horn, wrist_end
 from horilab_design.guide.meshes import pack, tessellate, unpack
 from horilab_design.guide.model import Guide, Move, PrintGuide, ScenePart, Step, View
 from horilab_design.parts import joint as j
@@ -319,6 +319,8 @@ def test_built_site_has_every_file_its_guides_need(tmp_path: Path) -> None:
     catalog = json.loads((tmp_path / "data" / "catalog.json").read_text(encoding="utf-8"))
     assert [g["id"] for g in catalog["guides"]] == [
         base_measure.GUIDE.id,
+        prints.ST3120_COUPON.id,
+        st3120_horn.GUIDE.id,
         "first-joint",
         prints.FIRST_JOINT.id,
         prints.WRIST_END.id,
@@ -362,6 +364,10 @@ def test_site_passes_its_selftest_in_a_headless_browser(tmp_path: Path) -> None:
     if not report["three"]:
         pytest.skip("three.js를 받지 못했다 (인터넷)")
     assert selftest.problems(report) == []
-    plates = sum(len(print_json(p)["steps"]) for p in (prints.FIRST_JOINT, prints.WRIST_END))
-    steps = len(base_measure.STEPS) + len(first_joint.STEPS) + plates + len(wrist_end.STEPS)
+    plates = sum(
+        len(print_json(p)["steps"])
+        for p in (prints.ST3120_COUPON, prints.FIRST_JOINT, prints.WRIST_END)
+    )
+    guides = (base_measure, st3120_horn, first_joint, wrist_end)
+    steps = sum(len(g.STEPS) for g in guides) + plates
     assert sum(g["steps"] for g in report["guides"]) == steps

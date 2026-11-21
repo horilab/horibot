@@ -396,8 +396,8 @@ COUPONS: dict[str, Callable[[], Compound]] = {
     "fit2_sts_frames": lambda: servo_frames(load_servos()["STS3215"]),
     "fit2_sts_horn": lambda: horn_recesses(load_servos()["STS3215"]),
     # ST-3120: 틀은 도면의 단면(65 × 30)이다. 혼 자리는 잰 혼에 맞췄다: 테(두께 2.5)의 가운데가 2.12 솟아 있어서
-    # 가운데 구멍을 어깨 허브 판의 가운데 구멍(돋움 지름의 가정 14에 1.0)과 같게 냈다. 자리의 바닥이 테에 앉고,
-    # 돋움이 가정보다 크면 얹히지 않는다
+    # 가운데 구멍을 어깨 허브 판의 가운데 구멍(잰 돋움 지름 13.94에 1.0)과 같게 냈다. 자리의 바닥이 테에 앉고,
+    # 돋움이 구멍보다 크면 얹히지 않는다. 틀은 뽑지 않는다 (docs/status.md의 ST-3120)
     "fit2_st3120_frames": lambda: servo_frames(load_servos()["ST-3120"]),
     "fit2_st3120_horn": lambda: horn_recesses(
         load_servos()["ST-3120"], relief=2 * shoulder.SEAT_R0

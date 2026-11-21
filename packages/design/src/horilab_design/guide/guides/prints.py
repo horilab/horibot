@@ -25,6 +25,13 @@ CABLE_MOTION = PrintGuide(
     bundles=("cable-motion", "cable-motion-300", "wrist2-cover"),
 )
 
+ST3120_COUPON = PrintGuide(
+    id="st3120-coupon-print",
+    title="ST-3120 혼 자리 시험편 출력",
+    sub="어깨 서보(ID 2)의 혼에 덮어 보는 혼 자리 시험편 (검정). 어깨의 허브 판을 뽑기 전에 맞춤을 본다",
+    bundles=("st3120-coupon",),
+)
+
 WRIST_END = PrintGuide(
     id="wrist-end-print",
     title="손목 끝 출력",
