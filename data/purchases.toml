@@ -266,6 +266,7 @@ ordered = 2026-11-20
 # 가게 안내 (2026-11-20 확인): 입금 확인 뒤 배송, 배송 기간 1~2일, 대신택배. 그날 보내는 마감 시각은 적혀 있지 않다.
 # 금요일에 주문해 주말을 넘기므로 도착을 월~수로 어림했다.
 arrive = [2026-11-23, 2026-11-25]
+received = 2026-11-21
 vendor = "영일교육시스템"
 url = "https://m.yrobot.co.kr/product/detail.html?product_no=680"
 lead_days = [1, 2]
