@@ -38,3 +38,13 @@ WRIST_END = PrintGuide(
     sub="J6 플랜지와 도구 어댑터 판, 평행 그리퍼, D405 받침 (클립 없이, D405 선을 볼 시험용)",
     bundles=("wrist-end",),
 )
+
+ARM = PrintGuide(
+    id="arm-print",
+    title="팔 출력",
+    sub=(
+        "흰 판 둘(J1 몸통과 위팔, 아래팔과 쉬는 자세 선반)을 다 뽑고 검정으로 바꾼다. 검정은 베이스, 어깨, J3·J4 속 "
+        "부품, 덮개, 누르개, 글자 핀 시험편. 책상에 무는 판과 파이 판, 글자는 잰 뒤에 묶음을 더한다"
+    ),
+    bundles=("arm-white-1", "arm-white-2", "arm-black-1"),
+)

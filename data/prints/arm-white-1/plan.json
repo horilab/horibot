@@ -1,0 +1,42 @@
+{
+ "name": "arm-white-1",
+ "made": "2026-11-22T12:34:08",
+ "studio": "02.09.01.70",
+ "profiles": "02.09.00.81",
+ "bed_type": "Textured PEI Plate",
+ "plates": [
+  {
+   "file": "01-white-168313.3mf",
+   "image": "01-white-168313.png",
+   "color": "white",
+   "preset": "0.20mm Strength @BBL X1C",
+   "minutes": 356,
+   "grams": 199.9,
+   "overnight": true,
+   "parts": [
+    {
+     "file": "j1_body.stl",
+     "label": "J1 몸통",
+     "module": "base",
+     "count": 1,
+     "sha": "0dae861701c2",
+     "height_mm": 74.7,
+     "base_mm2": 2382,
+     "overhang_mm2": 89,
+     "slender": false
+    },
+    {
+     "file": "upper_arm.stl",
+     "label": "위팔",
+     "module": "links",
+     "count": 1,
+     "sha": "107a8cbd0dc2",
+     "height_mm": 50.8,
+     "base_mm2": 7123,
+     "overhang_mm2": 13,
+     "slender": false
+    }
+   ]
+  }
+ ]
+}

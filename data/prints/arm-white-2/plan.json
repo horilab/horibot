@@ -1,0 +1,42 @@
+{
+ "name": "arm-white-2",
+ "made": "2026-11-22T12:33:39",
+ "studio": "02.09.01.70",
+ "profiles": "02.09.00.81",
+ "bed_type": "Textured PEI Plate",
+ "plates": [
+  {
+   "file": "01-white-aede46.3mf",
+   "image": "01-white-aede46.png",
+   "color": "white",
+   "preset": "0.20mm Strength @BBL X1C",
+   "minutes": 219,
+   "grams": 128.7,
+   "overnight": false,
+   "parts": [
+    {
+     "file": "forearm.stl",
+     "label": "아래팔",
+     "module": "links",
+     "count": 1,
+     "sha": "4e4cf37fe9dd",
+     "height_mm": 50.8,
+     "base_mm2": 5542,
+     "overhang_mm2": 21,
+     "slender": false
+    },
+    {
+     "file": "rest_shelf.stl",
+     "label": "쉬는 자세 선반",
+     "module": "rest_shelf",
+     "count": 1,
+     "sha": "34aa455640c6",
+     "height_mm": 38.0,
+     "base_mm2": 1307,
+     "overhang_mm2": 13,
+     "slender": false
+    }
+   ]
+  }
+ ]
+}
