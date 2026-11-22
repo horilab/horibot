@@ -250,11 +250,12 @@ def test_plate_bolts_and_clamp_zones() -> None:
     assert near > b.R_CORE + b.SEAT_GAP + 2.0
     assert b.WING_IN <= b.CLAMP_Z - b.CLAMP_HW
     assert x_in <= b.WING_X
-    # 위 턱은 더 두꺼운 띠(몸통 쪽), 안쪽 기둥, 서보 어댑터와 2 mm 넘게 떨어져 있어 뒤에서 끼우고 뺀다
+    # 위 턱은 더 두꺼운 띠(몸통 쪽), 안쪽 기둥과 2 mm 넘게 떨어져 있어 뒤에서 끼우고 뺀다. 책상 밖으로 나온 뒤 판
+    # (서보 어댑터 자리)은 클램프의 등에서 30 mm 넘게 안쪽이다
     jaw = (b.CLAMP_Z - b.JAW_HW, b.CLAMP_Z + b.JAW_HW)
     assert jaw[0] - b.STIFF_OUT >= 2.0
     assert jaw[0] - (b.PI_CZ - b.POST_DZ + b.POST_R) >= 2.0
-    assert (b.ADAPTER_CZ - b.ADAPTER[1] / 2) - jaw[1] >= 2.0
+    assert jaw[0] - b.DECK_HW >= 30.0
     assert jaw[1] + 2.0 <= b.THICK_OUT
     # 위 턱은 파이 기판 밑에 있다 (파이 판이 덮는다)
     assert b.PI_IN <= jaw[0] and jaw[1] <= b.PI_IN + b.PI_BOARD[1]
@@ -266,7 +267,7 @@ def test_plate_bolts_and_clamp_zones() -> None:
     assert b.JAW_REACH <= b.CLAMP_IN + b.CLAMP_HW - 2.0
     assert b.JAW_HW <= b.CLAMP_HW - 2.0
     assert b.JAW_AXIS < b.JAW_REACH
-    # 판이 책상 가장자리 밖으로 나가지 않는다
+    # 몸통이 앉는 턱은 책상 가장자리 안에 있다
     assert b.EDGE >= b.R_CORE + b.SEAT_GAP + b.RING_W
 
 
@@ -312,25 +313,66 @@ def test_wings_carry_the_pi_trays_inside_the_bed_and_the_desk() -> None:
     bb = plate.bounding_box()
     # 판은 좌우 대칭이고 출력 판(256 mm)에 든다
     assert bb.max.Z == pytest.approx(-bb.min.Z, abs=1e-6) == pytest.approx(b.WING_Z)
-    assert 2 * b.WING_Z < 256.0 - 4.0
-    assert bb.min.X == pytest.approx(-b.EDGE)  # 책상 뒤 가장자리 밖으로 나가지 않는다
+    assert 2 * b.WING_Z < BED - 4.0 and bb.size.X < BED - 4.0
+    # 날개는 책상 뒤 가장자리까지고, 두 날개 사이의 뒤 판(서보 어댑터 자리)만 그 밖으로 나온다
+    assert bb.min.X == pytest.approx(b.DECK_END)
+    solid = plate.solids()[0]
+    assert not solid.is_inside((-b.EDGE - 1.0, b.Y_DESK + 1.0, b.DECK_HW + 5.0))
     # 오른쪽 파이의 젠더(가정한 크기)와 몸통 사이에 3 mm가 남는다
     assert b.PI_IN - b.USBC_OUT - b.GENDER_OUT - b.R_CORE == pytest.approx(b.BODY_GAP)
     # 기둥 여덟은 날개마다 넷, 기판 가운데에 대해 대칭이다. 속의 조여 넣는 구멍이 위로 열려 있다
     posts = b.post_xz()
     assert len(posts) == 8 and {(x, -z) for x, z in posts} == set(posts)
-    solid = plate.solids()[0]
     top = b.Y_DESK + b.TRAY_UNDER
     for x, z in posts:
         assert not solid.is_inside((x, top - 1.0, z))
         assert solid.is_inside((x + b.POST_R - 0.6, top - 1.0, z))
         assert solid.is_inside((x, top - b.POST_TAP - 1.0, z)) or top - b.POST_TAP - 1.0 < b.Y_FLOOR
-    # 파이 판 밑에 서보 어댑터(가정한 높이)가 든다
-    assert b.WING_T + b.ADAPTER_SEAT + 1.6 + b.ADAPTER_TALL + 1.0 <= b.TRAY_UNDER
     # 몸통 쪽을 두껍게 해서, 클램프를 파이 밑으로 옮기고도 날개가 앞선 배치만큼만 휜다 (어림)
     bend = b.wing_bend()
     now, thin, before = bend.values()
     assert now < 1.1 * before and thin > 3.0 * now
+
+
+def test_back_deck_carries_the_adapter_behind_the_core() -> None:
+    plate = b.plate().solids()[0]
+    # 돋움 넷은 어댑터의 고정 구멍 자리다 (긴 변이 옆 쪽, 좌우 대칭). 조여 넣는 구멍이 위로 열려 있고 밑은 막혀 있다
+    holes = b.adapter_xz()
+    assert len(holes) == 4 and {(x, -z) for x, z in holes} == set(holes)
+    xs, zs = sorted({x for x, _ in holes}), sorted({z for _, z in holes})
+    assert (zs[1] - zs[0], xs[1] - xs[0]) == pytest.approx(b.ADAPTER_HOLES)
+    top = b.Y_FLOOR + b.ADAPTER_SEAT
+    for x, z in holes:
+        assert not plate.is_inside((x, top - 1.0, z))
+        assert plate.is_inside((x + b.M2_BOSS_R - 0.3, top - 1.0, z))
+        assert plate.is_inside((x, b.Y_DESK + 0.5, z))
+        assert abs(z) + b.M2_BOSS_R < b.DECK_RIB[0]
+    # 어댑터는 책상 뒤 가장자리 밖이고, 서보 단자의 변 바로 앞이 선 창이다. 창은 바닥을 뚫었다
+    (wx0, wx1), hw = b.DECK_WINDOW
+    assert wx1 < -b.EDGE and b.ADAPTER_EDGE_X < wx0 and b.ADAPTER_EDGE_X - b.ADAPTER[1] > b.DECK_END
+    mid_x, mid_y = (wx0 + wx1) / 2, b.Y_DESK + b.PLATE_T / 2
+    assert not plate.is_inside((mid_x, mid_y, 0.0))
+    # 타이 구멍 둘은 파이 판의 구멍과 같은 14 × 3이고, 창과 구멍 사이에 타이를 감는 살 4 mm가 있다
+    assert (wx1 - wx0, b.DECK_TIE[1] - b.DECK_TIE[0]) == pytest.approx((14.0, 3.0))
+    assert b.DECK_TIE[0] - hw == pytest.approx(4.0)
+    for sg in (1, -1):
+        assert not plate.is_inside((mid_x, mid_y, sg * sum(b.DECK_TIE) / 2))
+        assert plate.is_inside((mid_x, mid_y, sg * (hw + b.DECK_TIE[0]) / 2))
+    # 플러그의 넓은 면을 잡을 자리: 서보 단자의 변 앞으로 몸통 뒷면까지 20 mm 넘게 비어 있다
+    assert -b.R_CORE - b.ADAPTER_EDGE_X >= 20.0
+    # 앞 턱이 기판 앞에서 기판 윗면 높이까지 막는다 (떨어진 나사가 기판 밑으로 굴러들지 못한다)
+    x_sill = b.ADAPTER_EDGE_X + b.DECK_SILL[1] + b.DECK_SILL[0] / 2
+    assert plate.is_inside((x_sill, top + b.ADAPTER_T - 0.2, 0.0))
+    assert b.DECK_SILL[1] < 1.0
+    # 옆 턱은 날개의 더 두꺼운 띠와 같은 높이고, 책상 위까지 들어와 띠에 붙어 있다
+    rib = sum(b.DECK_RIB) / 2
+    assert plate.is_inside((b.DECK_END + 5.0, b.Y_FLOOR + b.RING_H + b.STIFF_H - 0.5, rib))
+    assert plate.is_inside((-b.EDGE + 5.0, b.Y_FLOOR + b.RING_H + b.STIFF_H - 0.5, rib))
+    assert b.DECK_RIB[1] == pytest.approx(b.WING_IN)
+    # 플러그를 누르고 당기는 힘 20 N에 뒤 판이 0.2 mm도 휘지 않는다 (어림). 턱이 없으면 2 mm쯤 휜다
+    bend = b.deck_bend()
+    assert bend["서보 단자에서"] < 0.02 and bend["전원 쪽 긴 변에서"] < 0.2
+    assert bend["턱이 없으면 전원 쪽 긴 변에서"] > 1.0
 
 
 @pytest.mark.slow

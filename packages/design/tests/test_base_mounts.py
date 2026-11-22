@@ -6,6 +6,7 @@ import math
 
 import numpy as np
 import pytest
+from build123d import Pos
 
 from horilab_design import placement as pl
 from horilab_design.parts import base as b
@@ -67,23 +68,63 @@ def test_pi_tray_matches_the_wing_posts_the_pi_and_the_cover() -> None:
 @pytest.mark.slow
 def test_pi_side_parts_clear_the_core_the_plate_and_the_clamps() -> None:
     near = pm.clearances(limit=3.0)
-    # 닿는 것은 기둥에 앉은 파이 판과 판 나사, 돋움에 앉은 서보 어댑터뿐이다. 어댑터의 플러그 자리(변 전체로 넉넉히
-    # 그린 상자)는 기둥과 클램프에서 0.5 mm 넘게 떨어져 있다
+    # 닿는 것은 기둥에 앉은 파이 판과 판 나사, 돋움에 앉은 서보 어댑터, 뒤 판에 얹은 어댑터 덮개뿐이다.
+    # 클램프 가까이에는 아무것도 없다 (어댑터를 파이 밑에서 뺐다)
+    seats = {"서보 어댑터", "어댑터 덮개"}
     for (a, other), d in near.items():
-        if "자리" in a:
-            assert d >= 0.5, (a, other, d)
-            continue
-        if other.startswith(
-            "클램프"
-        ):  # 클램프의 위 턱은 서보 어댑터와 2 mm 넘게 떨어져 뒤에서 드나든다
-            assert a == "서보 어댑터" and d >= 2.0, (a, other, d)
-            continue
-        seated = "파이 판" in a or a == "서보 어댑터"
-        assert seated and other == "책상에 무는 판" and d < 0.01, (a, other, d)
+        assert other == "책상에 무는 판", (a, other, d)
+        if "파이 판" in a or a in seats:
+            assert d < 0.01, (a, other, d)
+        else:  # 어댑터의 부품과 꽂힌 플러그: 앞 턱과 0.8, 뒤쪽 돋움과 0.3 mm 넘게 떨어져 있다
+            assert a.startswith("서보 어댑터/") and d >= 0.3, (a, other, d)
     # 오른쪽 파이의 젠더와 전원 플러그는 몸통과 3 mm 넘게 떨어져 있다 (젠더는 도면 값)
     wide = pm.clearances(limit=6.0)
     gaps = [wide[(f"컨트롤러 파이/{name}", "베이스 몸통")] for name in ("젠더", "전원 플러그")]
     assert b.BODY_GAP <= min(gaps) < b.BODY_GAP + 1.0
+
+
+@pytest.mark.slow
+def test_adapter_cover_lifts_off_over_the_plugged_wires() -> None:
+    cover = pm.adapter_cover()
+    plate = b.plate()
+    # 덮개는 뒤 판에 얹힌다 (닿고, 겹치지 않는다). 옆벽은 옆 턱 밖, 앞 끝은 날개 뒷면, 뒷벽은 뒤 판 끝에 걸린다
+    assert cover.distance_to(plate) < 0.01 and solid(cover & plate).volume < 0.01
+    x_out, x_front, hw_out, top = pm.cover_extent()
+    assert 0.2 <= -b.EDGE - x_front <= 0.6
+    assert 0.2 <= (hw_out - pm.CAP_WALL) - b.DECK_RIB[1] <= 0.4 and hw_out <= b.DECK_HW
+    assert 0.2 <= b.DECK_END - (x_out + pm.CAP_WALL) <= 0.6
+    # 위로 곧게 들면 아무것에도 걸리지 않는다: 덮개를 40 mm 든 자리와 그 사이에서 판, 어댑터, 꽂힌 것들과 겹치지 않는다
+    inside = [p for p in pm.adapter_parts() if p.name != "어댑터 덮개"]
+    for lift in (5.0, 20.0, 40.0):
+        moved = solid(Pos(0.0, lift, 0.0) * cover)
+        assert solid(moved & plate).volume < 0.01, lift
+        for p in inside:
+            assert solid(moved & p.shape).volume < 0.01, (lift, p.name)
+    # 속의 것과 2 mm 넘게 떨어져 있다: 플러그 위에서 반 바퀴 도는 서보 선 위로 2.5 mm, 뒷벽의 홈에서 USB 플러그와
+    # 전원선 옆으로 2 mm
+    gaps = pm.cover_gaps()
+    assert min(gaps.values()) >= 2.0, min(gaps.items(), key=lambda kv: kv[1])
+    # 덮개 윗면은 파이 덮개보다 낮다
+    stack = pm.stack()
+    assert stack["어댑터 덮개 윗면"] == pytest.approx(top) and top < stack["아크릴 판 밑면"] - 10.0
+    room = pm.adapter_room()
+    # 꽂은 USB 플러그 끝(가정한 길이 30)에서 벽까지 선이 꺾일 자리 50 mm가 넘게 남는다
+    assert room["USB 플러그 끝(가정한 길이)에서 벽까지"] >= 50.0
+    # 서보 플러그는 앞(몸통 쪽)과 뒤(기판 위)로 잡는다: 앞 20 mm, 뒤는 DC 잭까지 10 mm가 넘고 잭 위로도 10 mm가 남는다
+    assert room["서보 플러그 앞: 몸통 뒷면까지 (선 창과 선이 나가는 바닥)"] >= 20.0
+    assert room["서보 플러그 뒤: DC 잭까지 (그 사이는 낮은 부품뿐이다)"] >= 10.0
+    assert room["DC 잭 꼭대기에서 플러그 뒤 끝까지 (잭 위로 잡는 높이)"] >= 2.5
+    assert room["플러그 위 고리의 꼭대기와 덮개 천장 사이"] >= 2.0
+    assert room["창 밑에서 올라오는 줄과 책상 뒷면 사이"] >= 1.5
+    # 어댑터의 고정 나사 자리는 판의 돋움과 같다
+    assert {(round(x, 3), round(z, 3)) for x, z in b.adapter_xz()} == {
+        (
+            round(b.ADAPTER_EDGE_X - 2.5 - k * b.ADAPTER_HOLES[1], 3),
+            round(s * b.ADAPTER_HOLES[0] / 2, 3),
+        )
+        for k in (0, 1)
+        for s in (1, -1)
+    }
 
 
 def test_rest_pose_seats_the_forearm_end_on_the_shelf() -> None:
@@ -188,10 +229,11 @@ def test_link_feet_can_take_the_wire_over_the_body_or_around_the_brim() -> None:
         )
         assert over.slack() > 50.0 and brim.slack() > 50.0, name
     by = {w.name: w for w in wr.wires()}
-    parts = dict(by["띠 밑 누르개 → J3"].parts)
+    parts = dict(by["어댑터 → J3"].parts)
     # 선은 두 길 가운데 긴 쪽에 맞춰 골라서, 어느 길로 가도 닿는다
     assert parts["J2 넘기"] == pytest.approx(max(c.longest() for c in wr.link_crossings()["J2"]))
-    assert by["J3 → J4"].left > 100.0 and by["띠 밑 누르개 → J3"].left > 100.0
+    # 어댑터 → J3의 길이에는 어댑터 쪽의 고리 둘(플러그 위, 선 창 밑)이 들어 있다. 남는 선은 창 밑의 고리를 키운다
+    assert by["J3 → J4"].left > 100.0 and by["어댑터 → J3"].left > 50.0
 
 
 @pytest.mark.slow

@@ -1,0 +1,64 @@
+{
+ "name": "arm-black-2",
+ "made": "2026-11-22T15:44:07",
+ "studio": "02.09.01.70",
+ "profiles": "02.09.00.81",
+ "bed_type": "Textured PEI Plate",
+ "plates": [
+  {
+   "file": "01-black-9f8c6e.3mf",
+   "image": "01-black-9f8c6e.png",
+   "color": "black",
+   "preset": "0.20mm Strength @BBL X1C",
+   "minutes": 217,
+   "grams": 145.5,
+   "overnight": false,
+   "parts": [
+    {
+     "file": "adapter_cover.stl",
+     "label": "어댑터 덮개",
+     "module": "pi_mount",
+     "count": 1,
+     "sha": "eade344d0f82",
+     "height_mm": 39.6,
+     "base_mm2": 3553,
+     "overhang_mm2": 0,
+     "slender": false
+    },
+    {
+     "file": "base_plate.stl",
+     "label": "책상에 무는 판",
+     "module": "base",
+     "count": 1,
+     "sha": "09e8b548025b",
+     "height_mm": 27.0,
+     "base_mm2": 23818,
+     "overhang_mm2": 0,
+     "slender": false
+    }
+   ]
+  },
+  {
+   "file": "02-black-bf80cb.3mf",
+   "image": "02-black-bf80cb.png",
+   "color": "black",
+   "preset": "0.20mm Strength @BBL X1C",
+   "minutes": 60,
+   "grams": 30.5,
+   "overnight": false,
+   "parts": [
+    {
+     "file": "pi_tray.stl",
+     "label": "파이 판",
+     "module": "pi_mount",
+     "count": 2,
+     "sha": "a8af406d0b25",
+     "height_mm": 4.6,
+     "base_mm2": 5024,
+     "overhang_mm2": 0,
+     "slender": false
+    }
+   ]
+  }
+ ]
+}

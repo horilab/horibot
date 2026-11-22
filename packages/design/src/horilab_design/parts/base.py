@@ -231,10 +231,9 @@ TRAY_T = 3.0
 # 두 파이 판이 같은 부품이고 두 날개가 거울상이다
 POST_DX, POST_DZ = 30.0, COVER_PITCH[1] / 2
 POST_R = 4.0
-# 파이 판 밑면의 높이 (책상에서). 그 밑에 서보 어댑터와 클램프의 위 턱이 든다.
-# 가정: 서보 어댑터에서 가장 높은 곳이 기판 위 11 mm (잰 값이 아니다. 뽑기 전에 잰다)
-ADAPTER_SEAT = 3.0  # 어댑터 기판을 날개 위로 띄우는 돋움의 높이
-ADAPTER_TALL = 11.0
+# 파이 판 밑면의 높이 (책상에서). 그 밑에 클램프의 위 턱(윗면 17.93)이 든다. 서보 어댑터는 이 밑에서 몸통 뒤로
+# 옮겼지만(아래 "서보 어댑터 자리") 높이는 그대로 둔다: 낮추면 위 턱을 뒤에서 끼우고 빼는 틈(파이 판 밑으로 나온
+# 너트까지 5.9)이 준다
 TRAY_UNDER = 27.0
 POST_TAP = 10.0  # 기둥 속 조여 넣는 구멍의 깊이
 WING_Z = PI_CZ + TRAY_HZ  # 판의 반폭 (122.35)
@@ -249,15 +248,68 @@ CLAMP_IN = 25.0  # 책상 가장자리에서 띠의 가운데까지 (design.md: 
 THICK_OUT = CLAMP_Z + 12.0  # 두께 WING_T인 띠의 바깥 끝. 그 밖은 얇은 바닥(PLATE_T)이다
 STIFF_OUT = 62.0  # 더 두꺼운 띠의 바깥 끝 (클램프 위 턱 65.1과 3 mm 띄운다)
 STIFF_H = 6.0  # 그 띠가 날개 윗면보다 높은 만큼 (책상에서 16)
-# 서보 어댑터 (42 × 33, 구멍 37 × 28, 지름 2.5: Waveshare 치수 그림). 컨트롤러 파이 밑에 눕힌다. 긴 변이 x 쪽이고
-# 서보 단자가 있는 긴 변이 몸통을, 전원·USB 쪽 긴 변이 바깥을 본다. 돋움은 두 날개에 다 낸다 (판이 좌우 대칭)
+# ---- 서보 어댑터 자리 (몸통 바로 뒤 가운데, 2026-11-22. docs/decisions/0038-base-layout.md) ----
+# Waveshare Bus Servo Adapter (A): 기판 42 × 33, 구멍 37 × 28 (지름 2.5). 서보 단자 둘은 한 긴 변에서 위로 꽂고,
+# DC 잭·나사 단자·USB-C는 맞은편 긴 변에 있다 (Waveshare 치수 그림. 부품 자리는 parts/pi_mount.py).
+# 꽂은 서보 플러그와 위로 나와 꺾이는 선이 기판 밑면에서 23.3 mm까지 올라오고, 꽉 끼는 플러그를 잡고 흔들어 빼려면
+# 그 위와 앞뒤가 열려 있어야 한다. 그래서 파이 밑(파이 판까지 14 mm)에서 꺼내, 두 날개 사이에서 책상 뒤 가장자리
+# 밖으로 낸 판(뒤 판)에 눕힌다. 서보 단자가 있는 긴 변이 몸통을, 전원·USB 쪽 긴 변이 벽을 본다.
+# - 견준 안: 파이 판을 13 mm 올려 그대로 파이 밑에 (플러그 위가 막혀 파이를 떼야 뽑는다. 덮개 윗면이 띠 밑에 닿는다),
+#   SO-101처럼 세워 달기 (받침 부품이 하나 늘고, 플러그가 벽 쪽을 봐서 보지 않고 뽑는다. 꽂는 힘이 받침을 층을 떼는
+#   쪽으로 민다), 날개 바깥 옆면 (판 폭 244.7에 자리가 없고 한쪽에만 달린다. J1 선이 300 mm 선으로 는다).
+# - 고른 까닭: 위가 열려 플러그를 위로 뽑고 나사 단자를 위에서 조인다. 몸통 뒤 아래의 선 구멍과 띠 밑 누르개가 바로
+#   옆이다. 좌우 가운데라 대칭이 그대로이고 새 부품은 덮개 하나다. 덮개 윗면(40.6)이 파이 덮개(55.8)보다 낮다
+# - 기판의 방향: 서보 단자의 변이 몸통을 본다. 서보 선은 납작해서 단자가 늘어선 쪽으로는 굽지 않으므로, 이 방향이어야
+#   플러그 위의 고리, 선 창, 몸통의 선 구멍과 띠 밑 누르개가 한 평면에 놓여 선이 비틀리지 않는다. 변이 옆을 보면
+#   (90° 돌리면) 몸통으로 가는 길에서 선을 90° 비틀어야 하고, 벽을 보면(180°) USB 플러그가 몸통을 본다.
+#   눕힌 기판에서는 선이 위로 나와 반 바퀴 돌아야 한다 (parts/pi_mount.py의 AD_LOOP_R: 곧게 6, 반지름 7)
 ADAPTER = (42.0, 33.0)
 ADAPTER_HOLES = (37.0, 28.0)
-# 어댑터는 x로는 앞뒤 기둥 사이(-38 ~ 14)에 든다. 몸통 쪽 긴 변의 플러그가 변의 어디에 있어도 위 턱의 끝(x -31.3)과
-# 2 mm 떨어지게 앞으로 당겼다. 옆 자리(ADAPTER_CZ)는 클램프 위 턱에 맞춘다 (아래). 바깥 쪽 긴 변의 플러그와 선은
-# 앞뒤 기둥 사이로 나간다
-ADAPTER_CX = PI_CX + 3.8  # 어댑터 가운데의 x (-8.2)
-M2_BOSS_R = 3.0
+ADAPTER_T = 1.6  # 기판 두께 (가정: 재지 않았다)
+ADAPTER_JACK_TOP = 12.69  # DC 잭 꼭대기 (기판 밑면에서, 2026-11-22 캘리퍼스)
+ADAPTER_PLUG_TOP = (
+    23.3  # 꽂은 서보 플러그와 위로 나와 꺾이는 선의 꼭대기 (기판 밑면에서, 2026-11-22 캘리퍼스)
+)
+ADAPTER_TALL = 11.0  # DC 잭 꼭대기를 기판 위로 어림한 값 (잰 값은 11.09). 재기 안내의 그림(guides/arm_measure.py)이 쓴다
+ADAPTER_SEAT = (
+    3.0  # 돋움의 높이 (뒤 판 바닥 위): 기판 밑으로 나온 납땜 다리(사진 어림 2 mm)를 띄운다
+)
+# 뒤 판: 책상에 무는 판의 바닥(PLATE_T)을 책상 뒤 가장자리 밖으로 늘린 것. 벽까지 151 mm다 (data/measured.toml의 desk)
+# 선 창: 책상 가장자리 바로 밖에서 바닥을 뚫은 창. 남는 서보 선(J1 → J2 선 482, J3 줄 220, J1 줄 100 mm쯤)을 고리째
+# 이 창으로 내려 책상 뒤로 늘어뜨린다. 서보 선은 납작해서 단자가 늘어선 쪽(옆)으로는 잘 굽지 않고 앞뒤·위아래로
+# 굽는다. 창이 플러그 바로 앞이라 선이 굽기 쉬운 쪽으로만 굽어 내려가고, 고리가 제 무게로 아래에 머문다.
+# 창의 길이 14는 플러그 위에서 반 바퀴 돈 줄(플러그 가운데에서 앞으로 14)과 다시 올라오는 줄이 3 mm 띄워 지나가는
+# 길이다. 두 줄이 가까워 창 밑의 고리는 뒤로 배가 나온 물방울 모양이 된다 (되굽는 곳 83°, 반지름 12). 창을 17 mm
+# 늘리면 되굽지 않는 반 바퀴가 되지만 뒤 판이 70 mm 나오고 USB 플러그 끝에서 벽까지가 54 mm로 준다 (플러그 길이는
+# 가정이다). 되굽는 곳도 반지름 12라 늘리지 않았다
+# 창이 없으면 남는 선이 몸통 뒤에서 위로 서는 고리가 되어, J1이 돌 때 선이 감겼다 풀리는 띠(책상에서 72.8 ~ 88.8)에
+# 닿을 수 있다 (0031: 꺾임과 끼임이 첫 조건이다. 선의 뻣뻣함에 맡기지 않는다). 창만큼 뒤 판이 15 mm 길어진다
+DECK_WINDOW = (
+    (-75.0, -61.0),
+    14.0,
+)  # 선 창의 x 범위, 반폭 (서보 선 셋이 고리로 드나들고 플러그 9.6 × 5.4도 지나간다)
+# 찍찍이 타이 구멍 둘 (파이 판의 구멍과 같은 14 × 3): 선 창의 양옆. 창과 구멍 사이의 살(폭 4)에 타이를 감아, 창으로
+# 내려가는 선을 묶는다. 서 있는 선만 묶고 남는 선은 그 밑으로 느슨한 고리로 둔다 (접어 꺾지 않는다)
+DECK_TIE = (18.0, 21.0)  # 타이 구멍의 |z| 범위 (x 범위는 선 창과 같다)
+# 앞 턱: 선 창의 뒤 변을 따라 기판 윗면 높이까지 올라와, 떨어진 나사가 기판 밑(납땜 다리)으로 굴러들지 못한다.
+# 두께, 기판 변과의 틈
+DECK_SILL = (1.2, 0.8)
+# 서보 단자가 있는 긴 변의 x (-77.0). 그 앞은 선 창과 선이 나가는 바닥이라 몸통 뒷면(-40.5)까지 36.5 mm가 비고,
+# 손가락이나 롱노즈가 플러그의 넓은 면(앞뒤)을 잡는다. 플러그 뒤쪽(기판 위)은 DC 잭까지 14 mm가 낮은 부품뿐이다
+ADAPTER_EDGE_X = DECK_WINDOW[0][0] - sum(DECK_SILL)
+ADAPTER_CX = ADAPTER_EDGE_X - ADAPTER[1] / 2  # 어댑터 가운데의 x (-93.5). 옆으로는 가운데(z = 0)다
+DECK_END = (
+    ADAPTER_EDGE_X - ADAPTER[1] - 3.0
+)  # 뒤 끝 (-113.0). DC 잭이 변 밖으로 1 mm쯤 나오고 덮개 뒷벽이 그 뒤다
+DECK_HW = 32.5  # 반폭: 옆 턱 밖으로 덮개 옆벽이 앉는 2.5 mm가 남는다
+# 옆 턱 둘 (|z| 범위): 덮개의 옆 자리를 잡고 뒤 판을 굳힌다 (선 창 옆은 바닥이 좁아 턱이 굽힘을 받는다). 높이는 날개의
+# 더 두꺼운 띠(책상에서 16)와 같고, 앞으로는 그 띠의 안쪽 면을 따라 DECK_RIB_FRONT까지 들어와 띠와 한 몸이다
+# (뒤 판의 뿌리가 책상 위에서 잡힌다)
+DECK_RIB = (27.6, 30.0)
+DECK_RIB_FRONT = -48.0
+M2_BOSS_R = (
+    2.5  # 구멍(1.7) 둘레 살 1.65. 뒤쪽 돋움이 기판 변 밖으로 나오지 않아 USB 플러그 밑을 비킨다
+)
 # 가진 금속 클램프 (다 벌린 틈과 위 턱은 캘리퍼스, 나머지는 사진으로 어림한 값, hardware.md). 등을 책상 가장자리에
 # 붙이면 위 턱이 가장자리에서 JAW_REACH까지 날개를 누르고, 나사가 그 밑(JAW_AXIS)에서 받침으로 책상 밑면을 민다
 JAW_REACH = 28.67  # 위 턱이 등 안쪽 면에서 나온 길이 (2026-11-21 캘리퍼스)
@@ -266,8 +318,6 @@ JAW_HW = 4.88  # 각재의 반폭 (위 턱의 폭 9.76, 2026-11-21 캘리퍼스)
 JAW_T, SPINE_T = 7.93, 9.0  # 위 턱의 두께 (2026-11-21 캘리퍼스), 등과 아래 턱의 두께
 PAD_R, PAD_T = 20.0, 10.7  # 나사 끝 받침의 반지름, 받침의 높이 (나사를 다 풀었을 때 아래 턱 위로)
 CLAMP_OPEN = 55.88  # 금속 클램프를 다 벌린 틈 (2026-11-13 캘리퍼스, hardware.md)
-# 서보 어댑터의 옆 자리: 몸통 쪽 긴 변이 클램프 위 턱의 바깥 면(|z| 74.9)에서 2.1 mm 바깥이다 (턱이 뒤에서 드나든다)
-ADAPTER_CZ = CLAMP_Z + JAW_HW + 2.1 + ADAPTER[1] / 2  # |z| 93.5
 R_PLATE = (
     33.0  # 몸통을 판에 묶는 나사 넷 (45° 대각선: 서보 먼 끝 자리와 선 구멍, 벽 나사 굴을 비킨다)
 )
@@ -301,7 +351,7 @@ STRIP_TAP = 9.0
 
 PROVISIONAL = (
     "ㄱ자 USB-C 젠더 ML-CCSG3의 크기 (GENDER_*: 판매 페이지의 도면 값이고 깃과 플러그 자리는 도면의 비례다. 몸통 쪽 틈이 3 mm라 재지 않는다)",
-    "서보 어댑터의 높이 (ADAPTER_TALL)와 단자가 긴 변의 어디에 있는지 (재지 않았다)",
+    "서보 어댑터의 기판 두께 (ADAPTER_T)와 기판 밑 납땜 다리 (사진 어림 2 mm), 단자 자리 (치수 그림에서 읽어 ±0.5 mm쯤)",
     "USB-C 단자가 파이 기판 밖으로 나온 길이 (USBC_OUT)",
     "M2_TAP (스프링 줄과 서보 어댑터의 M2 나사를 조여 넣는 구멍. 시험편 값이 없다)",
 )
@@ -422,14 +472,9 @@ def post_xz() -> list[tuple[float, float]]:
 
 
 def adapter_xz() -> list[tuple[float, float]]:
-    """서보 어댑터의 돋움 여덟 (x, z): 날개마다 넷 (어댑터의 고정 구멍 37 × 28)."""
-    hx, hz = ADAPTER_HOLES[0] / 2, ADAPTER_HOLES[1] / 2
-    return [
-        (ADAPTER_CX + sx * hx, s * (ADAPTER_CZ + sz * hz))
-        for s in (1, -1)
-        for sx in (1, -1)
-        for sz in (1, -1)
-    ]
+    """서보 어댑터의 돋움 넷 (x, z): 뒤 판 위 (어댑터의 고정 구멍 37 × 28, 긴 변이 옆 쪽)."""
+    hx, hz = ADAPTER_HOLES[1] / 2, ADAPTER_HOLES[0] / 2
+    return [(ADAPTER_CX + sx * hx, sz * hz) for sx in (1, -1) for sz in (1, -1)]
 
 
 def _side(x0: float, x1: float, y0: float, y1: float, s0: float, s1: float, sg: int) -> Compound:
@@ -444,7 +489,8 @@ def plate() -> Compound:
     바닥(PLATE_T) 위로 몸통 둘레의 턱과 날개가 RING_H만큼 올라와 있다. 몸통은 턱 안에 앉아 자리를 잡고,
     밑에서 올라온 나사 넷이 몸통 속 너트에 물린다. 클램프는 파이 판 밑에서 날개 윗면을 책상 가장자리에서 문다.
     날개에서 클램프가 무는 띠까지는 두께 WING_T이고(몸통 쪽은 STIFF_H만큼 더 두껍다), 그 밖과 앞은 얇은 바닥이다.
-    얇은 바닥 위로 파이 판을 받치는 기둥 넷과 서보 어댑터의 돋움 넷이 선다.
+    얇은 바닥 위로 파이 판을 받치는 기둥 넷이 선다. 두 날개 사이에서는 바닥이 책상 뒤 가장자리 밖으로 나와(뒤 판)
+    서보 어댑터의 돋움 넷과 덮개의 자리를 잡는 턱을 받친다.
     """
     r_seat = R_CORE + SEAT_GAP
     r_out = r_seat + RING_W
@@ -471,8 +517,24 @@ def plate() -> Compound:
             post = solid(post + solid(foot))
         p = solid(p + post)
         p = solid(p - cyl_y(j.M3_TAP / 2, y_tray - POST_TAP, y_tray + 1, x, z))
-    y_ad = y2 + ADAPTER_SEAT
-    for x, z in adapter_xz():  # 서보 어댑터의 돋움: M2 나사를 조여 넣는다
+    # 뒤 판: 책상 뒤 가장자리 밖으로 나온 바닥, 옆 턱 둘, 앞 턱. 선 창과 타이 구멍 둘을 뚫는다
+    deck = box(DECK_END, -EDGE + 0.01, y0, y1, -DECK_HW, DECK_HW)
+    rib0, rib1 = DECK_RIB
+    for sg in (1, -1):
+        deck += _side(DECK_END, DECK_RIB_FRONT, y1 - 0.01, y3, rib0, rib1, sg)
+    sill_t, sill_gap = DECK_SILL
+    x_sill = ADAPTER_EDGE_X + sill_gap
+    y_ad = y1 + ADAPTER_SEAT
+    deck += box(x_sill, x_sill + sill_t, y1 - 0.01, y_ad + ADAPTER_T, -rib0 - 0.01, rib0 + 0.01)
+    p = solid(p + solid(deck))
+    (wx0, wx1), w_hw = DECK_WINDOW
+    p = solid(p - box(wx0, wx1, y0 - 1, y1 + 1, -w_hw, w_hw))
+    for sg in (1, -1):
+        p = solid(p - _side(wx0, wx1, y0 - 1, y1 + 1, *DECK_TIE, sg))
+    for (
+        x,
+        z,
+    ) in adapter_xz():  # 서보 어댑터의 돋움: M2 나사를 조여 넣는다 (구멍 밑에 바닥 1 mm가 남는다)
         p = solid(p + cyl_y(M2_BOSS_R, y1 - 0.01, y_ad, x, z))
         p = solid(p - cyl_y(M2_TAP / 2, y_ad - 6.0, y_ad + 1, x, z))
     for x, z in plate_xz():  # 나사 구멍과 밑면의 머리 자리. 그 사이에 막 한 층이 남는다
@@ -513,6 +575,39 @@ def wing_bend(force_n: float = 70.0, e_gpa: float = 2.5) -> dict[str, float]:
         "지금 (클램프 |z| 70, 몸통 쪽 띠를 두껍게)": tip(CLAMP_Z, STIFF_OUT, WING_T + STIFF_H),
         "두껍게 하지 않으면": tip(CLAMP_Z, 0.0, WING_T),
         "앞선 배치 (클램프 |z| 50, 한 두께)": tip(50.0, 0.0, WING_T),
+    }
+
+
+def deck_bend(force_n: float = 20.0, e_gpa: float = 2.5) -> dict[str, float]:
+    """뒤 판(책상 밖으로 나온 판)이 플러그를 꽂고 빼는 힘에 휘는 양 [mm] (어림: 책상 가장자리에서 뻗은 외팔보).
+
+    단면은 가장 약한 곳(선 창과 타이 구멍 옆: 바닥은 살과 양옆 띠만 남는다)의 것을 길이 전체에 쓴다. 꽉 끼는 서보
+    플러그를 누르고 당기는 힘을 20 N쯤으로 본다. 가장 먼 것은 뒤쪽 긴 변의 나사 단자(드라이버로 누른다)다.
+    """
+    e = e_gpa * 1e3
+    rib_w, rib_h = DECK_RIB[1] - DECK_RIB[0], RING_H + STIFF_H
+    floor_w = 2 * (DECK_HW - DECK_TIE[1] + DECK_TIE[0] - DECK_WINDOW[1])
+
+    def inertia(ribs: bool) -> float:
+        a_floor, a_rib = floor_w * PLATE_T, 2 * rib_w * rib_h * ribs
+        c_floor, c_rib = PLATE_T / 2, PLATE_T + rib_h / 2
+        c = (a_floor * c_floor + a_rib * c_rib) / (a_floor + a_rib)
+        return (
+            floor_w * PLATE_T**3 / 12
+            + a_floor * (c - c_floor) ** 2
+            + ribs * 2 * rib_w * rib_h**3 / 12
+            + a_rib * (c_rib - c) ** 2
+        )
+
+    def tip(arm: float, ribs: bool = True) -> float:
+        return force_n * arm**3 / (3 * e * inertia(ribs))
+
+    servo = -EDGE - (ADAPTER_EDGE_X - 2.5)  # 서보 단자의 가운데 (변에서 2.5)
+    far = -EDGE - (ADAPTER_EDGE_X - ADAPTER[1])  # 전원 쪽 긴 변
+    return {
+        "서보 단자에서": tip(servo),
+        "전원 쪽 긴 변에서": tip(far),
+        "턱이 없으면 전원 쪽 긴 변에서": tip(far, ribs=False),
     }
 
 
@@ -1110,6 +1205,12 @@ def report(model: ServoModel = "STS3215") -> None:
     print(
         f"책상에 무는 판 {plate_box.size.X:.1f} × {plate_box.size.Z:.1f} mm (출력 판 256 mm), 파이 기판 안쪽 변 |z| "
         f"{PI_IN:.1f}, 파이 판 밑면 높이 {TRAY_UNDER:.1f}"
+    )
+    print(
+        f"뒤 판 (서보 어댑터 자리): 책상 뒤 가장자리 밖으로 {-EDGE - DECK_END:.1f} mm, 폭 {2 * DECK_HW:.0f} mm, "
+        f"선 창 {DECK_WINDOW[0][1] - DECK_WINDOW[0][0]:.0f} × {2 * DECK_WINDOW[1]:.0f} mm, 서보 단자의 변과 몸통 "
+        f"뒷면 사이 {-R_CORE - ADAPTER_EDGE_X:.1f} mm. "
+        "20 N에 휘는 양 [mm] (어림): " + ", ".join(f"{k} {v:.3f}" for k, v in deck_bend().items())
     )
     drops = [
         j.nut_entry_overlap(

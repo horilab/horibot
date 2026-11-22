@@ -376,6 +376,21 @@ def link_in(name: str) -> list[Point]:
     ]
 
 
+def core_in() -> list[Point]:
+    """베이스 몸통 속: J1 서보 커넥터(어댑터에서 온 선을 꽂는 쪽) → 뒷면에 눕혀 → 몸통 뒤 아래의 선 구멍."""
+    y_hole = bp.Y_FLOOR + bp.WIRE_EXIT[1] / 2
+    return [*_plug(1), (-j.FAR, BACK_Y, 0.0), (-bp.R_CORE - 1.0, y_hole, 0.0)]
+
+
+def adapter_leads() -> dict[str, float]:
+    """서보 어댑터(몸통 바로 뒤 가운데, parts/pi_mount.py)의 단자에서 몸통까지 가는 길이 [mm].
+
+    플러그 위로 곧게 올라와 반 바퀴 도는 고리, 선 창으로 내려가 책상 뒤에 늘어진 고리(설계 반지름), 다시 올라와
+    몸통으로 가는 굽이까지 넣은 길이다 (pi_mount.servo_leads). 남는 길이는 창 밑의 고리를 더 크게 한다.
+    """
+    return {name: length(points) for name, points in pm.servo_leads().items()}
+
+
 def core_run() -> list[Point]:
     """베이스 몸통: J1 서보 커넥터 → 몸통 뒤 아래의 선 구멍 → 몸통 밖을 따라 띠 밑의 누르개까지."""
     az = math.radians(bp.WIRE_AZ)
@@ -386,7 +401,9 @@ def core_run() -> list[Point]:
         bp.R_CORE * math.sin(az),
     )
     return [
-        *_plug(1),
+        *_plug(
+            -1
+        ),  # 누르개가 있는 왼쪽(-z)의 커넥터. 오른쪽 커넥터에는 어댑터에서 온 선을 꽂는다 (core_in)
         (-j.FAR, BACK_Y, 0.0),
         (-bp.R_CORE - 1.0, y_hole, 0.0),
         (-bp.R_CORE - 1.0, y_hole + 12.0, 0.0),
@@ -459,7 +476,12 @@ class Wire:
 
 
 def wires() -> list[Wire]:
-    """서보 선 일곱 가닥 (0016의 두 줄: 단자 1은 J1 → J2, 단자 2는 J3 → J4 → J5 → J6 → 그리퍼)."""
+    """서보 선 일곱 가닥 (0016의 두 줄: 어댑터 → J1 → J2, 어댑터 → J3 → J4 → J5 → J6 → 그리퍼).
+
+    어댑터는 몸통 바로 뒤 가운데에 있다 (0038). 어댑터에서 몸통까지는 플러그 위의 고리와 선 창 밑의 고리(설계 반지름)를
+    넣어 세고, 남는 길이는 창 밑의 고리를 더 크게 한다. J1 → J2 선의 남는 길이도 같은 창으로 내린다.
+    """
+    lead = adapter_leads()
     x = crossings()
     over = {k: c.longest() for k, c in x.items()}
     for k in (
@@ -470,6 +492,13 @@ def wires() -> list[Wire]:
     strip = length(j1_strip())
     return [
         Wire(
+            "어댑터 → J1",
+            (
+                ("어댑터 ~ 몸통의 선 구멍 (고리 둘)", lead["어댑터 → J1"]),
+                ("베이스 몸통 속", length(core_in())),
+            ),
+        ),
+        Wire(
             "J1 → J2",
             (
                 ("베이스 몸통", length(core_run())),
@@ -479,8 +508,9 @@ def wires() -> list[Wire]:
             ),
         ),
         Wire(
-            "띠 밑 누르개 → J3",
+            "어댑터 → J3",
             (
+                ("어댑터 ~ 띠 밑 누르개 (고리 둘)", lead["어댑터 → 띠 밑 누르개"]),
                 ("J1 넘기", over["J1"]),
                 ("J1 몸통 겉", strip),
                 ("J2 넘기", over["J2"]),
@@ -700,7 +730,7 @@ def wire_masses() -> dict[str, float]:
     def cam(length_mm: float) -> float:
         return length_mm * 1e-3 * D405_KG_M
 
-    to_j3, j34, j45, j56 = "띠 밑 누르개 → J3", "J3 → J4", "J4 → J5", "J5 → J6"
+    to_j3, j34, j45, j56 = "어댑터 → J3", "J3 → J4", "J4 → J5", "J5 → J6"
     lead = d["플러그 ~ 카메라 쪽 잡는 자리"]
     # D405 선: 고리는 양 끝의 몸통이 반씩 든다고 본다. J4·J5 고리는 손목 2와 아래팔 끝이, J1·J2 고리는 위팔과 베이스가 든다
     # J3 → J4 선의 남는 길이는 위팔 관 가운데에 접어 둔다 (2026-11-22, 0031): 위팔 끝 집 쪽에 두면 주 작업 영역의
@@ -1494,6 +1524,13 @@ def report() -> None:
         + ", ".join(f"{c:.0f} → {usable(c):.0f}" for c in CABLES_MM)
         + ")"
     )
+    print(
+        "\n## 어댑터에서 몸통까지 서보 선이 굽는 곳 (반지름은 선 가운데 [mm]. 플러그 위로 "
+        f"{pm.AD_STRAIGHT:.0f} mm는 곧다)"
+    )
+    for name, bends in pm.lead_bends().items():
+        text = ", ".join(f"{v.where} {v.radius:.0f} · {v.angle:.0f}°" for v in bends)
+        print(f"- {name}: {text} (합 {sum(v.angle for v in bends):.0f}°)")
     print("\n## 살 위 통로: 살 가운데 선에서 (멈춤 기둥, 귀)까지 [mm]")
     for name, r, post, ear in (
         ("STS 관절", j.R_DRUM, j.R_POST, j.EAR_HW),

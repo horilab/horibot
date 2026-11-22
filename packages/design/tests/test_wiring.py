@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import itertools
 import math
 
+import numpy as np
 import pytest
 from build123d import Pos
 
@@ -12,6 +14,7 @@ from horilab_design.parts import camera_mount as cmt
 from horilab_design.parts import gripper as gp
 from horilab_design.parts import joint as j
 from horilab_design.parts import links, wrist
+from horilab_design.parts import pi_mount as pm
 from horilab_design.parts import shoulder as sp
 from horilab_design.parts.shapes import box, solid
 from horilab_design.studies import wiring as wr
@@ -33,15 +36,61 @@ def test_wire_is_longest_at_a_stop_and_slack_in_the_middle() -> None:
 def test_each_wire_reaches_with_a_cable_on_hand() -> None:
     chosen = {w.name: w for w in wr.wires()}
     # J6 → 그리퍼는 그리퍼 몸통의 겉으로 돌아서 20 cm 선(181 mm)으로 닿지 않는다. 300 mm 선을 쓴다
-    assert [w.cable for w in chosen.values()] == [900.0, 900.0, 900.0, 300.0, 300.0, 300.0]
+    assert [w.cable for w in chosen.values()] == [300.0, 900.0, 900.0, 900.0, 300.0, 300.0, 300.0]
     assert chosen["J6 → 그리퍼"].need > wr.usable(200.0)
     assert gp.CABLE_G == pytest.approx(4.5)  # 그리퍼의 무게에 넣은 선도 300 mm 선이다
     for w in chosen.values():
         assert w.left >= wr.SPARE, (w.name, w.need, w.left)
     # 산 300 mm 선으로는 아래팔을 지나는 J3 → J4가 닿지 않는다 (0016의 어림과 다르다)
     assert chosen["J3 → J4"].need > wr.usable(300.0)
-    # 띠 밑 누르개에서 어댑터까지 20 cm 넘게 남는다
-    assert chosen["띠 밑 누르개 → J3"].left > 200.0
+    # 어댑터는 몸통 바로 뒤 가운데다 (0038). 길이에는 플러그 위의 고리와 선 창 밑의 고리(반지름 12)가 들어 있다.
+    # J1 줄은 20 cm 선으로는 창 밑의 고리가 반지름 8쯤으로 줄어서 300 mm 선을 쓴다. 두 줄 다 50 mm 넘게 남아 고리가 더 커진다
+    j1, j3 = chosen["어댑터 → J1"], chosen["어댑터 → J3"]
+    assert wr.usable(200.0) < j1.need + wr.SPARE and j1.left > 50.0
+    assert 200.0 < dict(j3.parts)["어댑터 ~ 띠 밑 누르개 (고리 둘)"] < 250.0
+    assert j3.left > 50.0
+
+
+def test_adapter_leads_bend_gently_in_one_plane() -> None:
+    # 서보 선은 플러그 위로 5 mm 넘게 곧고, 굽는 곳마다 안쪽 반지름이 5 mm를 넘는다 (선 두께 1.5의 3배 넘게)
+    assert pm.AD_STRAIGHT > 5.0
+    bends = pm.lead_bends()
+    assert set(bends) == {"어댑터 → J1", "어댑터 → 띠 밑 누르개"}
+    for name, found in bends.items():
+        assert found[0].where.startswith("플러그 위의 고리") and found[0].angle == pytest.approx(
+            180.0
+        )
+        for v in found:
+            assert v.radius - j.WIRE_T / 2 > 5.0, (name, v)
+    # 길은 플러그의 뒤 끝에서 위로 떠나, J1 줄은 몸통의 선 구멍 앞에서 눕고 J3 줄은 띠 밑 누르개에서 선다
+    leads = pm.servo_leads()
+    for name, pts in leads.items():
+        (x0, y0, z0), (x1, y1, z1) = pts[0], pts[1]
+        assert (x1, z1) == pytest.approx((x0, z0)) and y1 - y0 == pytest.approx(pm.AD_STRAIGHT)
+        # 굽이를 10°씩 끊어서, 이웃한 토막 사이의 꺾임이 10°를 넘지 않는다 (날카롭게 꺾인 점이 없다)
+        for a, c, d in zip(pts, pts[1:], pts[2:], strict=False):
+            u = np.subtract(c, a) / math.dist(a, c)
+            v = np.subtract(d, c) / math.dist(c, d)
+            assert math.degrees(math.acos(min(1.0, float(u @ v)))) <= 10.5, name
+    hole = leads["어댑터 → J1"][-1]
+    assert hole[0] == pytest.approx(-bp.R_CORE - 1.0) and hole[2] == pytest.approx(0.0)
+    assert bp.Y_FLOOR + 1.0 < hole[1] < bp.Y_FLOOR + bp.WIRE_EXIT[1] - 1.0
+    clamp = leads["어댑터 → 띠 밑 누르개"][-1]
+    assert clamp[1] == pytest.approx(bp.FRONT - bp.BAND_H - bp.CLAMP_DROP)
+    assert math.hypot(clamp[0], clamp[2]) == pytest.approx(bp.R_CORE + j.WIRE_T / 2)
+    assert math.degrees(math.atan2(clamp[2], clamp[0])) % 360.0 == pytest.approx(bp.WIRE_AZ)
+    # 선은 선 창으로 내려갔다 올라온다: 뒤 판의 밑면 아래로 내려간 점은 모두 창의 x 범위 안이거나 그 뒤(책상 밖)다
+    (wx0, wx1), _hw = bp.DECK_WINDOW
+    for pts in leads.values():
+        crossing = [
+            x
+            for (x, y, _z), (_x2, y2, _z2) in itertools.pairwise(pts)
+            if (y > bp.Y_DESK) != (y2 > bp.Y_DESK)
+        ]
+        assert len(crossing) == 2 and all(wx0 + 1.0 < x < wx1 - 1.0 for x in crossing)
+        assert all(x < -bp.EDGE - 1.0 for x, y, _z in pts if y < bp.Y_DESK)
+    # 플러그 위의 고리는 덮개 천장에 닿지 않는다
+    assert pm.loop_top() + 2.0 <= pm.cover_extent()[3] - pm.CAP_ROOF
 
 
 def test_wire_crosses_the_web_where_the_stop_never_sweeps() -> None:

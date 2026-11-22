@@ -2,8 +2,10 @@
 
 책상에 무는 판(parts/base.py의 plate)의 날개가 곧 파이 받침이다. 날개의 기둥 넷 위에 파이 판을 M3 × 8 넷으로 달고,
 파이 판에 파이(기판만)와 덮개 기둥 넷을 단다. 덮개는 가진 적층 아크릴 케이스의 팬 구멍 판과 팬이다. 파이 판 밑에는
-클램프의 위 턱이 들고, 컨트롤러 파이 밑에는 서보 어댑터가 눕는다. 파이와 덮개에 맞춘 것은 모두 이 작은 판에 있어서,
-가정한 값이 틀리면 이 판만 다시 뽑는다.
+클램프의 위 턱이 든다. 파이와 덮개에 맞춘 것은 모두 이 작은 판에 있어서, 가정한 값이 틀리면 이 판만 다시 뽑는다.
+
+서보 어댑터는 몸통 바로 뒤 가운데, 책상 뒤 가장자리 밖으로 나온 뒤 판에 눕힌다 (parts/base.py의 "서보 어댑터 자리").
+위에서 꽂는 서보 플러그와 선, 전원선, 파이로 가는 USB 선을 실제 크기로 그리고, 그 위에 얹는 덮개(adapter_cover)를 뽑는다.
 
 - 두 파이는 같은 방향이다 (USB·랜이 뒤, 전원이 로봇 왼쪽을 보는 긴 변). 그래서 파이 판 둘이 같은 부품이다.
 - 컨트롤러 파이(hori1)가 오른쪽, 카메라 파이(hori2)가 왼쪽이다. D405 선의 J1·J2 고리는 팔이 J1을 따라 ±160° 도는
@@ -13,8 +15,11 @@
   M2.5 너트에 물린다. 가정: 케이스에 M2.5 너트가 여덟 개 있다. 구멍은 맞춤 없이 지나가는 구멍이다.
 - 덮개 기둥(육각 황동, 몸통 22.93, 한 끝 M3 수나사 6.2): 수나사가 파이 판의 긴 구멍을 지나 판 밑의 M3 너트에 물린다.
   긴 구멍은 x 쪽으로 ±1 mm 길다 (판이 기판 가운데에 맞는지 모른다: 가정).
-- 조립 순서: 날개에 서보 어댑터(컨트롤러 쪽)와 선 → 손에 든 파이 판에 덮개 기둥 넷(밑에서 너트)과 파이(밑에서 너트)
-  → 파이 판을 기둥에 얹고 M3 × 8 넷 → 젠더와 플러그 → 팬을 단 아크릴 판. 클램프는 파이 판을 떼지 않고 뒤에서 끼우고 뺀다.
+- 조립 순서: 손에 든 파이 판에 덮개 기둥 넷(밑에서 너트)과 파이(밑에서 너트) → 파이 판을 기둥에 얹고 M3 × 8 넷
+  → 젠더와 플러그 → 팬을 단 아크릴 판. 클램프는 파이 판을 떼지 않고 뒤에서 끼우고 뺀다.
+- 서보 어댑터 (파이와 따로, 언제든 손이 닿는다): 뒤 판의 돋움 넷에 M2 × 5 넷 → 전원선을 나사 단자에 위에서 조인다
+  → 서보 플러그 둘(왼쪽 단자에 J3 줄, 가운데 단자에 J1 줄)과 USB-C → 덮개를 위에서 얹는다. 덮개는 선을 뽑지 않고
+  들어 뗀다.
 
 좌표(mm)는 parts/base.py와 같다 (J1의 서보 좌표: x 앞, y 위, z 오른쪽 = 로봇 좌표의 -y).
 
@@ -23,11 +28,15 @@
 
 from __future__ import annotations
 
+import itertools
+import math
+from dataclasses import dataclass
+
 from build123d import Compound, Pos
 
 from horilab_design.parts import base as b
 from horilab_design.parts import joint as j
-from horilab_design.parts.shapes import box, cyl_y, far_apart, solid
+from horilab_design.parts.shapes import Point, box, cyl_y, far_apart, rod, solid
 from horilab_design.printcheck import air_wall_lines, mid_layer_levels, overhangs, printed_mass_g
 
 _M = j._MEASURED
@@ -74,12 +83,71 @@ PORTS = {
 DONGLE_OUT = 30.0  # 게임패드 동글이 단자 밖으로 나온 길이 (가정: 재지 않았다)
 UM2_OUT = 30.0  # 파이와 어댑터를 잇는 USB A–C 선의 플러그가 나온 길이 (가정: 재지 않았다)
 
-LABELS = {"pi_tray": "파이 판"}
+# ---- 서보 어댑터 (parts/base.py의 "서보 어댑터 자리": 몸통 바로 뒤 가운데의 뒤 판) ----
+# 기판 위 부품의 자리: (u0, u1, v0, v1, 기판 위 높이). u는 서보 단자가 있는 긴 변을 따라가고(DC 잭 쪽 끝이 0),
+# v는 그 변에서 전원 쪽 긴 변으로 간다. Waveshare 치수 그림(docs.waveshare.com/Bus_Servo_Adapter_A)에서 읽은
+# 값이라 ±0.5 mm쯤이다. 높이는 DC 잭만 잰 값이고 나머지는 흔한 부품 값이다 (가정). 놓인 방향: u가 로봇 오른쪽(+z),
+# v가 뒤(-x)다. 그래서 DC 잭이 왼쪽 뒤, USB-C가 오른쪽 뒤(컨트롤러 파이 쪽)에 온다
+AD_ITEMS = {
+    "서보 단자 1": (5.3, 15.8, 0.0, 5.0, 6.0),
+    "서보 단자 2": (17.4, 28.0, 0.0, 5.0, 6.0),
+    "UART 핀": (29.6, 37.5, 0.3, 2.3, 8.5),
+    "점퍼": (33.2, 39.4, 10.8, 18.4, 8.5),
+    "DC 잭": (4.9, 14.4, 19.0, 34.1, b.ADAPTER_JACK_TOP - b.ADAPTER_T),
+    "나사 단자": (17.1, 24.9, 26.6, 33.7, 10.0),
+    "USB-C 단자": (28.0, 37.2, 25.8, 33.8, 3.2),
+}
+# 서보 단자에 꽂는 줄 (0016의 두 줄. 두 단자는 기판에서 이어져 있어 바꿔 꽂아도 된다): 왼쪽 단자(1)에는 띠 밑
+# 누르개에서 내려온 J3 줄(누르개가 몸통 뒤 왼쪽이다), 가운데 단자(2)에는 몸통 뒤 아래의 선 구멍에서 나온 J1 줄
+assert _M.servo_plug is not None and _M.desk is not None
+AD_PLUG_W = _M.servo_plug.width_mm  # 꽂은 플러그의 폭 (단자가 늘어선 쪽, 잰 값 9.01)
+# 플러그 뒤 끝(선이 나오는 곳)의 높이 (기판 밑면에서). 가정: 바짝 꺾은 선의 꼭대기를 잰 값(23.3)에서 꺾이는 몫을
+# 8 mm로 어림해 뺐다 (플러그 뒤 끝은 재지 않았다). 틀린 만큼 플러그 위의 고리가 오르내린다: 덮개 천장의 여유로 받는다
+AD_PLUG_BACK = b.ADAPTER_PLUG_TOP - 8.0
+# 서보 선이 플러그에서 나와 가는 길 (2026-11-22, 꺾임이 첫 조건이다. 0031). 단자가 위를 봐서 선은 위로 나왔다가
+# 내려와야 한다. 바짝 꺾지 않게, 플러그 위로 곧게 올린 뒤 넉넉한 반지름으로 앞(몸통 쪽)으로 반 바퀴 돌려 선 창으로
+# 내린다. 서보 선은 납작해서(4.85 × 1.5) 앞뒤·위아래로만 굽는다: 길 전체가 한 평면(앞뒤-위아래)에 있어 비틀리지 않는다.
+# 남는 선은 선 창 밑에서 고리로 늘어진다. 반지름은 선의 가운데 값이다 (안쪽 반지름은 0.75 작다)
+AD_STRAIGHT = 6.0  # 플러그 위로 곧게 두는 길이 (기준 5 넘게)
+# 플러그 위에서 반 바퀴 도는 고리 (안쪽 6.25: 기준 5 넘게). 내려가는 줄이 선 창 안(앞 변에서 4.5, 뒤 변에서 9.5)에 온다
+AD_LOOP_R = 7.0
+# 창 밑에서 다시 올라오는 줄의 x (창의 앞 변에서 1.5: 책상 뒷면과 2.5 뜬다)
+AD_LEG_X = b.DECK_WINDOW[0][1] - 1.5
+# 선 창 밑에 늘어진 고리의 반지름 (설계 값: 이만큼은 되게 선을 고른다. 남는 선만큼 더 커진다)
+AD_BIGHT_R = 12.0
+# J1 줄이 창에서 올라와 몸통의 선 구멍 쪽으로 눕는 반지름 (창의 앞 변을 0.4 넘게 비킨다)
+AD_HOLE_R = 8.0
+AD_HOLE_UP = 4.5  # 그 줄이 선 구멍으로 들어가는 높이 (뒤 판 바닥의 윗면에서. 구멍은 0 ~ 7)
+AD_RISE = (20.0, 40.0)  # J3 줄이 창에서 올라와 몸통 뒷면으로 옮겨 가는 두 굽이의 반지름과 각 [°]
+AD_CLAMP_RUN = 15.0  # 띠 밑 누르개 아래로 몸통에 붙어 곧게 서는 길이
+AD_POWER_OUT = 20.0  # 나사 단자에서 뒤로 곧게 나온 전원선을 그린 길이
+AD_Y = b.Y_FLOOR + b.ADAPTER_SEAT  # 어댑터 기판의 밑면
+# 어댑터 덮개 (검정, 나사 없이 위에서 얹고 들어 뗀다): 떨어진 나사가 12 V 나사 단자에 걸치지 않게 하고 먼지를 막는다
+# (0038의 파이 덮개와 같은 까닭). 지붕과 옆벽 둘, 뒷벽이다. 앞(몸통 쪽)은 벽이 없어 서보 선 둘이 지붕 밑으로 나가고,
+# 뒷벽은 USB 플러그와 전원선 자리를 밑이 트인 홈으로 냈다. 그래서 선을 뽑지 않고 덮개만 들어 뗀다.
+# 옆벽은 뒤 판의 옆 턱 밖에 앉아 옆 자리를 잡고, 앞 끝은 날개 뒷면에, 뒷벽은 뒤 판의 끝에 걸려 앞뒤 자리를 잡는다.
+# 지붕은 선 창 위까지 덮는다 (창으로 내려간 선의 고리 윗부분이 덮개 속이다)
+CAP_WALL = 2.0
+CAP_ROOF = 2.0
+# 플러그 위 고리의 꼭대기(책상에서 36.05)와 천장 사이. 플러그 뒤 끝이 가정보다 2 mm 높아도 덮개가 고리를 누르지 않는다.
+# 천장은 책상에서 38.6이라 덮개를 뽑을 때 벽 끝이 층 경계다
+CAP_ROOM = 2.55
+CAP_SIDE_GAP = 0.3  # 옆벽과 옆 턱 사이
+CAP_END_GAP = 0.4  # 앞 끝과 날개 뒷면, 뒷벽과 뒤 판 끝 사이
+CAP_BACK_DROP = 3.0  # 뒷벽이 뒤 판 바닥의 윗면보다 내려온 길이 (바닥 두께 4 가운데 3에 걸린다)
+CAP_NOTCH = (
+    (-6.0, 21.0),
+    18.0,
+)  # 뒷벽의 홈: z 범위(전원선 ±3.9, USB 플러그 4.6 ~ 18.6), 윗변의 높이 (책상에서)
+
+LABELS = {"pi_tray": "파이 판", "adapter_cover": "어댑터 덮개"}
 PROVISIONAL = (
     "아크릴 판의 팬 구멍과 파이 고정 구멍의 자리 (판이 기판 가운데에 맞고 팬이 판 가운데에 있다고 봤다)",
     "케이스의 M2.5 너트 (여덟 개가 있다고 봤다)",
     "기판 두께 BOARD_T, 게임패드 동글 DONGLE_OUT, USB A–C 플러그 UM2_OUT",
     "찍찍이 타이의 폭과 두께 (TIE)",
+    "서보 어댑터의 부품 자리와 높이 (AD_ITEMS: 치수 그림에서 읽은 값. DC 잭 높이와 바짝 꺾은 서보 선의 꼭대기만 쟀다)",
+    "꽂은 서보 플러그의 뒤 끝 높이 (AD_PLUG_BACK: 기판 밑면에서 15.3으로 어림했다. 덮개 천장에 2.5 mm 여유를 뒀다)",
 )
 
 Y_TRAY = b.Y_DESK + b.TRAY_UNDER  # 파이 판 밑면
@@ -273,28 +341,203 @@ def pi_parts(side: int) -> list[j.Part]:
     return [j.Part(f"{who}/{n}", solid(move * s), color=c) for n, s, c in out]
 
 
-def adapter_parts(side: int = CONTROLLER) -> list[j.Part]:
-    """서보 어댑터와 꽂힌 플러그 (자리만. 높이와 단자 자리는 가정이다): 컨트롤러 파이 밑.
+def _ad_box(u0: float, u1: float, v0: float, v1: float, h0: float, h1: float) -> Compound:
+    """어댑터 기판의 (u, v) 범위와 기판 밑면에서의 높이로 만든 상자 (AD_ITEMS의 좌표)."""
+    half = b.ADAPTER[0] / 2
+    x = b.ADAPTER_EDGE_X
+    return box(x - v1, x - v0, AD_Y + h0, AD_Y + h1, u0 - half, u1 - half)
 
-    기판 위로 ADAPTER_TALL까지를 한 덩어리로 그린다 (가장 높은 부품이 어디에 있는지 모른다).
+
+def _ad_center(key: str) -> tuple[float, float]:
+    """기판 위 부품의 가운데 (x, z)."""
+    u0, u1, v0, v1, _h = AD_ITEMS[key]
+    return b.ADAPTER_EDGE_X - (v0 + v1) / 2, (u0 + u1) / 2 - b.ADAPTER[0] / 2
+
+
+@dataclass(frozen=True)
+class Bend:
+    """서보 선이 굽는 곳 하나: 어디서, 선 가운데의 반지름 [mm], 도는 각 [°]."""
+
+    where: str
+    radius: float
+    angle: float
+
+
+class _Trace:
+    """앞뒤(x)-위아래(책상에서의 높이 h) 평면에서 곧은 구간과 원호를 이어 그리는 펜. 각은 +x에서 위쪽으로 잰다."""
+
+    def __init__(self, x: float, h: float, heading_deg: float) -> None:
+        self.x, self.h, self.heading = x, h, heading_deg
+        self.points: list[tuple[float, float]] = [(x, h)]
+        self.bends: list[Bend] = []
+
+    def line(self, length: float) -> None:
+        if length < -1e-9:
+            raise ValueError(f"곧은 구간의 길이가 음수다: {length:.2f}")
+        a = math.radians(self.heading)
+        self.x, self.h = self.x + length * math.cos(a), self.h + length * math.sin(a)
+        self.points.append((self.x, self.h))
+
+    def arc(self, radius: float, turn_deg: float, where: str) -> None:
+        """turn_deg만큼 돈다 (+가 반시계: 앞을 보고 가다 위로 굽는 쪽)."""
+        side = 1.0 if turn_deg > 0 else -1.0
+        a = math.radians(self.heading)
+        cx, ch = self.x - side * radius * math.sin(a), self.h + side * radius * math.cos(a)
+        steps = max(2, math.ceil(abs(turn_deg) / 10.0))
+        for k in range(1, steps + 1):
+            t = math.radians(self.heading + turn_deg * k / steps)
+            self.points.append((cx + side * radius * math.sin(t), ch - side * radius * math.cos(t)))
+        self.x, self.h = self.points[-1]
+        self.heading += turn_deg
+        self.bends.append(Bend(where, radius, abs(turn_deg)))
+
+
+def _lead_start(key: str) -> _Trace:
+    """플러그 뒤 끝에서 위로 곧게, 앞으로 반 바퀴, 선 창을 지나 내려가 창 밑의 고리를 돌아 다시 올라오는 줄까지.
+
+    창 밑의 고리: 내려가는 줄과 올라오는 줄이 창 안에서 가까워서(AD_LEG_X까지 3 mm), 고리는 뒤(벽 쪽)로 배가 나온
+    물방울 모양이다. 내려가는 줄이 뒤로 한 번 굽고(각 β), 큰 원을 180° + β 돌아 올라온다. 책상 뒷면이 앞을 막아
+    앞으로는 나오지 않는다.
     """
-    ax, az = b.ADAPTER[0] / 2, b.ADAPTER[1] / 2
-    y0 = b.Y_DESK + b.WING_T + b.ADAPTER_SEAT
-    cx, cz = b.ADAPTER_CX, side * b.ADAPTER_CZ
-    body = box(cx - ax, cx + ax, y0, y0 + 1.6 + b.ADAPTER_TALL, cz - az, cz + az)
-    inner, outer = sorted((cz - side * az, cz + side * az), key=abs)
-    # 서보 플러그 둘(몸통 쪽 긴 변)과 USB-C 플러그(바깥 쪽 긴 변). 변의 어디에 있는지 몰라 변 전체로 그린다
-    servo = box(cx - ax, cx + ax, y0 + 1.6, y0 + 1.6 + 6.0, *sorted((inner, inner - side * 10.0)))
-    usb = box(cx - ax, cx + ax, y0 + 1.6, y0 + 1.6 + 7.0, *sorted((outer, outer + side * UM2_OUT)))
-    return [
-        j.Part("서보 어댑터", body, color="servo"),
-        j.Part("서보 어댑터/서보 플러그 자리", servo, color="plug"),
-        j.Part("서보 어댑터/USB와 전원선 자리", usb, color="plug"),
+    x, _z = _ad_center(key)
+    t = _Trace(x, AD_Y - b.Y_DESK + AD_PLUG_BACK, 90.0)
+    t.line(AD_STRAIGHT)
+    t.arc(AD_LOOP_R, -180.0, "플러그 위의 고리 (앞으로 반 바퀴)")
+    t.line(t.h)  # 뒤 판의 밑면(책상 윗면 높이)까지 곧게 내려간다
+    beta = math.degrees(math.acos((AD_LEG_X - t.x) / (2 * AD_BIGHT_R)))
+    t.arc(AD_BIGHT_R, -beta, "창 밑: 고리로 들어가며 뒤로 굽는 곳")
+    t.arc(AD_BIGHT_R, 180.0 + beta, "창 밑의 고리")
+    return t
+
+
+def _lead_traces() -> dict[str, tuple[_Trace, float, float]]:
+    """서보 선 둘의 길: 이름 → (펜, 플러그의 z, 끝의 z)."""
+    out: dict[str, tuple[_Trace, float, float]] = {}
+    # J1 줄: 가운데 단자(2) → 창 → 몸통 뒤 아래의 선 구멍 (구멍과 같은 z라 옆으로 가지 않는다)
+    t = _lead_start("서보 단자 2")
+    h_hole = b.PLATE_T + AD_HOLE_UP
+    t.line(h_hole - AD_HOLE_R - t.h)
+    t.arc(AD_HOLE_R, -90.0, "창에서 올라와 선 구멍 쪽으로 눕는 곳")
+    t.line(-b.R_CORE - 1.0 - t.x)
+    out["어댑터 → J1"] = (t, _ad_center("서보 단자 2")[1], 0.0)
+    # J3 줄: 왼쪽 단자(1) → 창 → 몸통 뒷면을 따라 띠 밑의 누르개 (누르개가 몸통 뒤 왼쪽이라 왼쪽 단자가 가깝다)
+    t = _lead_start("서보 단자 1")
+    az = math.radians(b.WIRE_AZ)
+    r_wire = b.R_CORE + j.WIRE_T / 2
+    x_end, z_end = r_wire * math.cos(az), r_wire * math.sin(az)
+    radius, turn = AD_RISE
+    a = math.radians(turn)
+    run = (x_end - t.x - 2 * radius * (1 - math.cos(a))) / math.sin(a)
+    rise = 2 * radius * math.sin(a) + run * math.cos(a)
+    h_clamp = b.FRONT - b.BAND_H - b.CLAMP_DROP - b.Y_DESK
+    t.line(h_clamp - AD_CLAMP_RUN - rise - t.h)
+    t.arc(radius, -turn, "창에서 올라와 몸통 쪽으로 기우는 곳")
+    t.line(run)
+    t.arc(radius, turn, "몸통 뒷면에 붙어 다시 서는 곳")
+    t.line(AD_CLAMP_RUN)
+    out["어댑터 → 띠 밑 누르개"] = (t, _ad_center("서보 단자 1")[1], z_end)
+    return out
+
+
+def servo_leads() -> dict[str, list[Point]]:
+    """어댑터의 서보 단자에서 몸통까지 가는 서보 선 둘의 길 (플러그 뒤 끝부터, 선 가운데의 꺾은선. 원호는 10°씩 끊었다).
+
+    선은 플러그 위로 곧게 올라와 앞으로 반 바퀴 돌고, 플러그 바로 앞의 선 창(parts/base.py의 DECK_WINDOW)으로 내려가
+    책상 뒤에서 고리로 늘어졌다가 창으로 다시 올라온다. J1 줄은 거기서 몸통 뒤 아래의 선 구멍으로 눕고, J3 줄은 몸통
+    뒷면으로 옮겨 가 띠 밑의 누르개로 올라간다. 창 밑의 고리는 설계 반지름(AD_BIGHT_R)으로 그렸다: 고른 선의 남는
+    길이만큼 더 크게 늘어진다 (studies/wiring.py가 길이를 센다). J3 줄은 창에서 누르개까지 가며 옆으로 9 mm 옮겨 간다.
+    """
+    out: dict[str, list[Point]] = {}
+    for name, (t, z0, z1) in _lead_traces().items():
+        # 옆으로 옮겨 가는 것은 창에서 다시 올라온 뒤다: 거기서 끝까지 간 길이에 고르게 나눈다
+        start = next(k for k, (x, h) in enumerate(t.points) if abs(x - AD_LEG_X) < 1e-6 and k > 2)
+        run = [0.0]
+        for p, q in itertools.pairwise(t.points[start:]):
+            run.append(run[-1] + math.dist(p, q))
+        pts: list[Point] = []
+        for k, (x, h) in enumerate(t.points):
+            f = 0.0 if k <= start else run[k - start] / run[-1]
+            pts.append((x, b.Y_DESK + h, z0 + (z1 - z0) * f))
+        out[name] = pts
+    return out
+
+
+def lead_bends() -> dict[str, list[Bend]]:
+    """서보 선 둘이 굽는 곳 (플러그에서 몸통 쪽으로 차례대로)."""
+    return {name: t.bends for name, (t, _z0, _z1) in _lead_traces().items()}
+
+
+def loop_top() -> float:
+    """플러그 위 고리의 꼭대기 (선의 바깥 면, 책상에서) [mm]."""
+    return AD_Y - b.Y_DESK + AD_PLUG_BACK + AD_STRAIGHT + AD_LOOP_R + j.WIRE_T / 2
+
+
+def cover_extent() -> tuple[float, float, float, float]:
+    """어댑터 덮개의 겉 크기: 뒤 끝 x, 앞 끝 x, 반폭, 윗면의 높이 (책상에서) [mm]."""
+    x_out = b.DECK_END - CAP_END_GAP - CAP_WALL
+    hw_out = b.DECK_RIB[1] + CAP_SIDE_GAP + CAP_WALL
+    top = loop_top() + CAP_ROOM + CAP_ROOF
+    return x_out, -b.EDGE - CAP_END_GAP, hw_out, top
+
+
+def adapter_cover() -> Compound:
+    """어댑터 덮개 (조립된 자리로 그린 것). 지붕을 바닥에 두고 뒤집어 뽑는다: 벽이 위로 서서 걸치는 곳이 없다."""
+    y_floor = b.Y_FLOOR
+    x_out, x_front, hw_out, top = cover_extent()
+    y_ceil = b.Y_DESK + top - CAP_ROOF
+    x_in = x_out + CAP_WALL
+    hw_in = hw_out - CAP_WALL
+    c = box(x_out, x_front, y_ceil - 0.01, y_ceil + CAP_ROOF, -hw_out, hw_out)
+    for sg in (1, -1):
+        z0, z1 = sorted((sg * hw_in, sg * hw_out))
+        c += box(x_out, x_front, y_floor, y_ceil, z0, z1)
+    c += box(x_out, x_in, y_floor - CAP_BACK_DROP, y_ceil, -hw_out, hw_out)
+    (n0, n1), n_top = CAP_NOTCH
+    c = solid(
+        solid(c) - box(x_out - 1, x_in + 1, y_floor - CAP_BACK_DROP - 1, b.Y_DESK + n_top, n0, n1)
+    )
+    if not c.is_valid or len(c.solids()) != 1:
+        raise RuntimeError("어댑터 덮개 형상이 깨졌다")
+    return c
+
+
+def adapter_parts() -> list[j.Part]:
+    """서보 어댑터와 꽂힌 것들, 덮개: 몸통 바로 뒤 가운데의 뒤 판 위.
+
+    서보 플러그는 위에서 꽂힌다 (뒤 끝의 높이는 가정이다). USB 플러그와 전원선은 전원 쪽 긴 변에서 뒤(벽 쪽)로
+    나간다. 서보 선 둘은 servo_leads의 길을 선 두께(1.5 mm)의 둥근 줄로 그린다 (폭 4.85는 옆 쪽이다).
+    """
+    t = b.ADAPTER_T
+    out: list[tuple[str, Compound, str]] = [
+        ("", _ad_box(0.0, b.ADAPTER[0], 0.0, b.ADAPTER[1], 0.0, t), "servo")
     ]
+    for key, (u0, u1, v0, v1, h) in AD_ITEMS.items():
+        out.append((f"/{key}", _ad_box(u0, u1, v0, v1, t, t + h), "metal"))
+    for k in (1, 2):  # 꽂은 서보 플러그 (선은 그 뒤 끝에서 위로 나온다)
+        u0, u1, v0, v1, _h = AD_ITEMS[f"서보 단자 {k}"]
+        uc = (u0 + u1) / 2
+        plug = _ad_box(uc - AD_PLUG_W / 2, uc + AD_PLUG_W / 2, v0, v1, t + 0.01, AD_PLUG_BACK)
+        out.append((f"/서보 플러그 {k}", plug, "plug"))
+    u0, u1, _v0, v1, h = AD_ITEMS["USB-C 단자"]
+    uc = (u0 + u1) / 2
+    usb = _ad_box(uc - 7.0, uc + 7.0, v1, v1 + UM2_OUT, t + h / 2 - 3.25, t + h / 2 + 3.25)
+    out.append(("/USB 플러그", usb, "plug"))
+    u0, u1, _v0, v1, _h = AD_ITEMS["나사 단자"]
+    out.append(("/전원선 자리", _ad_box(u0, u1, v1, v1 + AD_POWER_OUT, t + 2.0, t + 6.0), "plug"))
+    for k, (x, z) in enumerate(b.adapter_xz(), start=1):
+        out.append((f"/M2 나사 {k}", cyl_y(1.9, AD_Y + t, AD_Y + t + 1.5, x, z), "metal"))
+    for name, pts in servo_leads().items():
+        r = j.WIRE_T / 2
+        line = rod(pts[0], pts[1], r)
+        for p, q in itertools.pairwise(pts[1:]):
+            line = line + rod(p, q, r)
+        out.append((f"/서보 선 ({name})", solid(line), "wire"))
+    parts = [j.Part(f"서보 어댑터{n}", s, color=c) for n, s, c in out]
+    return [*parts, j.Part("어댑터 덮개", adapter_cover(), color="frame")]
 
 
 def parts() -> list[j.Part]:
-    """파이 판 둘과 파이 두 대, 덮개, 플러그, 서보 어댑터 (베이스에 서 있는 것들)."""
+    """파이 판 둘과 파이 두 대, 덮개, 플러그, 서보 어댑터와 그 덮개 (베이스에 서 있는 것들)."""
     out = [
         j.Part("파이 판 (오른쪽)", tray(1), color="frame"),
         j.Part("파이 판 (왼쪽)", tray(-1), color="frame"),
@@ -303,8 +546,10 @@ def parts() -> list[j.Part]:
 
 
 def clearances(limit: float = 6.0) -> dict[tuple[str, str], float]:
-    """파이 쪽 것들과 베이스 몸통, 책상에 무는 판, 클램프 사이의 틈 [mm] (limit 아래만. 파이 판과 기둥은 닿는다)."""
-    mine = parts()
+    """파이 쪽 것들, 서보 어댑터와 베이스 몸통·책상에 무는 판·클램프 사이의 틈 [mm] (limit 아래만. 앉은 것은 닿는다)."""
+    mine = [
+        p for p in parts() if "서보 선 (" not in p.name
+    ]  # 서보 선은 몸통 뒷면을 따라간다 (닿는다)
     fixed = [
         j.Part("베이스 몸통", b.core()),
         j.Part("책상에 무는 판", b.plate()),
@@ -328,7 +573,10 @@ def stack() -> dict[str, float]:
     jaw_top = b.WING_T + b.JAW_T
     return {
         "클램프 위 턱의 윗면": jaw_top,
-        "서보 어댑터에서 가장 높은 곳 (가정)": b.WING_T + b.ADAPTER_SEAT + 1.6 + b.ADAPTER_TALL,
+        "서보 어댑터 기판 밑면": AD_Y - desk,
+        "서보 선을 바짝 꺾었을 때의 꼭대기 (잰 값)": AD_Y + b.ADAPTER_PLUG_TOP - desk,
+        "플러그 위 고리의 꼭대기 (곧게 6, 반지름 7로 돌린 선)": loop_top(),
+        "어댑터 덮개 윗면": cover_extent()[3],
         "파이 판 밑면": Y_TRAY - desk,
         "파이 기판 밑면": Y_BOARD - desk,
         "USB 단자 윗면": top + 16.0 - desk,
@@ -343,8 +591,41 @@ def stack() -> dict[str, float]:
     }
 
 
+def cover_gaps() -> dict[str, float]:
+    """어댑터 덮개와 그 속의 것들(기판, 부품, 꽂힌 플러그, 선) 사이의 틈 [mm]."""
+    made = adapter_parts()
+    cover = made[-1].shape
+    return {p.name: cover.distance_to(p.shape) for p in made[:-1]}
+
+
+def adapter_room() -> dict[str, float]:
+    """서보 어댑터 둘레의 자리 [mm]: 플러그를 잡는 자리, 덮개 속 여유, 벽과 클램프까지."""
+    assert _M.desk is not None
+    wall = -b.EDGE - _M.desk.back_gap_mm
+    usb_end = b.ADAPTER_EDGE_X - AD_ITEMS["USB-C 단자"][3] - UM2_OUT
+    jaw_in = b.CLAMP_Z - b.JAW_HW
+    return {
+        "서보 플러그 앞: 몸통 뒷면까지 (선 창과 선이 나가는 바닥)": -b.R_CORE - b.ADAPTER_EDGE_X,
+        "서보 플러그 뒤: DC 잭까지 (그 사이는 낮은 부품뿐이다)": AD_ITEMS["DC 잭"][2]
+        - AD_ITEMS["서보 단자 1"][3],
+        "DC 잭 꼭대기에서 플러그 뒤 끝까지 (잭 위로 잡는 높이)": AD_PLUG_BACK - b.ADAPTER_JACK_TOP,
+        "기판 윗면이 옆 턱 윗면보다 낮은 만큼 (플러그 몸통은 턱 위로 올라온다)": (
+            b.Y_FLOOR + b.RING_H
+        )
+        - (AD_Y + b.ADAPTER_T),
+        "플러그 위 고리의 꼭대기와 덮개 천장 사이": CAP_ROOM,
+        "창 밑에서 올라오는 줄과 책상 뒷면 사이": -b.EDGE - AD_LEG_X - j.WIRE_T / 2,
+        "USB 플러그 끝(가정한 길이)에서 벽까지": usb_end - wall,
+        "뒤 판과 클램프 등 사이 (클램프를 뒤에서 끼우는 길)": jaw_in - b.DECK_HW,
+    }
+
+
 def printed() -> dict[str, tuple[Compound, tuple[float, float, float], str, str, int]]:
-    return {"pi_tray": (tray_local(), (0.0, 1.0, 0.0), "black", "strength", 2)}
+    return {
+        "pi_tray": (tray_local(), (0.0, 1.0, 0.0), "black", "strength", 2),
+        # 프리셋을 책상에 무는 판, 파이 판과 같게 해서 한 판에 같이 뽑는다
+        "adapter_cover": (adapter_cover(), (0.0, -1.0, 0.0), "black", "strength", 1),
+    }
 
 
 def report() -> None:
@@ -361,6 +642,18 @@ def report() -> None:
     print("높이 (책상에서)")
     for name, value in stack().items():
         print(f"  {name}: {value:.2f}")
+    print("서보 어댑터 둘레의 자리 [mm]")
+    for name, value in adapter_room().items():
+        print(f"  {name}: {value:.2f}")
+    print("서보 선이 굽는 곳 (플러그에서 몸통 쪽으로. 반지름은 선 가운데, 안쪽은 0.75 작다)")
+    for name, bends in lead_bends().items():
+        total = sum(v.angle for v in bends)
+        print(f"  {name}: 플러그 위로 곧게 {AD_STRAIGHT:.0f} mm, 굽는 각의 합 {total:.0f}°")
+        for v in bends:
+            print(f"    {v.where}: 반지름 {v.radius:.1f} mm, {v.angle:.0f}°")
+    print("어댑터 덮개와 속의 것 사이 틈 [mm] (좁은 것부터 다섯)")
+    for name, d in sorted(cover_gaps().items(), key=lambda kv: kv[1])[:5]:
+        print(f"  {name}: {d:.2f}")
     print("파이 쪽 것들과 몸통·판·클램프 사이 틈 [mm] (6 아래)")
     for (a, other), d in sorted(clearances().items(), key=lambda kv: kv[1]):
         print(f"  {a} ↔ {other}: {d:.2f}")

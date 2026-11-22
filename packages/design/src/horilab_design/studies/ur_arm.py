@@ -810,7 +810,7 @@ def build(c: Concept, tool: Tool) -> tuple[Robot, list[Prim]]:
     )
     # 책상에 무는 판의 날개(파이 받침)와 그 위의 파이 두 대: 날개의 두꺼운 띠, 앞쪽의 얇은 바닥, 파이 판부터 덮개
     # 위(팬 나사 머리 몫 3 mm)까지를 감싸는 상자, 파이 옆으로 나온 젠더와 전원 플러그 (parts/pi_mount.py의 자리).
-    # 클램프와 서보 어댑터는 파이 판 밑이라 이 상자들 안에 든다
+    # 클램프는 파이 판 밑이라 이 상자들 안에 든다
     cover_top = (pim.Y_COVER - bp.Y_DESK + pim.COVER[2] + 3.0) * MM
     half_l, half_w = pim.COVER[0] / 2, pim.COVER[1] / 2
     plug = jp._MEASURED.base_plug["pi_power"]
@@ -861,6 +861,17 @@ def build(c: Concept, tool: Tool) -> tuple[Robot, list[Prim]]:
             mass=0.0,
             group="파이",
         )
+    # 서보 어댑터와 그 덮개: 몸통 바로 뒤 가운데, 책상 뒤 가장자리 밖으로 나온 뒤 판 위 (0038, parts/pi_mount.py).
+    # 덮개의 겉 상자를 책상 높이부터 채워 그린다. 덮개와 몸통 사이를 지나는 서보 선은 형상에 없다
+    cap_x0, cap_x1, cap_hw, cap_top = pim.cover_extent()
+    b.box(
+        0,
+        "adapter_cover",
+        (cap_x0 * MM, -cap_hw * MM, 0.0),
+        (cap_x1 * MM, cap_hw * MM, cap_top * MM),
+        mass=0.0,
+        group="어댑터",
+    )
     table0 = (bp.SEAM - bp.Y_DESK) * MM
     b.cyl(
         1,

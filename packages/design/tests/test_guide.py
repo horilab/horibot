@@ -21,9 +21,8 @@ from horilab_design.guide.build import (
     write_site,
 )
 from horilab_design.guide.guides import (
-    arm_measure,
-    base_measure,
     first_joint,
+    plug_measure,
     prints,
     st3120_horn,
     wrist_end,
@@ -326,8 +325,7 @@ def test_built_site_has_every_file_its_guides_need(tmp_path: Path) -> None:
     catalog = json.loads((tmp_path / "data" / "catalog.json").read_text(encoding="utf-8"))
     assert [g["id"] for g in catalog["guides"]] == [
         prints.ARM.id,
-        arm_measure.GUIDE.id,
-        base_measure.GUIDE.id,
+        plug_measure.GUIDE.id,
         prints.ST3120_COUPON.id,
         st3120_horn.GUIDE.id,
         "first-joint",
@@ -377,6 +375,6 @@ def test_site_passes_its_selftest_in_a_headless_browser(tmp_path: Path) -> None:
         len(print_json(p)["steps"])
         for p in (prints.ARM, prints.ST3120_COUPON, prints.FIRST_JOINT, prints.WRIST_END)
     )
-    guides = (arm_measure, base_measure, st3120_horn, first_joint, wrist_end)
+    guides = (plug_measure, st3120_horn, first_joint, wrist_end)
     steps = sum(len(g.STEPS) for g in guides) + plates
     assert sum(g["steps"] for g in report["guides"]) == steps
