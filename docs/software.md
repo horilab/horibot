@@ -68,12 +68,12 @@
 ```
 [PC (Windows)]  개발, 시뮬레이션, 영상 처리, 응용
  └─ 유선 랜 ─┬─ [컨트롤러 파이, 로봇 옆] ── USB ── [Waveshare 버스 서보 어댑터] ── 서보 7개
-             └─ [카메라 파이, 로봇 옆] ── USB 3 ── [D405]
+             └─ [카메라 파이, 로봇 옆] ── USB 2 ── [D405]
 ```
 
 - 컨트롤러는 컨트롤러 파이에서 돈다. 그래서 PC가 꺼져 있어도 폰·게임패드로 로봇을 쓸 수 있고, PC 부하가 실행 루프에 닿지 않는다 ([0025](decisions/0025-controller-on-pi.md)). 파이는 로봇을 쓸 때만 켜고, 안 쓸 때는 멀티탭까지 끈다 ([0026](decisions/0026-pi-runtime-deploy-records.md)). 서보와 카메라는 USB 컨트롤러를 나누려고 다른 파이에 꽂는다. 파이는 라즈베리파이 4B다.
 - 개발할 때는 어댑터를 PC에 꽂고(5 m USB 2) 같은 컨트롤러를 PC에서 돌려도 된다. 맨 서보 확인이 그렇다.
-- 카메라 파이는 D405 영상을 PC로 보내는 일만 하고, 켜지면 자동으로 실행된다.
+- 카메라 파이는 D405 영상을 압축 없이 PC로 보내는 일만 하고([0039](decisions/0039-camera-stream.md)), 켜지면 자동으로 실행된다. D405는 얇은 선이라 USB 2로 잡힌다 ([0031](decisions/0031-wiring.md#d405-선)).
 - 펜던트: 게임패드는 컨트롤러 파이에 꽂고, 안드로이드 폰과 PC 브라우저는 집 랜으로 컨트롤러의 웹 화면에 들어간다 ([0023](decisions/0023-robot-controller.md)).
 - 경로 계획(IK, 궤적, 조그)은 처음부터 컨트롤러 안에 있다 ([0033](decisions/0033-planning-and-simulation.md)).
 
@@ -129,7 +129,8 @@
 - MuJoCo가 MJCF를 XML로 쓸 때 숫자를 유효숫자 6자리로 줄인다 (0.0123456789 → 0.0123457, 2026-11-07 확인). 위치 1 µm, 각도 1 µrad 안쪽이라 쓰는 데는 문제없지만, 다시 읽은 모델과 비교할 때는 그만큼 허용 오차를 둔다.
 - MJCF, URDF, FK가 서로 어긋나는 흔한 원인: mm와 m 혼동, MJCF 각도의 기본 단위가 도(°)인 것, URDF rpy와 MJCF 오일러 순서(`eulerseq="XYZ"`)의 대응, 쿼터니언 순서(MuJoCo는 w가 앞, SciPy는 뒤), 합쳐진 고정 링크(테스트에서 URDF를 MuJoCo로 읽을 때는 `fusestatic`을 끈다), 메시를 출력 방향으로 내보내는 실수, 서보 영점과 방향.
 - pyzmq PUB/SUB: 멀티파트 메시지에는 CONFLATE(최신 메시지만 남기기)가 안 된다. 받는 쪽 큐(RCVHWM)를 작게 잡아 지연이 쌓이지 않게 한다.
-- D405 타임스탬프는 `RS2_OPTION_GLOBAL_TIME_ENABLED`로 호스트 시간에 맞춘다. 파이와 PC 시계는 chrony로 맞추거나 코드에서 차이를 잰다.
+- D405 장의 시각(`get_timestamp()`)은 전역 시각(`RS2_OPTION_GLOBAL_TIME_ENABLED`, 기본으로 켜져 있다)이라 파이 시계(ms)로 온다. 읽기를 시작한 때라서, 노출 가운데는 메타데이터 `frame_timestamp − sensor_timestamp`(µs)를 빼서 얻는다. 파이와 PC의 시계 차이는 받는 프로그램이 왕복으로 잰다 ([0039](decisions/0039-camera-stream.md)).
+- Windows의 Python 3.12에서는 `time.time()`과 `time.monotonic()`이 15.6 ms 단위다 (2026-11-22, `time.get_clock_info`로 확인). 시각을 잴 때는 `time.perf_counter()`를 쓴다.
 
 ## 참고
 
