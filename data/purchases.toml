@@ -206,14 +206,6 @@ search = "TPU 95A 필라멘트 검정"
 why = "평행 그리퍼로 바깥에서 잡을 때 물체가 미끄러우면 손가락 끝에 씌우는 패드를 뽑는다 (0030, manufacturing.md)"
 
 [[item]]
-name = "PETG 검정 한 롤"
-qty = 1
-stage = 5
-when = "if_needed"
-search = "PETG 필라멘트 검정 1kg"
-why = "다 만든 팔에서 서보 둘레가 55~60°C 가까이 오르면 그 부품만 PETG로 뽑는다 (manufacturing.md, 0028)"
-
-[[item]]
 name = "랜 케이블"
 qty = 1
 stage = 2
