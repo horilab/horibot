@@ -246,7 +246,10 @@ BODY_SCREW = 10.0  # M3 × 10
 # 자식 몸통 귀의 두께: 나사 10 = 귀 6.2 + 출력 원판 살 1.2 + 너트 2.4 + 0.2 (끝이 테 밑면과 같은 높이에 온다)
 EAR_T = 6.2
 NUT_POCKET = NUT_T + 0.2  # 출력 원판 밑면의 너트 홈 깊이: 홈 바닥이 원판을 뽑을 때의 층 경계에 온다
-WIN_X = (-45.0, -35.4)  # 링크의 선 창 (플러그 9.58 × 4.75가 지나간다)
+# 링크의 선 창 (플러그 9.01 × 4.75가 지나간다: 길이 9.6, 폭 6.0). 축 쪽 끝이 축에서 36.0 mm라, 창에서 곧게 올라오는
+# 선이 자식 발의 영점 핀 귀가 쓸고 가는 자리(33.4)와 2.6 mm 뜬다 (0031. 35.4였을 때는 2.01 mm였다). 이미 뽑은 가짜
+# 아래팔 끝(parts/fake_forearm.py)은 옛 자리 그대로다
+WIN_X = (-45.6, -36.0)
 WIN_Z = 3.0
 
 # ---- 선 (0031) ----
@@ -391,8 +394,8 @@ def drum_cavity(
     return solid(c)
 
 
-def cut_joint_features(h: Compound, window: bool) -> Compound:
-    """몸통에 이 관절의 멈춤 홈과 살, 영점 핀 구멍, 벽 나사 구멍을 낸다. window면 링크의 선 창도 낸다.
+def cut_joint_features(h: Compound, window: bool, win_x: tuple[float, float] = WIN_X) -> Compound:
+    """몸통에 이 관절의 멈춤 홈과 살, 영점 핀 구멍, 벽 나사 구멍을 낸다. window면 링크의 선 창(x 범위 win_x)도 낸다.
 
     불 연산을 하나씩 하고 그때마다 입체로 좁힌다. 한꺼번에 빼면 형상 계산이 깨지는 일이 있었다.
     """
@@ -401,7 +404,7 @@ def cut_joint_features(h: Compound, window: bool) -> Compound:
     h = solid(h - sector(R_DRUM + 0.4, CH_R1, 120, 180 - WEB_HALF, CH_Y, FRONT + 1))
     h = solid(h - cyl_y(PIN_HOLE / 2, TUB_Y - 1, FRONT + 1, -R_PIN, 0.0))
     if window:
-        h = solid(h - box(WIN_X[0], WIN_X[1], NECK_FRONT_IN - 1, FRONT + 1, -WIN_Z, WIN_Z))
+        h = solid(h - box(win_x[0], win_x[1], NECK_FRONT_IN - 1, FRONT + 1, -WIN_Z, WIN_Z))
     r = M3_FREE_H / 2
     for s in (1, -1):
         z0, z1 = (15.0, R_DRUM + 1) if s > 0 else (-R_DRUM - 1, -15.0)

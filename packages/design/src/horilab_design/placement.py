@@ -211,8 +211,7 @@ def _shoulder() -> list[ArmPart]:
 
 def _link(group: str, key: str, joint: int, model: ServoModel) -> list[ArmPart]:
     """링크 하나: 앞 관절의 출력 원판에 앉은 링크와, 끝 집(관절 joint)의 서보와 속 부품."""
-    length, tube_r, foot = links.LINKS[key]
-    body = ArmPart(f"{group}/{group}", f"j{joint}", links.link(length, tube_r, foot))
+    body = ArmPart(f"{group}/{group}", f"j{joint}", links.body(key))
     inner = j.inner_parts(model, links.NECK_END, end_skirt=True) + j.inner_hardware(model)
     return [body, *_from_joint(group, joint, inner)]
 
@@ -227,6 +226,29 @@ def _upper_arm() -> list[ArmPart]:
 def _forearm() -> list[ArmPart]:
     """아래팔과 그 끝의 J4."""
     return _link("아래팔", "forearm", 4, "STS3215")
+
+
+# 링크의 틀: 링크는 끝 집이 품는 서보의 좌표로 그려져 있다 (위팔은 J3, 아래팔은 J4)
+LINK_FRAME = {"upper_arm": "j3", "forearm": "j4"}
+LINK_NAME = {"upper_arm": "위팔", "forearm": "아래팔"}
+
+
+def _letters() -> list[ArmPart]:
+    """관 글자 (0019): 위팔의 BOMI와 아래팔의 HORI. 낱자마다 링크의 구멍에 꽂혀 있다."""
+    return [
+        ArmPart(f"글자/{links.LABELS[key]}", LINK_FRAME[name], shape, "cap")
+        for name in links.LINKS
+        for key, shape in links.letters(name).items()
+    ]
+
+
+def _d405_run() -> list[ArmPart]:
+    """링크에 찍찍이 타이로 묶은 D405 선 (0031): 타이 둘과 그 사이의 선. 가정한 모양이고, 관절을 넘는 고리는 없다."""
+    return [
+        ArmPart(f"D405 선/{LINK_NAME[name]} {p.name}", LINK_FRAME[name], p.shape, p.color)
+        for name in links.LINKS
+        for p in links.d405_parts(name)
+    ]
 
 
 def _wrist1() -> list[ArmPart]:
@@ -284,6 +306,8 @@ GROUPS: dict[str, Callable[[], list[ArmPart]]] = {
     "rest_shelf": _rest_shelf,
     "wire_clamps": _wire_clamps,
     "pi": _pi,
+    "letters": _letters,
+    "d405_run": _d405_run,
 }
 
 

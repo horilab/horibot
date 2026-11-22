@@ -28,8 +28,7 @@ HORN_MASS_G = load_measured().servo_horn_mass_g["ST-3120"]
 
 @pytest.fixture(scope="module")
 def parts() -> list[j.Part]:
-    length, tube_r, foot = links.LINKS["upper_arm"]
-    return s.assembly(links.link(length, tube_r, foot), length)
+    return s.assembly(links.body("upper_arm"), links.LINKS["upper_arm"][0])
 
 
 @pytest.mark.slow

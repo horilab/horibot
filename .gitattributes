@@ -2,3 +2,4 @@
 * text=auto eol=lf
 # 메시 파일은 줄바꿈을 건드리지 않는다
 *.stl binary
+*.ttf binary

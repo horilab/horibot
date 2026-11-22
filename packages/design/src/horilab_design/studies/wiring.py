@@ -703,11 +703,12 @@ def wire_masses() -> dict[str, float]:
     to_j3, j34, j45, j56 = "띠 밑 누르개 → J3", "J3 → J4", "J4 → J5", "J5 → J6"
     lead = d["플러그 ~ 카메라 쪽 잡는 자리"]
     # D405 선: 고리는 양 끝의 몸통이 반씩 든다고 본다. J4·J5 고리는 손목 2와 아래팔 끝이, J1·J2 고리는 위팔과 베이스가 든다
+    # J3 → J4 선의 남는 길이는 위팔 관 가운데에 접어 둔다 (2026-11-22, 0031): 위팔 끝 집 쪽에 두면 주 작업 영역의
+    # 한 칸(반지름 30 cm, 높이 2 cm)에서 J2가 정격의 0.8배를 넘는다
     return {
-        "upper_mid": servo(mm(to_j3, "위팔 속") + mm(to_j3, "J2 넘기") / 2, 1)
+        "upper_mid": servo(mm(to_j3, "위팔 속") + mm(to_j3, "J2 넘기") / 2 + by[j34].left, 1)
         + cam(d["위팔 겉"] + (d["J1·J2 고리"] + d["J3 고리"]) / 2),
-        # J3 → J4 선의 남는 길이는 위팔 끝 집 쪽(J3 서보 먼 끝 뒤의 관 속)에 접어 둔다: 아래팔에 두는 것보다 어깨가 덜 든다
-        "upper_end": servo(mm(j34, "위팔 끝 집") + by[j34].left, 1),
+        "upper_end": servo(mm(j34, "위팔 끝 집"), 1),
         "fore_mid": servo(mm(j34, "J3 넘기", "아래팔 속"), 1)
         + cam(d["아래팔 겉"] + d["J3 고리"] / 2),
         "fore_end": servo(mm(j45, "아래팔 끝 집"), 1) + cam(d["J4·J5 고리"] / 2),
@@ -1120,11 +1121,18 @@ def gripper_routes() -> list[Route]:
 # J2와 J3: 남는 선을 자식(링크의 발) 겉으로 돌리는 길 (0031: 손목처럼. 주안이다)
 #
 # 선은 부모의 살 쪽에서 나와(J2는 J1 몸통 왼쪽 면의 누르개 위, J3는 위팔 끝 집의 선 창) 링크 발의 겉을 돌아,
-# 발 뒤 끝벽에 낼 창으로 들어간다. 창은 손목 2 뒷덮개의 창처럼 발 바닥 위 LINK_WINDOW_H에 둔다 (영점 핀 귀와 그 위로
-# 나온 핀보다 높다). 창은 링크를 고칠 때 낸다 (묶음 3: parts/links.py는 아직 끝벽 밑의 낮은 구멍뿐이다). 층과 테는
-# 그대로 두므로, 테에 감는 길(crossings의 J2, J3)도 된다. 첫 출력에서 900 mm 선으로 J2를 돌려 보고 고른다.
-LINK_WINDOW_H = 13.75  # 창의 가운데 높이 (발 바닥에서. 손목 2 뒷덮개의 창 13.0 ~ 14.5와 같다)
-LINK_WINDOW = (j.WIRE_W + 0.85, 3.0)  # 창의 폭과 높이 (선이 누워 지나간다)
+# 발 뒤 끝벽의 창으로 들어간다 (parts/links.py의 FOOT_WINDOW). 창은 손목 2 뒷덮개의 창처럼 발 바닥 위 LINK_WINDOW_H에
+# 있다 (영점 핀 귀와 그 위로 나온 핀보다 높다). 층과 테, 끝벽 밑의 낮은 구멍은 그대로 두므로, 테에 감는 길(crossings의
+# J2, J3)도 된다. 첫 출력에서 900 mm 선으로 J2를 돌려 보고 고른다.
+# J3가 156°를 넘으면 위팔의 선 창이 접힌 아래팔의 납작한 면 밑에 온다. 이 모델은 그때의 길을 몸통을 가로지르는 곧은
+# 선으로 세어 10 mm쯤 짧게 본다 (선은 484 mm가 남아 닿는 데는 상관없다. 실물로 돌려 볼 때 이 끝을 본다)
+LINK_WINDOW_H = (
+    sum(lp.FOOT_WINDOW) / 2
+)  # 창의 가운데 높이 (발 바닥에서 13.7. 손목 2 뒷덮개의 창은 13.0 ~ 14.5다)
+LINK_WINDOW = (  # 창의 폭과 높이 (선이 누워 지나간다)
+    lp.FOOT_SLOT_Z[1] - lp.FOOT_SLOT_Z[0],
+    lp.FOOT_WINDOW[1] - lp.FOOT_WINDOW[0],
+)
 LINK_WINDOW_OUT = 6.0  # 창 밖으로 곧게 나온 길이
 
 
@@ -1178,7 +1186,7 @@ def link_crossings() -> dict[str, tuple[Crossing, OverBody]]:
 # (J4·J5, J3, J1·J2)는 묶지 않은 고리다. 고리의 길이는 관절이 범위 끝에 있을 때도 당기지 않는 값이다: 두 묶은 자리
 # 사이를, 관절의 몸통(반지름 LOOP_R의 원통으로 본다)을 돌아가는 가장 짧은 길이에 D405_SPARE를 더한다.
 # 묶는 자리와 길이는 다 조립한 팔에서 묶어 보며 맞추는 어림이다 (0031). 링크와 J1 몸통에는 잡는 자리를 내지 않는다.
-TIE_IN = 10.0  # 관 끝(발의 끝, 끝 집의 목)에서 타이까지
+# 타이의 자리(관 끝에서 14 mm와 19 mm)는 멈춤 귀 끝과 선 창을 비킨 자리다 (parts/links.py의 TIE_IN, tie_x)
 LOOP_R = j.R_DRUM + D405_D / 2 + 2.0  # 고리가 돌아가는 STS 관절 몸통 (원통 23.6에 선 반지름과 2 mm)
 BASE_LOOP_R = 50.0  # J1 몸통과 어깨 집을 돌아가는 반지름 (목 모서리가 축에서 47.5 mm)
 # 카메라 쪽에서 선을 잡는 자리 (가정: 방법은 아직 정하지 않았다, status.md 설계 0). 손목 2의 발 바닥에서 위로
@@ -1227,9 +1235,9 @@ class Loop:
 def d405_elbow_loop() -> Loop:
     """J3 고리: 위팔 끝의 타이와 아래팔 발 쪽의 타이 사이. 선은 팔꿈치 바깥쪽 관 가장자리로 간다."""
     _, r_u, _ = lp.LINKS["upper_arm"]
-    _, r_f, foot_f = lp.LINKS["forearm"]
-    re = math.hypot(-lp.NECK_END + TIE_IN, r_u)
-    ra = math.hypot(foot_f.hx + TIE_IN, r_f)
+    span_f, r_f, _ = lp.LINKS["forearm"]
+    re = math.hypot(lp.tie_x("upper_arm")[1], r_u)  # 위팔의 끝 집 쪽 타이: J3 축에서
+    ra = math.hypot(span_f + lp.tie_x("forearm")[0], r_f)  # 아래팔의 발 쪽 타이: J3 축에서
     rise = (r_u - lp.EMBED) + (j.ATOP - j.FRONT) + (r_f - lp.EMBED)  # 두 관의 가운데 사이 (축 방향)
 
     def need(q: float) -> float:  # 곧게 폈을 때 두 자리가 팔꿈치 바깥에서 반 바퀴 떨어져 있다
@@ -1247,10 +1255,10 @@ def d405_base_tie() -> Point:
 
 
 def _upper_tie(q2: float) -> Point:
-    """위팔의 어깨 쪽 타이 자리 (로봇 좌표, J1 = 0). 선은 관의 가장자리(팔꿈치 바깥)에 있다."""
-    span, r_u, foot = lp.LINKS["upper_arm"]
+    """위팔의 어깨 쪽 타이 자리 (로봇 좌표, J1 = 0). 선은 관의 가장자리(팔꿈치 바깥: 팔을 세우면 뒤)에 있다."""
+    y, z = lp.cable_yz("upper_arm")
     T = pl.frames_mm(np.radians([0.0, q2, 0.0, 180.0, 0.0, 0.0]))["j3"]
-    p = T @ np.array([-span + foot.hx + TIE_IN, j.FRONT - (r_u - lp.EMBED), r_u, 1.0])
+    p = T @ np.array([lp.tie_x("upper_arm")[0], y, z, 1.0])
     return (float(p[0]), float(p[1]), float(p[2]))
 
 
@@ -1292,7 +1300,7 @@ def d405_wrist_loop() -> Loop:
 
     # J4 구간: 길잡이 점(J4 축 가까이, guide_off)에서 J4 집의 앞 가장자리를 넘어 아래팔의 타이까지
     guide_off = 15.0
-    tie_r = math.hypot(-lp.NECK_END + TIE_IN, r_f)
+    tie_r = math.hypot(lp.tie_x("forearm")[1], r_f)  # 아래팔의 끝 집 쪽 타이: J4 축에서
     axial = (j.ATOP - j.FRONT) + j.EAR_T + (r_f - lp.EMBED)
 
     def j4(q: float) -> float:
@@ -1390,8 +1398,7 @@ def d405_taut_scan(exit_j6: Point, joint: str = "J5", step: float = 10.0) -> dic
     (고리를 가장 긴 길에 맞추면 작업 자세에서 그 차이만큼 남는다).
     """
     frame = "j5" if joint == "J5" else "j4"
-    _, r_f, _ = lp.LINKS["forearm"]
-    tie = np.array([lp.NECK_END - TIE_IN, j.FRONT - (r_f - lp.EMBED), r_f, 1.0])
+    tie = np.array([lp.tie_x("forearm")[1], *lp.cable_yz("forearm"), 1.0])
     out = np.array([*exit_j6, 1.0])
     drum = j.R_DRUM + D405_D / 2
     zone = (j.FRONT - SEAM_KEEP[1], j.FRONT + SEAM_ABOVE)
@@ -1442,8 +1449,6 @@ def d405_taut_scan(exit_j6: Point, joint: str = "J5", step: float = 10.0) -> dic
 
 def d405_outer_path() -> list[tuple[str, float]]:
     """D405 선이 카메라의 플러그에서 카메라 파이의 USB 단자까지 가는 길 (관절 밖, 고리는 가장 길 때 + 여유)."""
-    span_u, _, foot_u = lp.LINKS["upper_arm"]
-    span_f, _, foot_f = lp.LINKS["forearm"]
     wrist, elbow, base = d405_wrist_loop(), d405_elbow_loop(), d405_base_loop()
     bx, by, _bz = d405_base_tie()
     usb = _MEASURED.base_plug["d405_usb_a"]
@@ -1452,9 +1457,9 @@ def d405_outer_path() -> list[tuple[str, float]]:
     return [
         ("플러그 ~ 카메라 쪽 잡는 자리", length(cmt.wire_run())),
         ("J4·J5 고리", wrist.length),
-        ("아래팔 겉", span_f + lp.NECK_END - TIE_IN - foot_f.hx - TIE_IN),
+        ("아래팔 겉", lp.tie_x("forearm")[1] - lp.tie_x("forearm")[0]),
         ("J3 고리", elbow.length),
-        ("위팔 겉", span_u + lp.NECK_END - TIE_IN - foot_u.hx - TIE_IN),
+        ("위팔 겉", lp.tie_x("upper_arm")[1] - lp.tie_x("upper_arm")[0]),
         ("J1·J2 고리", base.length),
         ("베이스의 타이 ~ 카메라 파이의 USB 단자", tail),
     ]
@@ -1633,12 +1638,14 @@ def report_outer() -> None:
         )
     w, h = LINK_WINDOW
     print(
-        f"- 겉으로 도는 길에 링크가 낼 것 (묶음 3): 발 뒤 끝벽에 폭 {w:.1f} × 높이 {h:.1f} mm 창, 가운데가 발 바닥 위 "
-        f"{LINK_WINDOW_H:.2f} mm, 발 가운데에서 옆으로 {link_window_v():.2f} mm (끝벽 밑의 낮은 구멍과 같은 줄)"
+        f"- 겉으로 도는 길의 창 (parts/links.py): 발 뒤 끝벽에 폭 {w:.1f} × 높이 {h:.1f} mm, 가운데가 발 바닥 위 "
+        f"{LINK_WINDOW_H:.2f} mm, 발 가운데에서 옆으로 {link_window_v():.2f} mm (끝벽 밑의 낮은 구멍과 같은 줄이고, "
+        "세로 틈으로 이어져 있다)"
     )
     print(
         f"\n## D405 선: 관절 밖 길 (찍찍이 타이로 묶고 관절은 고리로 넘는다. 어림, 다 조립한 팔에서 맞춘다)\n"
-        f"- 묶는 자리: 아래팔과 위팔의 관 양 끝에서 {TIE_IN:.0f} mm 안쪽, 베이스는 카메라 파이(왼쪽) 판의 몸통 쪽 "
+        f"- 묶는 자리: 아래팔과 위팔의 관 양 끝(발 상자의 끝, 끝 집의 목)에서 {lp.TIE_IN[0]:.0f} mm와 "
+        f"{lp.TIE_IN[1]:.0f} mm 안쪽, 베이스는 카메라 파이(왼쪽) 판의 몸통 쪽 "
         f"긴 변의 타이 구멍 {tuple(round(v, 1) for v in d405_base_tie())} (로봇 좌표)"
     )
     for loop in (d405_wrist_loop(), d405_elbow_loop(), d405_base_loop()):

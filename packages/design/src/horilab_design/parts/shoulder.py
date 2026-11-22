@@ -736,9 +736,8 @@ def printed() -> dict[str, tuple[Compound, tuple[float, float, float], str, str]
 def report() -> None:
     from horilab_design.parts import links  # 링크가 이 모듈의 발 치수를 쓰므로 여기서 부른다
 
-    length, tube_r, foot = links.LINKS["upper_arm"]
-    child = links.link(length, tube_r, foot)
-    parts = assembly(child, length)
+    length = links.LINKS["upper_arm"][0]
+    parts = assembly(links.body("upper_arm"), length)
     print(
         f"어깨 관절 (ST-3120, 6808): 원통 지름 {2 * R_DRUM:.1f}, 뒷덮개 {BACK_OUT:.2f} ~ 원통 앞 끝 {FRONT:.2f} ~ "
         f"출력 원판 {SEAM:.2f} ~ {ATOP:.2f}, 베어링 {B0:.2f} ~ {B0 + BRG_B:.2f}, 길이 {ATOP - BACK_OUT:.1f}, "

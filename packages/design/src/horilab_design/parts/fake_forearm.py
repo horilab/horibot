@@ -68,6 +68,8 @@ HOLE_BOTTOM = Y_BOT + math.floor((TIP - 1.5 - Y_BOT) / LAYER + 1e-9) * LAYER
 COMB_FRONT = (
     math.sqrt(j.R_DRUM**2 - (abs(j.RIM[0][1]) - 2 * COMB_PITCH) ** 2) - abs(j.RIM[0][0]) + 1.0
 )
+# 이 부품을 뽑았을 때의 선 창 자리 (지금 링크의 창은 0.6 mm 밖이다, parts/joint.py의 WIN_X). 뽑은 모양을 지킨다
+WIN_X_PRINTED = (-45.0, -35.4)
 # 멈춤 기둥과 귀 밑의 45° 받침: (x, y) 다각형을 귀의 폭(±EAR_HW)만큼 뽑아 귀의 윤곽으로 자른다. 아래 모서리가
 # 기둥의 바깥 밑을 지나고, 위는 귀 속으로 0.5 들어간다 (얇게 겹쳐 합치면 형상 계산이 깨진다)
 WEDGE: list[tuple[float, float]] = [
@@ -102,7 +104,7 @@ def fake_forearm() -> Compound:
     under = box(X_CUT, links.NECK_END + 4, Y_BOT, YC, -TUBE_R, TUBE_R)
     neck = box(links.NECK_END, -12.0, Y_BOT, j.FRONT, -j.NECK_HW, j.NECK_HW)
     h = solid(cyl_y(j.R_DRUM, Y_BOT, j.ATOP) + neck + tube + under)
-    h = j.cut_joint_features(h, window=True)
+    h = j.cut_joint_features(h, window=True, win_x=WIN_X_PRINTED)
     # 출력 원판의 귀와 멈춤 기둥 (out_disc와 같은 겉), 그 밑의 받침
     ear = box(20.0, j.R_POST, j.SEAM, j.ATOP, -j.EAR_HW, j.EAR_HW)
     ear += cyl_y(j.EAR_HW, j.SEAM, j.ATOP, j.R_POST, 0.0)
@@ -201,9 +203,11 @@ def report(model: ServoModel = "STS3215") -> None:
         "  옆 홈에 너트를 곧게 밀어 넣을 때 겹침 [mm³]: "
         + (", ".join(f"{n} {v:.2f}" for n, v in entry.items() if v > 0.01) or "없음")
     )
-    # 지금 설계와 같은지: 아래팔 끝은 이 부품이 다 덮고, 원판에서 빠진 것은 너트 홈 자리뿐이어야 한다
+    # 뽑았을 때의 설계와 같은지: 아래팔 끝은 이 부품이 다 덮고, 원판에서 빠진 것은 너트 홈 자리뿐이어야 한다.
+    # 그 뒤에 링크에 더한 것(옮긴 선 창, 글자 구멍, 나사 자리)은 빼고 견준다
     stub = solid(
-        links.link(*links.LINKS["forearm"]) & box(X_CUT, 40.0, Y_BOT - 1, j.FRONT + 1, -40, 40)
+        links.link(*links.LINKS["forearm"], win_x=WIN_X_PRINTED)
+        & box(X_CUT, 40.0, Y_BOT - 1, j.FRONT + 1, -40, 40)
     )
     tips = None  # 발 나사 끝이 드는 구멍 (원통 앞 끝의 턱에 걸친다. 원판에 덮여 겉에서 안 보인다)
     for x, z in j.RIM:

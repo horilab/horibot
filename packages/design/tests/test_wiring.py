@@ -155,9 +155,11 @@ def test_wrist1_wire_leaves_at_ear_height_but_away_from_the_ears() -> None:
     assert min(math.dist(c.start, p) for p in ear) > 25.0
     # 홈 위로 J5의 멈춤 홈까지 남은 살(2.5 mm)을 다 써도 홈이 귀 윗면보다 낮다
     assert wrist.NOTCH_H + (-j.CH_R1 - (wrist.X_FOOT + wrist.NOTCH_H)) < j.EAR_T
-    # 아래팔의 선 창에서 올라오는 선은 창의 축 쪽 끝에 놓여도 귀가 쓸고 가는 자리와 2 mm 뜬다
+    # 아래팔의 선 창에서 올라오는 선은 창의 축 쪽 끝에 놓여도 귀가 쓸고 가는 자리와 2.6 mm 뜬다 (창의 축 쪽 끝을
+    # 0.6 mm 밖으로 옮겼다. 손목의 다른 선과 같은 기준 2.5 mm다)
     lumps = wr.wrist_lumps(False, False)
-    assert wr.strand_gap(wr.forearm_strand(), lumps, "영점 핀 귀") == pytest.approx(2.0, abs=0.05)
+    assert wr.strand_gap(wr.forearm_strand(), lumps, "영점 핀 귀") == pytest.approx(2.6, abs=0.05)
+    assert wr.strand_gap(wr.forearm_strand(), lumps, "영점 핀 귀") > 2.5
     # 발 높이로만 돌면 귀에 닿고, 홈에서 나와 귀와 나사 머리 위로 올라서 돌면 2 mm 띄우는 길이 있다
     low = wr.clear_routes(c, lumps, wr.forearm_strand(), (c.h,))
     assert min(r.gap for r in low) < 0.0
@@ -230,8 +232,8 @@ def test_base_clamps_line_up_in_the_middle_of_the_range() -> None:
 @pytest.mark.slow
 def test_wire_openings_are_open_in_the_printed_bodies() -> None:
     # 링크 발: 끝벽 밑의 구멍과 발 바닥의 긴 틈이 발 속까지 뚫려 있다
-    for name, (length, tube_r, foot) in links.LINKS.items():
-        part = links.link(length, tube_r, foot)
+    for name, (length, _tube_r, foot) in links.LINKS.items():
+        part = links.body(name)
         xa = -length
         z0, z1 = links.FOOT_SLOT_Z
         mouse = box(

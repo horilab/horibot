@@ -116,6 +116,11 @@ LINK_TUBE: dict[
     "upper": (0.320, 22.4 * G, 0.0128),
     "fore": (0.287, 16.7 * G, 0.0133),
 }
+# 링크에 더한 것 (uv run python -m horilab_design.parts.links). 글자: 낱자 넷의 출력 무게. 나사 자리: 아래팔 끝의 목
+# 양옆 돋움 하나 (링크의 세 덩어리와 따로 넣는다). 타이: D405 선을 묶는 찍찍이 타이 하나 (가정: 아직 사지 않았다)
+LETTER_MASS = {"upper_arm": 0.58 * G, "forearm": 0.51 * G}
+SEAT_MASS = 0.26 * G
+TIE_MASS = lp.TIE_G * G
 # D405 받침 9.8과 선을 무는 클립 0.3 (parts/camera_mount.py), 나사 넷과 너트 둘 3.6
 D405_PLATE_MASS = 13.7 * G
 SHELF_MASS = 40.0 * G  # 쉬는 자세의 선반 (parts/rest_shelf.py, 나사 둘 포함. J1과 같이 돈다)
@@ -717,6 +722,62 @@ def build(c: Concept, tool: Tool) -> tuple[Robot, list[Prim]]:
             Prim(name, link, "hull", center, np.eye(3), (0.0, 0.0, 0.0), "pla", 0.0, group, verts)
         )
 
+    def link_extras(link: int, name: str, f: tuple[np.ndarray, np.ndarray]) -> None:
+        """링크에 더한 것 (parts/links.py, 끝 집의 서보 좌표): 관 글자, D405 선을 묶은 타이 둘과 그 사이의 선,
+        아래팔이면 끝의 나사 자리 둘. 글자는 낱자 넷을 감싸는 얇은 상자 하나로 넣는다."""
+        _word, side = lp.WORDS[name]
+        lay = lp.layout(name)
+        if side == "flat":
+            y0, y1 = jp.FRONT, jp.FRONT + lp.LETTER_T[side]
+        else:
+            top = lp._tube_top(name)
+            y0, y1 = top - lp.LETTER_T[side], top
+        b.box(
+            link,
+            f"{name}_letters",
+            (lay["글자 시작"] * MM, y0 * MM, -6.2 * MM),
+            (lay["글자 끝"] * MM, y1 * MM, 6.2 * MM),
+            mass=LETTER_MASS[name],
+            group="글자",
+            frame=f,
+        )
+        band = [
+            (y * MM, z * MM)
+            for y, z in list(lp._tie_section(name).buffer(lp.TIE_T, quad_segs=2).exterior.coords)[
+                :-1
+            ]
+        ]
+        xs = lp.tie_x(name)
+        for k, x in enumerate(xs):
+            x0, x1 = (x - lp.TIE_W / 2) * MM, (x + lp.TIE_W / 2) * MM
+            b.prism(link, f"{name}_tie{k}", band, "x", x0, x1, mass=TIE_MASS, group="타이", frame=f)
+        cy, cz = lp.cable_yz(name)
+        b.cyl(
+            link,
+            f"{name}_d405_run",
+            (sum(xs) / 2 * MM, cy * MM, cz * MM),
+            X,
+            lp.CABLE_D / 2 * MM,
+            (xs[1] - xs[0]) * MM,
+            material="camera",
+            mass=0.0,  # 선의 무게는 아래 선 묶음에 들어 있다 (wiring.wire_masses)
+            group="묶인 선",  # 손목 2의 "D405 선"(플러그에서 잡는 자리까지)과 다른 묶음이다
+            frame=f,
+        )
+        if name != "forearm":
+            return
+        for k, sg in enumerate((1, -1)):
+            z0, z1 = sorted((sg * jp.NECK_HW * MM, sg * lp.SEAT_FACE * MM))
+            b.box(
+                link,
+                f"J4/seat{k}",
+                ((lp.SEAT_X - lp.SEAT_HW) * MM, (jp.FRONT - lp.SEAT_H) * MM, z0),
+                ((lp.SEAT_X + lp.SEAT_HW) * MM, jp.FRONT * MM, z1),
+                mass=SEAT_MASS,
+                group="J4 집",
+                frame=f,
+            )
+
     h, a2, a3 = c.shoulder, c.upper, c.fore
 
     # 베이스 몸통(0)과 돌림판(1). J1 서보와 베어링은 몸통 속이라 충돌 검사에서 뺀다
@@ -897,6 +958,11 @@ def build(c: Concept, tool: Tool) -> tuple[Robot, list[Prim]]:
     foot(3, "fore", "fore_foot", c.yb3, -1, 2 * c.fore_r - c.embed, "아래팔")
     d_tube(3, "fore_tube", c.s3, c.fore_r, FEET["fore"][0], a3 - 0.036, c.yb3)
     link_body(3, "fore", a3, c.c4, c.sign4, "아래팔")
+    # 링크의 서보 좌표: 위팔은 J3, 아래팔은 J4의 서보 좌표다 (STS 관절은 CAD의 서보 좌표와 같다)
+    link_extras(2, "upper_arm", pk.Module(3, sh["STS3250"], (0.0, 0.0, a2), Y, Z, -1, c.c3).frame())
+    link_extras(
+        3, "forearm", pk.Module(4, sh["STS3215"], (0.0, 0.0, a3), Y, Z, c.sign4, c.c4).frame()
+    )
     # J4: 아래팔 끝. J5, J6은 손목 몸통 (서보 먼 끝이 앞 관절 쪽)
     joint(4, "STS3215", (0.0, 0.0, a3), Y, Z, c.sign4, c.c4, house_mass=INNER_MASS, child="wrist")
     wrist_house = WRIST_BODY_MASS + INNER_MASS
@@ -1266,49 +1332,76 @@ def fit_ranges(
     return out
 
 
-def good_solutions(h: uc.Hori, pose: np.ndarray) -> list[np.ndarray]:
-    """관절 범위 안, 부딪힘 없음, 버팀 토크가 정격의 0.8배 안인 해."""
+def free_solutions(h: uc.Hori, pose: np.ndarray) -> list[np.ndarray]:
+    """관절 범위 안이고 부딪히지 않는 해 (버팀 토크는 보지 않는다)."""
     out = []
     for q in h.ik.solve(pose):
         fit = fit_ranges(q, h.robot.lower, h.robot.upper)
-        if fit is None or pk.collisions(pk.hits(h.scene, fit)):
-            continue
-        if h.torque(fit)[1:].max() <= RATED_MARGIN:
+        if fit is not None and not pk.collisions(pk.hits(h.scene, fit)):
             out.append(fit)
     return out
 
 
+def good_solutions(h: uc.Hori, pose: np.ndarray) -> list[np.ndarray]:
+    """관절 범위 안, 부딪힘 없음, 버팀 토크가 정격의 0.8배 안인 해."""
+    return [q for q in free_solutions(h, pose) if h.torque(q)[1:].max() <= RATED_MARGIN]
+
+
 def zone(c: Concept) -> dict:
-    """주 작업 영역 40칸의 지표. 도구는 평행 그리퍼(+ 짐 150 g), 도구 돌림 0°와 90°가 다 되는 칸만 센다."""
+    """주 작업 영역 40칸의 지표. 도구는 평행 그리퍼(+ 짐 150 g), 도구 돌림 0°와 90°가 다 되는 칸만 센다.
+
+    버팀 토크는 칸마다 도구 돌림 둘 가운데 나쁜 쪽이다 (돌림마다 가장 덜 드는 해를 쓴다). 두 돌림이 다 되어야 그
+    칸을 쓰므로, 덜 드는 돌림만 보면 한계까지의 여유를 크게 읽는다 (가장 먼 낮은 칸에서 정격의 0.0017배 다르다).
+    "over"는 작업 갈래의 해가 부딪히지 않고 관절 범위 안인데 버팀 토크 한계만 넘는 칸과 그 값이다.
+    """
     tool = GRIPPER
     h = hori(c)
     robot, prims = h.robot, h.prims
-    by_branch: dict[str, dict[tuple[float, float], list[np.ndarray]]] = {}
+    yaws = (0.0, 90 * DEG)
+    by_branch: dict[str, dict[tuple[float, float], list[tuple[float, np.ndarray]]]] = {}
     any_ok = 0
     for r in RADII:
         for z in HEIGHTS:
             per: dict[str, list[tuple[float, np.ndarray]]] = {}
-            for yaw in (0.0, 90 * DEG):
+            for yaw in yaws:
                 pose = pk.tool_pose((r, 0.0, z), 0.0, 0.0, yaw, tool.length)
                 for q in good_solutions(h, pose):
                     per.setdefault(_branch(q), []).append((yaw, q))
             ok = False
             for name, lst in per.items():
                 if len({yaw for yaw, _ in lst}) == 2:
-                    by_branch.setdefault(name, {})[(r, z)] = [q for _, q in lst]
+                    by_branch.setdefault(name, {})[(r, z)] = lst
                     ok = True
             any_ok += ok
     if not by_branch:
         return {"cells": len(RADII) * len(HEIGHTS), "any": 0}
     best = max(by_branch, key=lambda name: len(by_branch[name]))
+
+    def load(q: np.ndarray) -> float:
+        return float(h.torque(q)[1:].max())
+
+    # 버팀 토크 한계만 넘어서 빠진 칸: 돌림마다 가장 덜 드는 해의 값 가운데 큰 쪽
+    over: dict[tuple[float, float], float] = {}
+    for r in RADII:
+        for z in HEIGHTS:
+            if (r, z) in by_branch[best]:
+                continue
+            worst = 0.0
+            for yaw in yaws:
+                pose = pk.tool_pose((r, 0.0, z), 0.0, 0.0, yaw, tool.length)
+                sols = [q for q in free_solutions(h, pose) if _branch(q) == best]
+                worst = max(worst, min(map(load, sols))) if sols else math.inf
+            if math.isfinite(worst):
+                over[(r, z)] = round(worst, 4)
     torque = np.zeros(6)
     sin3 = 1.0
     lash_free = 0.0
     acc_tcp, f1 = math.inf, math.inf
     tilt = {j: 0.0 for j in range(2, 7)}
-    for qs in by_branch[best].values():
-        q = min(qs, key=lambda q: float(h.torque(q)[1:].max()))
-        torque = np.maximum(torque, h.torque(q))
+    for found in by_branch[best].values():
+        for yaw in yaws:
+            torque = np.maximum(torque, h.torque(min((q for y, q in found if y == yaw), key=load)))
+        q = min((q for _, q in found), key=load)
         sin3 = min(sin3, abs(math.sin(q[2])))
         jv, jw = _jacobian(robot, q, tool.length)
         tau = holding_torques(robot, q, h.masses)
@@ -1337,7 +1430,8 @@ def zone(c: Concept) -> dict:
         "any": any_ok,
         "branches": {k: len(v) for k, v in sorted(by_branch.items(), key=lambda kv: -len(kv[1]))},
         "best": best,
-        "torque": [round(float(t), 3) for t in torque],
+        "torque": [round(float(t), 4) for t in torque],
+        "over": over,
         "sin3": round(sin3, 3),
         "lash_free_mm": round(lash_free * 1000, 2),
         "acc_tcp": round(acc_tcp, 2),
@@ -1429,9 +1523,15 @@ def print_zone(c: Concept) -> None:
     )
     if "torque" in z:
         print(
-            f"- 버팀 토크 / 정격 J2 ~ J4 {z['torque'][1:4]}, 가장 펴진 팔꿈치 |sin J3| {z['sin3']}, "
+            f"- 버팀 토크 / 정격 J2 ~ J4 {z['torque'][1:4]} (칸마다 도구 돌림 둘 가운데 나쁜 쪽), "
+            f"가장 펴진 팔꿈치 |sin J3| {z['sin3']}, "
             f"중력이 안 누르는 관절의 백래시 끝 오차 {z['lash_free_mm']} mm"
         )
+        for (r, height), ratio in z["over"].items():
+            print(
+                f"  - 버팀 토크 한계({RATED_MARGIN}배)만 넘어서 빠진 칸: 반지름 {r * 100:.0f} cm, 높이 "
+                f"{height * 100:.0f} cm에서 정격의 {ratio:.4f}배"
+            )
         print(
             f"- TCP 가속 여유(가장 나쁜 방향) {z['acc_tcp']} m/s², 첫 흔들림 {z['f1_hz']} Hz, "
             f"베어링을 기울이는 모멘트 [N·m] {z['tilt_nm']}"

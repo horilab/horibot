@@ -6,6 +6,7 @@ import pytest
 from build123d import Box, Pos
 
 from horilab_design import coupons
+from horilab_design.parts import links
 
 
 @pytest.mark.slow
@@ -36,6 +37,8 @@ def test_heights_follow_the_layer_height() -> None:
         coupons.SHOULDER_H,
         coupons.STUB_BASE,
         coupons.STUB_HEIGHT,
+        coupons.LETTER_PEG_LEN,
+        links.LETTER_T["flat"],
     ]
     for height in heights:
         layers = height / coupons.LAYER

@@ -44,7 +44,9 @@ ARM = (
     "손목 2",
     "D405",
     "그리퍼",
-)  # 어깨 축 너머의 묶음 (placement의 이름)
+    "글자",
+    "D405 선",
+)  # 어깨 축 너머의 묶음 (placement의 이름). 글자와 D405 선(타이와 묶인 선)은 링크에 붙어 있다
 FIXED = ("선반", "파이", "책상", "베이스")
 WALL_GAP = (
     j._MEASURED.desk.back_gap_mm if j._MEASURED.desk else 151.41

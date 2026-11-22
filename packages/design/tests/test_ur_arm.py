@@ -45,9 +45,11 @@ def test_upright_arm_is_clear_and_stops_on_the_webs() -> None:
         lo, hi, why_lo, why_hi = ranges[joint - 1]
         assert (lo, hi) == pytest.approx((-j.STOP_DEG, j.STOP_DEG), abs=1.0)
         assert why_lo == why_hi == f"J{joint} 귀와 나사 ↔ J{joint} 집"
-    # J2는 위팔의 관이 날개 위의 파이(덮개)에 먼저 닿는다. 팔꿈치 집이 책상에 닿는 128°보다 뒤라 쓰는 범위 밖이다
+    # J2는 위팔의 관이 날개 위의 파이(덮개)에 먼저 닿는다 (뒤로 넘길 때는 관의 뒤 가장자리에 묶은 D405 선이 먼저다).
+    # 팔꿈치 집이 책상에 닿는 128°보다 뒤라 쓰는 범위 밖이다
     lo2, hi2, why_lo2, why_hi2 = ranges[1]
-    assert why_lo2 == why_hi2 == "파이 ↔ 관" and hi2 > 128.0 and lo2 < -128.0
+    assert why_lo2 == "묶인 선 ↔ 파이" and why_hi2 == "파이 ↔ 관"
+    assert hi2 > 128.0 and lo2 < -128.0
     # 프로그램 한계(160°)까지는 어느 관절도 자기 멈춤에 닿지 않는다
     for lo, hi, why_lo, why_hi in ranges[1:]:
         for end, why in ((lo, why_lo), (hi, why_hi)):
@@ -75,6 +77,21 @@ def test_model_includes_what_sticks_out_of_the_joints() -> None:
     # 손목 몸통 둘의 돋움, D405와 받침과 플러그, 손목 2 몸통을 따라가는 선, 그리퍼
     for name in ("J5/boss0", "J6/boss1", "d405", "d405_plate", "d405_seat", "d405_plug", "adapter"):
         assert name in by, name
+    # 링크에 더한 것 (parts/links.py): 관 글자, D405 선을 묶은 타이와 두 타이 사이의 선, 아래팔 끝의 나사 자리
+    for name, link in (("upper_arm", 2), ("forearm", 3)):
+        for part in ("letters", "tie0", "tie1", "d405_run"):
+            assert by[f"{name}_{part}"].link == link, (name, part)
+        assert by[f"{name}_letters"].mass == pytest.approx(ur_arm.LETTER_MASS[name])
+        assert by[f"{name}_tie0"].mass == pytest.approx(ur_arm.TIE_MASS)
+    assert by["J4/seat0"].link == by["J4/seat1"].link == 3
+    # 글자는 로봇 오른쪽(-y)을 보는 면에 있다: 위팔은 납작한 면, 아래팔은 둥근 면
+    c = ur_arm.Concept()
+    assert by["upper_arm_letters"].pos[1] == pytest.approx(c.ya2 - links.LETTER_T["flat"] / 2 * MM)
+    assert by["forearm_letters"].pos[1] < c.s3 - c.fore_r + 1e-9
+    # 묶인 선은 팔꿈치 바깥(팔을 세우면 뒤, -x) 가장자리에 있다
+    assert (
+        by["upper_arm_d405_run"].pos[0] < -c.upper_r and by["forearm_d405_run"].pos[0] < -c.fore_r
+    )
     wire = [p for p in prims if p.group == "D405 선"]
     assert len(wire) == len(cmt.wire_run()) - 1 and all(p.link == 5 for p in wire)
     assert by["d405_plate"].mass == pytest.approx(ur_arm.D405_PLATE_MASS)
@@ -226,9 +243,20 @@ def test_mass_constants_match_the_cad() -> None:
         length, tube_r, foot = links.LINKS[name]
         k, m_foot, _y = ur_arm.LINK_TUBE[key]
         model = ur_arm.LINK_HOUSE_MASS + k * (length - foot.hx - 40.0) * MM + m_foot
-        assert printed_mass_g(links.link(length, tube_r, foot), UP) == pytest.approx(
-            model * 1000, abs=2.0
+        if name == "forearm":
+            model += 2 * ur_arm.SEAT_MASS  # 끝의 나사 자리 둘은 따로 넣었다
+        assert printed_mass_g(links.body(name), UP) == pytest.approx(model * 1000, abs=2.0)
+        # 글자: 낱자 넷의 출력 무게
+        grams = sum(
+            printed_mass_g(shape, links.letter_up(k2)) for k2, shape in links.letters(name).items()
         )
+        assert grams == pytest.approx(ur_arm.LETTER_MASS[name] * 1000, abs=0.05)
+    # 나사 자리 하나: 돋움을 뺀 링크와의 차이
+    length, tube_r, foot = links.LINKS["forearm"]
+    bare = links.link(length, tube_r, foot, holes=links.letter_holes("forearm"))
+    seat = (printed_mass_g(links.body("forearm"), UP) - printed_mass_g(bare, UP)) / 2
+    assert seat == pytest.approx(ur_arm.SEAT_MASS * 1000, abs=0.05)
+    assert ur_arm.TIE_MASS == pytest.approx(links.TIE_G * 1e-3)  # 타이는 가정한 값이다
 
 
 def test_first_joint_weighs_what_the_arm_model_says() -> None:

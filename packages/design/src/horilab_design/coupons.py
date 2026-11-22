@@ -6,6 +6,7 @@
 - 1차: M3 볼트 구멍과 너트 홈. 너트 홈은 출력할 때 너트가 눕는지 서는지에 따라 따로 잰다
 - 2차: 서보 몸체 자리와 혼 자리. 도면 치수(params/servos.toml)에 여유를 더해 간다
 - 3차: 영점 핀 구멍(MISUMI MSH3, 0028), 베어링 6806의 바깥 링 자리와 안쪽 링 축(0028)
+- 4차: 관 글자의 핀 (0019). 검정 핀을 흰 링크의 실제 글자 구멍에 꽂아 보고 핀 지름을 고른다
 
     uv run python -m horilab_design.coupons    # build/coupons/에 STL을 만든다
 
@@ -24,6 +25,7 @@ from build123d import (
     Align,
     Box,
     Compound,
+    Cone,
     Cylinder,
     Part,
     Pos,
@@ -34,7 +36,7 @@ from build123d import (
     extrude,
 )
 
-from horilab_design.parts import shoulder
+from horilab_design.parts import links, shoulder
 from horilab_design.parts.shapes import nut_trap, solid
 from horilab_design.values import REPO_ROOT, ServoSpec, load_servos
 
@@ -131,6 +133,17 @@ STUB_BORE_6808 = (
 # 더 작은 칸을 둔다. 깊이는 플랜지에 박는 깊이다 (parts/flange.py의 TOOL_PIN_DEPTH)
 PIN_PRESS_HOLES = (3.15, 3.20, 3.25, 3.30)
 PIN_PRESS_DEPTH = 14.0
+
+# 4차: 관 글자의 핀 (parts/links.py). 흰 링크에는 그린 지름 LETTER_HOLE(2.6)의 구멍만 있고, 맞춤은 검정 글자의 핀
+# 지름으로 맞춘다. 링크를 뽑은 뒤 이 시험편의 핀을 글자 구멍에 하나씩 꽂아 보고, 손으로 눌러 들어가고 뒤집어도 안 빠지는
+# 가장 가는 칸을 고른다 (납작한 면의 뚫린 구멍과 둥근 면의 막힌 구멍을 따로). 판 두께와 뽑는 방향은 글자와 같다
+# (판의 앞면이 바닥이고 핀이 위로 선다). 핀은 둥근 면의 얕은 구멍(가장자리에서 2.2)에도 바닥에 닿지 않게 짧다
+LETTER_PEGS = (2.1, 2.2, 2.3, 2.4, 2.5, 2.6)
+LETTER_PEG_LEN = 1.8
+LETTER_TAB = (
+    8.0,
+    16.0,
+)  # 판 하나 (폭, 길이). 칸마다 따로 떨어진 판이다 (한 판이면 다른 핀이 관에 걸린다)
 
 PITCH = 11.0  # 칸 간격
 MARGIN = 2.0
@@ -385,6 +398,26 @@ def bearing_shafts(
     return Compound(stubs)
 
 
+def letter_pegs() -> Compound:
+    """관 글자의 핀 시험편: 지름이 다른 핀을 하나씩 세운 작은 판 여섯 (검정). 판 윗면에 핀의 지름을 새긴다."""
+    w, length = LETTER_TAB
+    thick = links.LETTER_T["flat"]
+    cut, lead = links.PEG_LEAD
+    up = (Align.CENTER, Align.CENTER, Align.MIN)
+    tabs: list[Compound] = []
+    for i, d in enumerate(LETTER_PEGS):
+        x = _x(i)
+        tab: Compound = Pos(x - w / 2, 0, 0) * Box(w, length, thick, align=CORNER)
+        y = w / 2  # 핀은 판의 한쪽 끝에 선다
+        tab += Pos(x, y, thick) * Cylinder(d / 2, LETTER_PEG_LEN - lead, align=up)
+        tab += Pos(x, y, thick + LETTER_PEG_LEN - lead - 0.01) * Cone(
+            d / 2, d / 2 - cut, lead + 0.01, align=up
+        )
+        tab -= _label(f"{d:.1f}", x, length - 4.0, thick)
+        tabs.append(solid(tab))
+    return Compound(tabs)
+
+
 COUPONS: dict[str, Callable[[], Compound]] = {
     "fit1_vertical_holes": vertical_holes,
     "fit1_horizontal_holes": horizontal_holes,
@@ -413,6 +446,8 @@ COUPONS: dict[str, Callable[[], Compound]] = {
     ),
     # 플랜지의 도구 핀을 눌러 박는 구멍 (검정)
     "fit3_pin_press": lambda: pin_holes_vertical(PIN_PRESS_HOLES, PIN_PRESS_DEPTH),
+    # 관 글자의 핀 (검정). 흰 링크를 뽑은 뒤 그 글자 구멍에 꽂아 본다
+    "fit4_letter_pegs": letter_pegs,
 }
 
 
