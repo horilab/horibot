@@ -8,17 +8,17 @@ import numpy as np
 import pytest
 from build123d import Pos
 
-from horilab_design import placement as pl
-from horilab_design.parts import base as b
-from horilab_design.parts import joint as j
-from horilab_design.parts import pi_mount as pm
-from horilab_design.parts import rest_shelf as rs
-from horilab_design.parts import shoulder as sh
-from horilab_design.parts import wire_clamps as wc
-from horilab_design.parts.shapes import solid
-from horilab_design.printcheck import air_walls, mid_layer_levels, overhangs, wall_settings
-from horilab_design.studies import rest_pose as rp
-from horilab_design.studies import wiring as wr
+from horibot_design import placement as pl
+from horibot_design.parts import base as b
+from horibot_design.parts import joint as j
+from horibot_design.parts import pi_mount as pm
+from horibot_design.parts import rest_shelf as rs
+from horibot_design.parts import shoulder as sh
+from horibot_design.parts import wire_clamps as wc
+from horibot_design.parts.shapes import solid
+from horibot_design.printcheck import air_walls, mid_layer_levels, overhangs, wall_settings
+from horibot_design.studies import rest_pose as rp
+from horibot_design.studies import wiring as wr
 
 
 @pytest.mark.slow

@@ -1,9 +1,9 @@
 //! 가짜 서보가 실물처럼 움직이는지 본다 (맨 서보 확인, 2026-11-13, docs/decisions/0024-servo-bus.md).
 //! 관절 층과 실행 루프의 실물 전 시험이 가짜 서보에 기대므로, 실물과 다르면 그 시험을 믿을 수 없다.
 
-use horilab_servo::feetech::Fault;
-use horilab_servo::feetech::fake::FakeServo;
-use horilab_servo::feetech::registers::{self as reg, Register};
+use horibot_servo::feetech::Fault;
+use horibot_servo::feetech::fake::FakeServo;
+use horibot_servo::feetech::registers::{self as reg, Register};
 
 fn write(servo: &mut FakeServo, register: Register, value: i32) {
     let bytes = register.encode(value).unwrap().to_le_bytes();

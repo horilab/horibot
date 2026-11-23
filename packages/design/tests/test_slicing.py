@@ -15,7 +15,7 @@ from typing import Any
 import pytest
 from build123d import Box, Compound, Cylinder, Pos
 
-from horilab_design import slicing as sl
+from horibot_design import slicing as sl
 
 CFG = sl.load_config()
 NOZZLE_LINE = (

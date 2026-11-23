@@ -12,9 +12,9 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 
-from horilab_design.robot import flange_pose
-from horilab_design.studies.common import ur_arm
-from horilab_design.values import (
+from horibot_design.robot import flange_pose
+from horibot_design.studies.common import ur_arm
+from horibot_design.values import (
     ArmParams,
     Measured,
     arm_robot,

@@ -53,7 +53,7 @@ B로 한다. 컨트롤러는 Rust로 짠다.
 
 - 처음 연결 구조의 기록은 지웠다 (git 기록에 있다). [0007](0007-repo-structure.md)(Rust 크레이트 자리), [0008](0008-environment-and-packages.md)(서보 SDK, Rust), 0009(실행 루프의 자리와 언어), 0023(정할 것 5번), 0024(Rust로 짠다)를 고쳤다.
 - Rust 워크스페이스를 만들었다 (2026-11-11): `crates/servo`와 `crates/bench`([0007](0007-repo-structure.md)), 도구 모음 판 고정(`rust-toolchain.toml`), `.gitignore`의 `target/`, [CLAUDE.md](../../CLAUDE.md#자주-쓰는-명령)의 커밋 전 검사에 cargo fmt·clippy·test, [conventions.md](../conventions.md)의 Rust 규칙(주석은 한국어, 단위 규칙은 Python과 같다). `crates/controller`는 첫 코드와 같이 만들었다.
-- Python으로 만든 0024 만드는 순서 1번(`packages/servo`의 `horilab_servo.feetech`)은 기준 구현으로 남긴다. 실물에서 첫 덤프를 뜨고 Rust 버스와 결과를 맞춰 보는 데 쓰고, 첫 연결 명령을 Rust로 옮기면 지운다 ([0024](0024-servo-bus.md)). 컨트롤러와 이야기하는 Python 쪽은 따로 클라이언트(`packages/client`)로 만든다 (전송은 [0023](0023-robot-controller.md)의 WSS).
+- Python으로 만든 0024 만드는 순서 1번(`packages/servo`의 `horibot_servo.feetech`)은 기준 구현으로 남긴다. 실물에서 첫 덤프를 뜨고 Rust 버스와 결과를 맞춰 보는 데 쓰고, 첫 연결 명령을 Rust로 옮기면 지운다 ([0024](0024-servo-bus.md)). 컨트롤러와 이야기하는 Python 쪽은 따로 클라이언트(`packages/client`)로 만든다 (전송은 [0023](0023-robot-controller.md)의 WSS).
 - Rust 서보 라이브러리 rustypot(Pollen, Apache-2.0)을 0024의 확인 항목(지난 값을 돌려주지 않는지, 서보마다 결과, 상태 바이트, EEPROM 잠금, 타임아웃, 섞인 모델, ST-3120)으로 평가했다 (2026-11-11). 동기 읽기가 서보 하나만 실패해도 통째로 실패하고 잠금을 LeRobot식으로 다뤄서, 참고만 하고 서보 버스를 직접 짰다 ([0024](0024-servo-bus.md)의 검토한 대안).
 - 팔 움직이기 전에 정할 것이던 경로 계획의 자리와 시뮬레이션 연결은 [0033](0033-planning-and-simulation.md)에서 정했다: 경로 계획은 처음부터 컨트롤러 안에 Rust로, 시뮬레이션은 Python MuJoCo 서버를 서보 버스 자리에 TCP로 붙인다 (조사는 [controller-research.md](../controller-research.md#4-시뮬레이션-연결과-파이용-계획-라이브러리)).
   - 빌드, 배포, 파이 실시간 환경은 [0026](0026-pi-runtime-deploy-records.md)에서 정했다.

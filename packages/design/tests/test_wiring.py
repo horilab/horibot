@@ -9,15 +9,15 @@ import numpy as np
 import pytest
 from build123d import Pos
 
-from horilab_design.parts import base as bp
-from horilab_design.parts import camera_mount as cmt
-from horilab_design.parts import gripper as gp
-from horilab_design.parts import joint as j
-from horilab_design.parts import links, wrist
-from horilab_design.parts import pi_mount as pm
-from horilab_design.parts import shoulder as sp
-from horilab_design.parts.shapes import box, solid
-from horilab_design.studies import wiring as wr
+from horibot_design.parts import base as bp
+from horibot_design.parts import camera_mount as cmt
+from horibot_design.parts import gripper as gp
+from horibot_design.parts import joint as j
+from horibot_design.parts import links, wrist
+from horibot_design.parts import pi_mount as pm
+from horibot_design.parts import shoulder as sp
+from horibot_design.parts.shapes import box, solid
+from horibot_design.studies import wiring as wr
 
 
 def test_wire_is_longest_at_a_stop_and_slack_in_the_middle() -> None:

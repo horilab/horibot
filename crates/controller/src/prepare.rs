@@ -4,8 +4,8 @@
 //! 쓴다 (EEPROM은 쓰는 횟수에 수명이 있다). 서보를 움직이지 않는다: 쓰는 것은 EEPROM뿐이고, 토크가 켜져
 //! 있으면 버스가 쓰지 않는다. 쓰기 전후의 덤프를 기록에 남기는 것은 부르는 쪽이 한다.
 
-use horilab_servo::feetech::registers::{MODELS, Register};
-use horilab_servo::feetech::{Bus, Port};
+use horibot_servo::feetech::registers::{MODELS, Register};
+use horibot_servo::feetech::{Bus, Port};
 
 use crate::settings::Joint;
 
@@ -114,8 +114,8 @@ pub fn write<P: Port>(
 
 #[cfg(test)]
 mod tests {
-    use horilab_servo::feetech::fake::{FakeServo, open_fake_bus};
-    use horilab_servo::feetech::registers as reg;
+    use horibot_servo::feetech::fake::{FakeServo, open_fake_bus};
+    use horibot_servo::feetech::registers as reg;
 
     use super::*;
     use crate::settings::{Settings, TEST_J3};

@@ -5,8 +5,8 @@
 //! 계산해 EEPROM 쓰기로 굽고, 다시 읽은 핀 자리의 서보 값을 영점으로 쓴다. 방향은 핀을 꽂기 전에 관절을 손으로
 //! + 쪽으로 돌려 서보 값이 느는지 주는지로 정한다. 서보는 움직이지 않는다 (토크가 꺼져 있어야 굽는다).
 
-use horilab_servo::feetech::registers::{self as reg, STEPS_PER_TURN};
-use horilab_servo::feetech::{Bus, Port};
+use horibot_servo::feetech::registers::{self as reg, STEPS_PER_TURN};
+use horibot_servo::feetech::{Bus, Port};
 
 use crate::prepare::value_in;
 use crate::settings::{Direction, Joint};
@@ -153,7 +153,7 @@ pub fn settings_lines(zero_raw: i32, direction: Direction, offset: i32) -> Strin
 
 #[cfg(test)]
 mod tests {
-    use horilab_servo::feetech::fake::{FakeServo, open_fake_bus};
+    use horibot_servo::feetech::fake::{FakeServo, open_fake_bus};
 
     use super::*;
     use crate::settings::{Settings, TEST_J3};

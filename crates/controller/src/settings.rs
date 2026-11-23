@@ -12,7 +12,7 @@ use std::fs;
 use std::ops::RangeInclusive;
 use std::path::Path;
 
-use horilab_servo::feetech::registers::{self as reg, Area, MODELS, Register, STEPS_PER_TURN};
+use horibot_servo::feetech::registers::{self as reg, Area, MODELS, Register, STEPS_PER_TURN};
 use serde::Deserialize;
 
 use crate::kinematics::Kinematics;

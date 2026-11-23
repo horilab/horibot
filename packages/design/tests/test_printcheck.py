@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 from build123d import Box, Compound, Cylinder, Pos
 
-from horilab_design.parts import joint_test as jt
-from horilab_design.printcheck import (
+from horibot_design.parts import joint_test as jt
+from horibot_design.printcheck import (
     WALLS_ONLY_SPAN,
     air_walls,
     layer_snap,
@@ -14,7 +14,7 @@ from horilab_design.printcheck import (
     printed_mass_g,
     wall_settings,
 )
-from horilab_design.values import load_measured
+from horibot_design.values import load_measured
 
 UP = (0.0, 0.0, 1.0)
 

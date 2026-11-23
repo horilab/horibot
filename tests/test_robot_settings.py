@@ -11,7 +11,7 @@ from typing import Any
 import numpy as np
 import pytest
 
-from horilab_design.values import load_arm, load_robot
+from horibot_design.values import load_arm, load_robot
 
 ROOT = Path(__file__).resolve().parents[1]
 JOINTS: dict[str, Any] = tomllib.loads((ROOT / "data" / "robot.toml").read_text(encoding="utf-8"))[

@@ -1,5 +1,5 @@
 [project]
-name = "horilab-camera"
+name = "horibot-camera"
 version = "0.1.0"
 description = "영상 메시지 형식과 PC 쪽 수신"
 # 파이의 카메라 프로그램도 이 패키지를 쓴다. 파이의 Python 버전은 파이 준비 때 정하므로

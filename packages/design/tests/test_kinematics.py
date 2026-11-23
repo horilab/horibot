@@ -14,10 +14,10 @@ import numpy as np
 import pytest
 import yourdfpy
 
-from horilab_design.ik import AnalyticIK, wrap_angle
-from horilab_design.mjcf import build_spec
-from horilab_design.robot import Joint, Mat, Robot, Vec3, flange_pose
-from horilab_design.urdf import build_urdf, matrix_from_rpy, rpy_from_matrix
+from horibot_design.ik import AnalyticIK, wrap_angle
+from horibot_design.mjcf import build_spec
+from horibot_design.robot import Joint, Mat, Robot, Vec3, flange_pose
+from horibot_design.urdf import build_urdf, matrix_from_rpy, rpy_from_matrix
 
 
 def _mujoco_flange_pose(model: mujoco.MjModel, robot: Robot, q: Mat) -> Mat:

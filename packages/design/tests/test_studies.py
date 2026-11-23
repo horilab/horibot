@@ -8,10 +8,10 @@ import math
 import numpy as np
 import pytest
 
-from horilab_design.ik import AnalyticIK
-from horilab_design.robot import flange_pose, link_poses
-from horilab_design.statics import PointMass, frame_poses
-from horilab_design.studies import (
+from horibot_design.ik import AnalyticIK
+from horibot_design.robot import flange_pose, link_poses
+from horibot_design.statics import PointMass, frame_poses
+from horibot_design.studies import (
     cameras,
     covers,
     packaging,
@@ -21,7 +21,7 @@ from horilab_design.studies import (
     ur_compare,
     ur_joints,
 )
-from horilab_design.studies.common import (
+from horibot_design.studies.common import (
     MASS_CASES,
     RATED_MARGIN,
     TASK_YAWS_DEG,
@@ -33,7 +33,7 @@ from horilab_design.studies.common import (
     tool_down,
     ur_arm,
 )
-from horilab_design.values import load_arm, load_measured
+from horibot_design.values import load_arm, load_measured
 
 
 def test_task_poses_point_the_tool_down() -> None:

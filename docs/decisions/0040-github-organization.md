@@ -36,7 +36,7 @@ GitHub 조직 `horilab` 아래에 레포 셋을 둔다. 모두 공개다.
 
 - 응용끼리 같이 쓰는 코드를 위한 공통 레포는 미리 두지 않는다. 두 번째 응용이 정말 같이 쓸 때 떼어 낸다.
 - 클라이언트는 컨트롤러와 같이 horibot에 둔다. 응용은 horibot의 클라이언트를 git 태그로 설치한다. 패키지 레지스트리는 쓰지 않는다.
-- 레포 이름 앞에 `horilab-`을 붙이지 않는다. 코드 이름(Python `horilab_<폴더>`, Rust `horilab-<폴더>`, 0007)은 그대로다.
+- 레포 이름 앞에 `horilab-`을 붙이지 않는다. 레포 안의 이름은 레포 이름 horibot을 따른다: 코드 이름(Python `horibot_<폴더>`, Rust `horibot-<폴더>`, 0007), PC 워크스페이스 루트(`pyproject.toml`)의 이름, 드라이브에서 기록을 두는 폴더(`horilab/horibot/`, [0022](0022-records-and-sync.md)).
 - PC에서는 작업 폴더 아래에 `horilab/`을 두고, 그 안에 레포 이름대로 받는다: `horilab/horibot`, `horilab/palletizing`, `horilab/jenga`. GitHub의 조직과 레포 꼴을 그대로 따른다.
 - 아직 정하지 않은 것(응용 레포를 만드는 때, 시뮬레이션의 자리, 캘리브레이션 같은 책임 나누기, 용어)은 [status.md](../status.md)의 남은 질문에 있다.
 
@@ -46,6 +46,7 @@ GitHub 조직 `horilab` 아래에 레포 셋을 둔다. 모두 공개다.
 - 로봇 레포를 더 나누지 않는다: 설계 값 하나에서 부품, 시뮬레이션 모델, 컨트롤러의 팔 치수가 같이 나온다 (0006).
 - 클라이언트를 horibot에 둔다: 클라이언트는 컨트롤러 API와 늘 같이 바뀐다. 같은 레포면 한 커밋에서 같이 고치고 같이 시험한다. horibot의 태그 하나가 컨트롤러와 클라이언트의 판을 같이 정해서, 둘의 판이 어긋날 일이 준다.
 - git 태그로 레포의 한 폴더만 설치하는 것은 uv(git 소스의 `subdirectory`)와 cargo(git 의존성은 레포 안에서 이름으로 크레이트를 찾는다)가 하는 일이다. 두 도구의 문서를 이번에 다시 열어 보지는 않았고, 처음 쓸 때 확인한다.
+- 레포 안의 이름을 horibot으로: 이 레포의 코드는 horibot 로봇 하나의 것이고(설계, 서보, 컨트롤러, 응용이 쓸 클라이언트), horilab은 레포 셋을 묶는 조직 이름이다. 응용 레포에서도 `horibot_client`처럼 어느 로봇에 붙는지 보이고, 나중에 응용끼리 같이 쓰는 코드가 생기면 그 코드가 horilab 이름을 쓸 수 있다. 응용이 git 태그로 받아 쓰기 시작한 뒤에 바꾸면 레포를 넘어 같이 고쳐야 해서, 아직 받아 쓰는 곳이 없을 때 바꿨다 (2026-11-23).
 - 이전 프로젝트는 문서와 말에서 늘 "이전 프로젝트"라고 부르므로 ([CLAUDE.md](../../CLAUDE.md)), 레포 이름이 같아도 가리키는 것이 갈리지 않는다.
 - GitHub에서 레포 이름을 바꾸거나 다른 주인에게 옮기면, 옛 주소로 들어오는 웹과 git(clone, fetch, push)을 새 주소로 넘겨 준다. 옮긴 뒤 옛 주소로 `git ls-remote`를 하니 새 레포의 main이 나왔다 (2026-11-23). 다만 옛 이름으로 새 레포를 만들면 넘겨주기가 끊긴다 (알고 있는 동작이고, GitHub 문서를 이번에 다시 열어 보지는 않았다).
 
@@ -54,14 +55,14 @@ GitHub 조직 `horilab` 아래에 레포 셋을 둔다. 모두 공개다.
 실물이 있는 PC에서 먼저 한다 (사용자 결정). 실물이 없는 PC는 그 뒤에 2와 4를 한다.
 
 1. GitHub (2026-11-23에 했다): `zzingobomi/horilab`을 조직 `horilab`으로 옮기면서 이름을 `horibot`으로 바꿨다 (`gh api -X POST repos/zzingobomi/horilab/transfer -f new_owner=horilab -f new_name=horibot`). 이름부터 바꾸면 이전 프로젝트 `zzingobomi/horibot`과 이름이 겹쳐 막힌다.
-2. PC마다: Claude Code와 편집기, 레포의 파일을 연 프로그램(뱀부랩 스튜디오 등)을 닫고, 레포 밖에서(탐색기 또는 다른 셸) 한다.
+2. PC마다 (실물이 있는 PC는 2026-11-23에 했다): Claude Code와 편집기, 레포의 파일을 연 프로그램(뱀부랩 스튜디오 등)을 닫고, 레포 밖에서(탐색기 또는 다른 셸) 한다.
    - 받아 둔 폴더를 `<작업 폴더>/horilab/horibot`으로 옮긴다. 예: `D:\Study\horilab`이면 잠깐 다른 이름(`horilab-moving`)으로 바꾸고, 새 `D:\Study\horilab` 폴더를 만들어 그 안에 `horibot`이라는 이름으로 옮긴다. 작업 폴더에 이전 프로젝트를 받은 `horibot` 폴더가 있으면 바로 `horibot`으로 바꿀 수 없어서 다른 이름을 거친다. git에서 뺀 폴더(`records/`, `videos/`, `tools/local/`, `docs-local/` 등)가 같이 옮겨진다.
    - 원격 주소를 바꾼다: `git remote set-url origin https://github.com/horilab/horibot.git`
-   - `.venv`를 지우고 `uv sync`로 다시 만든다 (편집 설치가 옛 경로를 가리킨다). Rust의 `target/`은 그대로 두면 cargo가 필요한 만큼 다시 빌드한다.
+   - `.venv`를 지우고 `uv sync`로 다시 만든다 (편집 설치가 옛 경로와 옛 패키지 이름을 가리킨다). Rust의 `target/`은 `cargo clean`으로 지운다 (옛 크레이트 이름으로 만든 빌드 파일이 남는다).
    - Claude Code의 메모와 지난 대화는 사용자 폴더의 `.claude/projects/` 아래, 레포 경로로 이름이 붙은 폴더에 있다 (예: `D:\Study\horilab` → `d--Study-horilab`). 새 경로에서 Claude Code를 열기 전에 이 폴더의 이름을 새 경로의 이름(`d--Study-horilab-horibot`)으로 바꾼다. 레포의 `.claude/settings.local.json`(git에서 뺐다)에 이 폴더를 적은 권한이 있으면 그것도 바꾼다.
    - 편집기에서 폴더에 걸어 둔 설정(프로필 연결 등)이 있으면 새 경로로 다시 건다.
-3. 레포 안에서 옛 이름을 가리키는 곳을 고쳐 커밋한다 (2026-11-23에 했다): CLAUDE.md 첫 줄(horilab은 조직이고 이 레포는 horibot), README 제목, [setup.md](../setup.md)의 레포 받기(새 주소와 2의 폴더 배치), [servo-setup.md](../servo-setup.md)의 받는 주소.
-4. 파이처럼 레포를 받아 둔 다른 곳도 원격 주소를 바꾼다. 바꾸기 전에도 넘겨주기로 받고 올리기가 된다.
+3. 레포 안에서 옛 이름을 가리키는 곳을 고쳐 커밋한다 (2026-11-23에 했다): CLAUDE.md 첫 줄(horilab은 조직이고 이 레포는 horibot), README 제목, [setup.md](../setup.md)의 레포 받기(새 주소와 2의 폴더 배치), [servo-setup.md](../servo-setup.md)의 받는 주소, 레포 안의 이름(코드 이름, PC 워크스페이스 루트, 팔 전체 3D 페이지 제목). 드라이브의 기록 폴더는 `horilab/`에서 `horilab/horibot/`으로 옮겼다.
+4. 파이처럼 레포를 받아 둔 다른 곳도 원격 주소를 바꾼다. 바꾸기 전에도 넘겨주기로 받고 올리기가 된다. 파이 세 대에는 받아 둔 레포가 없었다 (2026-11-23).
 
 ## 영향
 

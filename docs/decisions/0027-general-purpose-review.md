@@ -51,7 +51,7 @@
 
 ### UR3e와 견주기
 
-`uv run python -m horilab_design.studies.ur_compare`로 다시 낸다. 원본 모델 확인은 `... ur_compare check`, 관절 구조가 막지 않는다는 가정은 `... ur_compare free`다.
+`uv run python -m horibot_design.studies.ur_compare`로 다시 낸다. 원본 모델 확인은 `... ur_compare check`, 관절 구조가 막지 않는다는 가정은 `... ur_compare free`다.
 
 - 비교 모델(UR3e)은 UR이 공개한 기구학과 충돌 형상으로 만들었다 (`studies/ur3e.py`). 공개 모형과 링크 자리가 같고(차이 1e-15 m 이하), 관절 각 0의 플랜지 위치가 DH 값과 같다.
 - UR3e 공개 형상으로는 팔을 세운 자세에서 팔꿈치가 약 155°(손목 자세에 따라 157°)까지 접히고, 그다음 손목 1이 위팔에 닿는다. 나머지 관절은 막힘 없이 돈다. 호리봇 팔꿈치는 약 122°에서 닿는다.
@@ -88,7 +88,7 @@
 
 ### 관절 구조 대안: UR식 관절 (개념)
 
-`uv run python -m horilab_design.studies.ur_joints`로 견준다 (관절 범위 ±165°). `... ur_joints 135`는 ±135°이고, 치수와 도는 범위는 `... ur_joints check`다.
+`uv run python -m horibot_design.studies.ur_joints`로 견준다 (관절 범위 ±165°). `... ur_joints 135`는 ±135°이고, 치수와 도는 범위는 `... ur_joints check`다.
 
 - 구조: 부모 링크의 원통(집)이 서보를 품는다. 자식 링크는 출력 쪽 뚜껑으로만 잇는다.
   - 뚜껑은 출력 혼에 볼트로 묶고, 출력 면 베어링(STS 관절 6806, 어깨 6808)의 안쪽 링에 앉는다. 굽힘은 베어링이 받는다.

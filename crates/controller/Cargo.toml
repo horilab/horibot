@@ -1,5 +1,5 @@
 [package]
-name = "horilab-controller"
+name = "horibot-controller"
 description = "로봇 컨트롤러: 로봇 설정, 관절 층, 실행 루프와 안전 검사, 경로 계획, 서보 준비·맨 서보 확인 명령 (docs/decisions/0024-servo-bus.md, 0032, 0033)"
 version.workspace = true
 edition.workspace = true
@@ -9,7 +9,7 @@ publish.workspace = true
 
 [dependencies]
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
-horilab-servo = { version = "0.1.0", path = "../servo" }
+horibot-servo = { version = "0.1.0", path = "../servo" }
 rsruckig = "3.0.1"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"

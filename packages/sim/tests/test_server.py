@@ -12,8 +12,8 @@ from typing import Any
 
 import pytest
 
-from horilab_sim.server import Server
-from horilab_sim.world import RAD_PER_STEP
+from horibot_sim.server import Server
+from horibot_sim.world import RAD_PER_STEP
 
 Ask = Callable[..., dict[str, Any]]
 STATE = ["torque_enable", "goal_position", "torque_limit", "present_position", "present_load"]

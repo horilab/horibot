@@ -6,11 +6,11 @@ import math
 
 import pytest
 
-from horilab_design.parts import flange as f
-from horilab_design.parts import joint as j
-from horilab_design.parts import wrist
-from horilab_design.parts.shapes import far_apart
-from horilab_design.printcheck import overhangs
+from horibot_design.parts import flange as f
+from horibot_design.parts import joint as j
+from horibot_design.parts import wrist
+from horibot_design.parts.shapes import far_apart
+from horibot_design.printcheck import overhangs
 
 
 @pytest.fixture(scope="module")

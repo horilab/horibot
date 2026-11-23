@@ -4,11 +4,11 @@ requires-python = ">=3.12, <3.15"
 
 [manifest]
 members = [
-    "horilab",
-    "horilab-camera",
-    "horilab-design",
-    "horilab-servo",
-    "horilab-sim",
+    "horibot",
+    "horibot-camera",
+    "horibot-design",
+    "horibot-servo",
+    "horibot-sim",
 ]
 
 [[package]]
@@ -638,14 +638,14 @@ wheels = [
 ]
 
 [[package]]
-name = "horilab"
+name = "horibot"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
-    { name = "horilab-camera" },
-    { name = "horilab-design" },
-    { name = "horilab-servo" },
-    { name = "horilab-sim" },
+    { name = "horibot-camera" },
+    { name = "horibot-design" },
+    { name = "horibot-servo" },
+    { name = "horibot-sim" },
 ]
 
 [package.dev-dependencies]
@@ -660,10 +660,10 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "horilab-camera", editable = "packages/camera" },
-    { name = "horilab-design", editable = "packages/design" },
-    { name = "horilab-servo", editable = "packages/servo" },
-    { name = "horilab-sim", editable = "packages/sim" },
+    { name = "horibot-camera", editable = "packages/camera" },
+    { name = "horibot-design", editable = "packages/design" },
+    { name = "horibot-servo", editable = "packages/servo" },
+    { name = "horibot-sim", editable = "packages/sim" },
 ]
 
 [package.metadata.requires-dev]
@@ -677,7 +677,7 @@ dev = [
 ]
 
 [[package]]
-name = "horilab-camera"
+name = "horibot-camera"
 version = "0.1.0"
 source = { editable = "packages/camera" }
 dependencies = [
@@ -692,7 +692,7 @@ requires-dist = [
 ]
 
 [[package]]
-name = "horilab-design"
+name = "horibot-design"
 version = "0.1.0"
 source = { editable = "packages/design" }
 dependencies = [
@@ -721,7 +721,7 @@ requires-dist = [
 ]
 
 [[package]]
-name = "horilab-servo"
+name = "horibot-servo"
 version = "0.1.0"
 source = { editable = "packages/servo" }
 dependencies = [
@@ -736,7 +736,7 @@ requires-dist = [
 ]
 
 [[package]]
-name = "horilab-sim"
+name = "horibot-sim"
 version = "0.1.0"
 source = { editable = "packages/sim" }
 dependencies = [

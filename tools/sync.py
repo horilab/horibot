@@ -37,7 +37,7 @@ CACHE = LOCAL / "cache"
 SYNC_DIRS: tuple[str, ...] = ("records", "videos")
 
 REMOTE = "gdrive"  # rclone 설정 안의 이름
-REMOTE_ROOT = f"{REMOTE}:horilab"  # 드라이브에서 레포 루트에 해당하는 폴더
+REMOTE_ROOT = f"{REMOTE}:horilab/horibot"  # 드라이브에서 레포 루트에 해당하는 폴더 (0040)
 
 RCLONE_VERSION = "v1.76.0"
 # https://downloads.rclone.org/<버전>/SHA256SUMS 의 값. 버전을 올리면 같이 바꾼다.

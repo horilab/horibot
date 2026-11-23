@@ -1,5 +1,5 @@
 [project]
-name = "horilab-design"
+name = "horibot-design"
 version = "0.1.0"
 description = "치수 값에서 부품, 조립, 출력 파일, URDF, MJCF, 부품표를 만들고 검사한다"
 requires-python = ">=3.12,<3.15"

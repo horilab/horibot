@@ -1,0 +1,1009 @@
+<title>D405 선 길</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;600&display=swap">
+<style>
+/* Layout: the whole arm on the desk fills the stage; a side sheet holds the poses, the joints and the cable's sections.
+   The sheet stacks under the stage on phones. Same drafting-sheet tokens as the other horibot arm pages. */
+:root {
+  --paper: #edf0f1;
+  --sheet: #f8f9f9;
+  --stage: #dfe4e7;
+  --ink: #1a2227;
+  --muted: #56636c;
+  --rule: #c8d0d5;
+  --accent: #2356a3;
+  --accent-ink: #ffffff;
+  --tag-bg: rgba(248, 249, 249, 0.93);
+  --ok: #2f7a4f;
+  --warn: #b3261e;
+  /* The cable and its taut state; physical colours of the parts stay the same in both themes. */
+  --cable: #e07a00;
+  --cable-taut: #d0202f;
+  --pla-white: #eeeeea;
+  --pla-black: #25272a;
+  --cam: #646b73;
+  --pcb: #2f6f4a;
+  --clip: #34393f;
+  --font-display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --font-body: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif;
+  --font-mono: "IBM Plex Mono", "IBM Plex Sans KR", ui-monospace, Consolas, monospace;
+  --fs-xs: 12px;
+  --fs-sm: 13.5px;
+  --fs-md: 15px;
+  --fs-lg: 17px;
+  --fs-xl: clamp(26px, 4vw, 38px);
+  --radius: 6px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --paper: #101417;
+    --sheet: #161b1f;
+    --stage: #1a2026;
+    --ink: #e1e6e9;
+    --muted: #97a3ab;
+    --rule: #283137;
+    --accent: #6c9ae0;
+    --accent-ink: #0b1220;
+    --tag-bg: rgba(22, 27, 31, 0.93);
+    --ok: #6cc08e;
+    --warn: #ff7b72;
+    --cable: #f59f00;
+    --cable-taut: #ff4d5e;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #101417;
+  --sheet: #161b1f;
+  --stage: #1a2026;
+  --ink: #e1e6e9;
+  --muted: #97a3ab;
+  --rule: #283137;
+  --accent: #6c9ae0;
+  --accent-ink: #0b1220;
+  --tag-bg: rgba(22, 27, 31, 0.93);
+  --ok: #6cc08e;
+  --warn: #ff7b72;
+  --cable: #f59f00;
+  --cable-taut: #ff4d5e;
+}
+
+[hidden] { display: none !important; }
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: var(--fs-md);
+  line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 1280px; margin-inline: auto; padding-block: 26px 56px; display: grid; gap: 20px; }
+.head { display: grid; gap: 8px; }
+.eyebrow { margin: 0; font-family: var(--font-mono); font-size: var(--fs-xs); font-weight: 500; letter-spacing: 0.08em; color: var(--muted); }
+h1 { margin: 0; font-size: var(--fs-xl); font-weight: 600; line-height: 1.15; letter-spacing: -0.015em; text-wrap: balance; }
+.lede { margin: 0; max-width: 70ch; color: var(--muted); }
+
+.main { display: grid; grid-template-columns: minmax(0, 1.9fr) minmax(300px, 1fr); gap: 20px; align-items: start; }
+.view { display: grid; gap: 10px; min-width: 0; }
+.stage { position: relative; height: min(76vh, 740px); min-height: 380px; background: var(--stage); border: 1px solid var(--rule); border-radius: var(--radius); overflow: hidden; }
+#gl { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+#gl:active { cursor: grabbing; }
+
+.tags { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.tag { position: absolute; left: 0; top: 0; width: 0; height: 0; }
+.tag .dot { position: absolute; left: -4px; top: -4px; width: 8px; height: 8px; border-radius: 50%; background: var(--ink); box-shadow: 0 0 0 2px var(--stage); }
+.tag .ln { position: absolute; left: 4px; top: 0; width: 12px; height: 1px; background: var(--ink); opacity: 0.55; }
+.tag .txt {
+  position: absolute; left: 16px; top: 0; transform: translateY(-50%); white-space: nowrap;
+  font-size: 12px; font-weight: 500; line-height: 1.25; color: var(--ink);
+  background: var(--tag-bg); border: 1px solid var(--rule); border-radius: 3px; padding: 2px 6px;
+}
+.tag.j .txt { font-family: var(--font-display); font-size: 15px; font-weight: 600; letter-spacing: 0.03em; padding: 1px 6px; }
+.tag.j .dot { background: var(--accent); }
+.tag.c .dot { background: var(--cable); }
+.tag.c .txt { border-color: var(--cable); }
+.tag.flip .ln { left: auto; right: 4px; }
+.tag.flip .txt { left: auto; right: 16px; }
+
+.view-seg { position: absolute; top: 10px; right: 10px; }
+.view-seg button { background: var(--tag-bg); font-size: var(--fs-xs); padding: 6px 10px; }
+.now {
+  position: absolute; left: 0; right: 0; bottom: 0; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 12px;
+  padding: 6px 12px; font-size: 12.5px; line-height: 1.35; color: var(--muted);
+  background: var(--tag-bg); border-top: 1px solid var(--rule); pointer-events: none;
+}
+.now b { color: var(--ink); font-weight: 600; }
+.now .bad { color: var(--warn); font-weight: 600; }
+.gl-error { position: absolute; inset: 0; margin: 0; display: grid; place-items: center; padding: 24px; text-align: center; color: var(--muted); }
+
+.legend { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: var(--fs-xs); color: var(--muted); }
+.legend li { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 12px; height: 12px; border-radius: 2px; flex: none; border: 1px solid var(--rule); }
+.sw-line { width: 18px; height: 4px; border: 0; border-radius: 2px; }
+.sw-cable { background: var(--cable); }
+.sw-taut { background: var(--cable-taut); }
+.sw-clip { background: var(--clip); }
+.sw-pcb { background: var(--pcb); }
+
+.panel { background: var(--sheet); border: 1px solid var(--rule); border-radius: var(--radius); min-width: 0; }
+.block { padding: 16px 18px; display: grid; gap: 12px; }
+.block + .block { border-top: 1px solid var(--rule); }
+.block h2 { margin: 0; font-size: var(--fs-lg); font-weight: 600; line-height: 1.3; }
+.btns { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.btn, .seg button {
+  appearance: none; margin: 0; border: 1px solid var(--rule); background: var(--paper); color: var(--ink);
+  font: inherit; font-size: var(--fs-sm); font-weight: 500; line-height: 1.2; padding: 9px 13px; border-radius: 4px; cursor: pointer;
+}
+.btn:hover, .seg button:hover { border-color: var(--muted); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+.seg { display: inline-flex; flex-wrap: wrap; }
+.seg button { border-radius: 0; padding-inline: 11px; }
+.seg button + button { margin-left: -1px; }
+.seg button:first-child { border-radius: 4px 0 0 4px; }
+.seg button:last-child { border-radius: 0 4px 4px 0; }
+.seg button[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--paper); position: relative; }
+.note { margin: 0; font-size: var(--fs-sm); color: var(--muted); }
+.notes { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: var(--fs-sm); color: var(--muted); }
+
+.joints { display: grid; grid-template-columns: max-content minmax(0, 1fr) 50px; gap: 6px 10px; align-items: center; }
+.joints label { font-size: var(--fs-sm); white-space: nowrap; }
+.joints label b { font-family: var(--font-display); font-size: 16px; font-weight: 600; letter-spacing: 0.03em; margin-right: 6px; }
+.joints label span { color: var(--muted); }
+.joints input[type="range"] { width: 100%; margin: 0; accent-color: var(--accent); }
+.joints output { font-family: var(--font-mono); font-size: var(--fs-xs); text-align: right; font-variant-numeric: tabular-nums; }
+
+.sections-wrap { overflow-x: auto; }
+.sections { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+.sections th, .sections td { text-align: left; padding: 6px 8px 6px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+.sections th { font-size: var(--fs-xs); font-weight: 500; color: var(--muted); }
+.sections td.n { font-family: var(--font-mono); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right; }
+.sections td small { display: block; font-size: var(--fs-xs); color: var(--muted); }
+.sections tr.air td:first-child { box-shadow: inset 3px 0 0 var(--cable); padding-left: 8px; }
+.sections tr.total td { border-bottom: 0; font-weight: 600; }
+.pill { display: inline-block; font-size: 11px; font-weight: 600; line-height: 1.2; padding: 2px 7px; border-radius: 999px; border: 1px solid currentColor; white-space: nowrap; }
+.pill.ok { color: var(--ok); }
+.pill.warn { color: var(--warn); }
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 920px) {
+  .main { grid-template-columns: minmax(0, 1fr); }
+  .stage { height: min(64vh, 520px); min-height: 330px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header class="head">
+    <p class="eyebrow">HORIBOT · D405 선 · 2026-11</p>
+    <h1>D405 선을 따로 띄우기</h1>
+    <p class="lede">D405 선을 서보 선과 같은 틈에 넣지 않고 관절 밖으로 넘기는 방식을 팔 전체에 그렸어요 (2026-11-17에 정함). 베이스, 위팔, 아래팔은 찍찍이 케이블 타이로 묶고, 플러그 바로 밑만 D405 받침의 클립으로 단단히 잡아요. 관절을 지나는 곳에서는 선이 여유를 두고 공중에 떠요. 서보 선은 지금 설계대로 몸통 속으로 가서 그리지 않았어요. 관절을 움직이거나 "끝까지 돌려 보기"를 누르면 선이 무게와 뻣뻣함대로 따라와요.</p>
+  </header>
+
+  <div class="main">
+    <section class="view" aria-label="팔 전체와 D405 선 3D">
+      <div class="stage" id="stage">
+        <canvas id="gl" aria-label="책상 위의 로봇팔과 D405 선 3D 모델. 끌어서 돌려 볼 수 있어요"></canvas>
+        <div class="tags" id="tags" aria-hidden="true"></div>
+        <div class="seg view-seg" role="group" aria-label="보는 자리">
+          <button type="button" id="view-back" data-view="back" aria-pressed="true">왼쪽 뒤</button>
+          <button type="button" id="view-front" data-view="front" aria-pressed="false">오른쪽 앞</button>
+          <button type="button" id="view-wrist" data-view="wrist" aria-pressed="false">손목 가까이</button>
+        </div>
+        <div class="now" aria-live="polite"><span id="now-pose">집는 자세</span><span>① ~ ④ 사이에서 관절을 지나는 곳은 공중에 떠요</span></div>
+        <p class="gl-error" id="gl-error" hidden>이 브라우저에서 3D를 그리지 못했어요. 다른 브라우저로 열거나 하드웨어 가속을 켜 보세요.</p>
+      </div>
+      <ul class="legend" aria-label="색 구분">
+        <li><span class="sw sw-line sw-cable"></span>D405 선 (지름 3.0 mm)</li>
+        <li><span class="sw sw-clip"></span>묶는 자리 (어림)</li>
+        <li><span class="sw sw-pcb"></span>카메라 파이 (스케치 자리)</li>
+      </ul>
+    </section>
+
+    <aside class="panel">
+      <section class="block" aria-labelledby="h-pose">
+        <h2 id="h-pose">자세</h2>
+        <div class="btns">
+          <button type="button" class="btn" id="pose-pick">집는 자세</button>
+          <button type="button" class="btn" id="pose-place">쌓는 자세</button>
+          <button type="button" class="btn primary" id="demo" aria-pressed="false">끝까지 돌려 보기</button>
+          <button type="button" class="btn" id="reset">선 다시 놓기</button>
+        </div>
+        <p class="note">끝까지 돌려 보기는 집는 자세에서 J1부터 J5까지 하나씩 양 끝으로 돌렸다가 돌아와요. 끝은 그 관절만 돌려 팔끼리나 책상에 닿기 전까지예요.</p>
+      </section>
+
+      <section class="block" aria-labelledby="h-joints">
+        <h2 id="h-joints">관절 직접 움직이기</h2>
+        <div class="joints" id="joints"></div>
+        <p class="note">관절은 초당 60°로 따라가요. 슬라이더 끝은 위의 끝과 같아요.</p>
+      </section>
+
+      <section class="block" aria-labelledby="h-cable">
+        <h2 id="h-cable">선이 지나는 길</h2>
+        <div class="sections-wrap">
+          <table class="sections">
+            <thead><tr><th scope="col">카메라 파이에서 D405까지</th><th scope="col">잡는 것</th></tr></thead>
+            <tbody>
+              <tr><td>카메라 파이 → ① 베이스 몸통</td><td>날개 위에 놓임</td></tr>
+              <tr class="air"><td>① → ② 위팔<small>J1, J2를 지남</small></td><td>공중</td></tr>
+              <tr><td>② 위팔 관 (타이 2개 사이)</td><td>관을 따라 붙음</td></tr>
+              <tr class="air"><td>② → ③ 아래팔<small>J3을 지남</small></td><td>공중</td></tr>
+              <tr><td>③ 아래팔 관 (타이 2개 사이)</td><td>관을 따라 붙음</td></tr>
+              <tr class="air"><td>③ → ④ D405 받침<small>J4, J5를 지남</small></td><td>공중</td></tr>
+              <tr><td>④ → D405 플러그</td><td>받침 클립이 플러그 바로 밑을 잡음</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="block" aria-labelledby="h-about">
+        <h2 id="h-about">그림에 대해</h2>
+        <ul class="notes">
+          <li>묶는 자리는 대략 찍은 어림이에요. 위팔과 아래팔은 관 양 끝 가까이에 하나씩 묶어 선이 관을 따라 붙어 가게 했고, 자리는 관의 뒤쪽(작업 자세에서 팔꿈치 바깥)이에요. 실제 자리는 다 조립한 팔에 묶어 보며 맞춰요.</li>
+          <li>선은 지금 고른 얇은 USB 2 선(지름 3.0 mm, 잰 값)으로 그렸어요. 뻣뻣함은 어림이고, 감아 두었던 버릇은 넣지 않았어요.</li>
+          <li>공중 구간의 선 길이는 그림을 그리려고 넉넉히 잡은 값이에요. 설계에서 정할 값은 아니에요.</li>
+          <li>카메라 파이는 베이스 배치 스케치대로 왼쪽 날개 위에 단자가 책상 뒤를 보게 두었어요. 남는 선은 그리지 않았어요.</li>
+          <li>J6은 카메라보다 끝에 있어서 이 선과 상관없어요.</li>
+          <li>팔과 책상의 부딪힘은 선에만 넣었어요. 관절을 직접 움직여 팔끼리 겹치는 자세로 가면 선이 그 사이에 끼어 이상해질 수 있어요. 그때는 "선 다시 놓기"를 눌러요.</li>
+        </ul>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+const DATA = __DATA__;
+(() => {
+  'use strict';
+  const $ = (id) => document.getElementById(id);
+  const deg = (r) => (r * 180) / Math.PI;
+  const rad = (d) => (d * Math.PI) / 180;
+  const fmt = (d) => (d < -0.5 ? '−' : '') + Math.abs(Math.round(d)) + '°';
+  const ARM = DATA.arm, CH = ARM.chain;
+  const RC = DATA.wire.d / 2;
+
+  // ======================================================================================
+  // Rigid transforms: Float64Array(12) = 3 x 4 row-major [R | t], robot frame, mm.
+  const mI = () => new Float64Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]);
+  function mMul(a, b, o) {
+    for (let i = 0; i < 3; i++) {
+      const a0 = a[4 * i], a1 = a[4 * i + 1], a2 = a[4 * i + 2], a3 = a[4 * i + 3];
+      o[4 * i] = a0 * b[0] + a1 * b[4] + a2 * b[8];
+      o[4 * i + 1] = a0 * b[1] + a1 * b[5] + a2 * b[9];
+      o[4 * i + 2] = a0 * b[2] + a1 * b[6] + a2 * b[10];
+      o[4 * i + 3] = a0 * b[3] + a1 * b[7] + a2 * b[11] + a3;
+    }
+    return o;
+  }
+  function mInv(a, o) {
+    o[0] = a[0]; o[1] = a[4]; o[2] = a[8];
+    o[4] = a[1]; o[5] = a[5]; o[6] = a[9];
+    o[8] = a[2]; o[9] = a[6]; o[10] = a[10];
+    o[3] = -(o[0] * a[3] + o[1] * a[7] + o[2] * a[11]);
+    o[7] = -(o[4] * a[3] + o[5] * a[7] + o[6] * a[11]);
+    o[11] = -(o[8] * a[3] + o[9] * a[7] + o[10] * a[11]);
+    return o;
+  }
+  function mJoint(org, ax, q, o) {
+    const x = ax[0], y = ax[1], z = ax[2], c = Math.cos(q), s = Math.sin(q), t = 1 - c;
+    o[0] = t * x * x + c; o[1] = t * x * y - s * z; o[2] = t * x * z + s * y; o[3] = org[0];
+    o[4] = t * x * y + s * z; o[5] = t * y * y + c; o[6] = t * y * z - s * x; o[7] = org[1];
+    o[8] = t * x * z - s * y; o[9] = t * y * z + s * x; o[10] = t * z * z + c; o[11] = org[2];
+    return o;
+  }
+  const mFrom = (r, p) => new Float64Array([r[0], r[1], r[2], p[0], r[3], r[4], r[5], p[1], r[6], r[7], r[8], p[2]]);
+  const apply = (m, p) => [
+    m[0] * p[0] + m[1] * p[1] + m[2] * p[2] + m[3],
+    m[4] * p[0] + m[5] * p[1] + m[6] * p[2] + m[7],
+    m[8] * p[0] + m[9] * p[1] + m[10] * p[2] + m[11],
+  ];
+
+  // Arm kinematics: link 0 is the base on the desk, link i + 1 turns with joint i (same chain as the design code).
+  const T = Array.from({ length: 7 }, mI), Ti = Array.from({ length: 7 }, mI);
+  const qCur = new Float64Array(6), qGoal = new Float64Array(6);
+  const jm = new Float64Array(12);
+  function fk() {
+    for (let i = 0; i < 6; i++) { mJoint(CH[i].origin, CH[i].axis, qCur[i], jm); mMul(T[i], jm, T[i + 1]); }
+    for (let i = 0; i < 7; i++) mInv(T[i], Ti[i]);
+  }
+
+  // ======================================================================================
+  // Colliders: every solid shape of the arm, the camera Pi sketch and the desk, in its link frame.
+  const SOLID = new Set(['body', 'cap', 'frame', 'base', 'camera', 'grip', 'pi', 'port', 'plug']);
+  const LK = Array.from({ length: 7 }, () => ({ list: [], c: [0, 0, 0], r: 0 }));
+  function collider(p) {
+    const P = mFrom(p.r, p.p), Pi = mInv(P, new Float64Array(12));
+    const c = { P, Pi, at: p.p, t: 0, a: 0, b: 0, h: 0, e: null, rb: 0 };
+    if (p.s === 'box') { c.t = 0; c.a = p.z[0]; c.b = p.z[1]; c.h = p.z[2]; c.rb = Math.hypot(c.a, c.b, c.h); }
+    else if (p.s === 'cyl' || p.s === 'ring') { c.t = 1; c.a = p.z[0]; c.h = p.z[1]; c.rb = Math.hypot(c.a, c.h); }
+    else if (p.s === 'dtube') { c.t = 2; c.a = p.z[0]; c.h = p.z[1]; c.b = p.z[0] - p.z[2]; c.rb = Math.hypot(c.a, c.h); }
+    else if (p.s === 'prism') {
+      c.t = 3; c.h = p.z[0];
+      const pts = p.pts, n = pts.length, e = [];
+      let far = 0;
+      for (let i = 0; i < n; i++) {
+        const [ax, ay] = pts[i], [bx, by] = pts[(i + 1) % n];
+        let nx = by - ay, ny = -(bx - ax);
+        const l = Math.hypot(nx, ny) || 1;
+        nx /= l; ny /= l;
+        if (nx * ax + ny * ay < 0) { nx = -nx; ny = -ny; }
+        e.push(nx, ny, nx * ax + ny * ay);
+        far = Math.max(far, Math.hypot(ax, ay));
+      }
+      c.e = e; c.rb = Math.hypot(far, c.h);
+    } else return null;
+    return c;
+  }
+  for (const p of ARM.prims) {
+    if (!SOLID.has(p.c)) continue;
+    const c = collider(p);
+    if (c) LK[p.l].list.push(c);
+  }
+  // The desk top is z = 0 (its back edge is x = -55, the base is clamped there).
+  LK[0].list.push(collider({ s: 'box', p: [115, 0, -20], r: [1, 0, 0, 0, 1, 0, 0, 0, 1], z: [170, 275, 20] }));
+  for (const L of LK) {
+    if (!L.list.length) continue;
+    const c = [0, 0, 0];
+    for (const k of L.list) for (let i = 0; i < 3; i++) c[i] += k.at[i] / L.list.length;
+    L.c = c;
+    L.r = Math.max(...L.list.map((k) => Math.hypot(k.at[0] - c[0], k.at[1] - c[1], k.at[2] - c[2]) + k.rb));
+  }
+  // Signed distance (+ outside) of a point in the shape's own frame, outward normal into N.
+  const N3 = new Float64Array(3);
+  function sdf(c, x, y, z) {
+    if (c.t === 0) {
+      const qx = Math.abs(x) - c.a, qy = Math.abs(y) - c.b, qz = Math.abs(z) - c.h;
+      if (qx > 0 || qy > 0 || qz > 0) {
+        const mx = Math.max(qx, 0), my = Math.max(qy, 0), mz = Math.max(qz, 0), d = Math.hypot(mx, my, mz);
+        N3[0] = (x < 0 ? -mx : mx) / d; N3[1] = (y < 0 ? -my : my) / d; N3[2] = (z < 0 ? -mz : mz) / d;
+        return d;
+      }
+      if (qx >= qy && qx >= qz) { N3[0] = x < 0 ? -1 : 1; N3[1] = 0; N3[2] = 0; return qx; }
+      if (qy >= qz) { N3[0] = 0; N3[1] = y < 0 ? -1 : 1; N3[2] = 0; return qy; }
+      N3[0] = 0; N3[1] = 0; N3[2] = z < 0 ? -1 : 1; return qz;
+    }
+    if (c.t === 1 || c.t === 2) {
+      const r = Math.hypot(x, y), dr = r - c.a, dz = Math.abs(z) - c.h;
+      const ux = r > 1e-9 ? x / r : 1, uy = r > 1e-9 ? y / r : 0;
+      let d;
+      if (dr > 0 && dz > 0) { d = Math.hypot(dr, dz); N3[0] = (ux * dr) / d; N3[1] = (uy * dr) / d; N3[2] = ((z < 0 ? -1 : 1) * dz) / d; }
+      else if (dr > dz) { d = dr; N3[0] = ux; N3[1] = uy; N3[2] = 0; }
+      else { d = dz; N3[0] = 0; N3[1] = 0; N3[2] = z < 0 ? -1 : 1; }
+      if (c.t === 2) {
+        const flat = -(y + c.b); // the flat side of the tube is at y = -b
+        if (flat > d) { d = flat; N3[0] = 0; N3[1] = -1; N3[2] = 0; }
+      }
+      return d;
+    }
+    let d = Math.abs(z) - c.h;
+    N3[0] = 0; N3[1] = 0; N3[2] = z < 0 ? -1 : 1;
+    const e = c.e;
+    for (let i = 0; i < e.length; i += 3) {
+      const s = e[i] * x + e[i + 1] * y - e[i + 2];
+      if (s > d) { d = s; N3[0] = e[i]; N3[1] = e[i + 1]; N3[2] = 0; }
+    }
+    return d;
+  }
+
+  // ======================================================================================
+  // The cable: particles 4 mm apart joined by fixed lengths. Clipped stretches move with their link; the spans in
+  // between hang under their weight, resist bending a little and are pushed out of the arm, the Pi and the desk.
+  const SUB = 15, DT = 1 / (60 * SUB), ITER = 2, PASSES = 4, SPACING = 4;
+  const DAMP = 0.004, FRIC = 0.25, GAP = RC + 0.25;
+  // Bending: the chord over 2, 4, 8 and 16 segments may not get shorter than the cable between them (each pulled
+  // toward straight by the given share per pass). Several lengths make the cable keep wide curves like a real
+  // USB cable instead of folding like a string.
+  const BENDS = [[2, 0.4], [4, 0.25], [8, 0.15], [16, 0.08]];
+  const RATE = rad(60) * DT;
+  let grav = -9810 * DT * DT;
+  let N = 0, X, Y, Z, PX, PY, PZ, W, REST, CUM, SEG_SPAN, PART_SPAN, FREE, PINS = [], SPANS = [];
+
+  function buildCable() {
+    fk();
+    const xs = [], pins = [], rest = [], segSpan = [], partSpan = [];
+    const R = DATA.route;
+    let pending = null; // the span whose last segment ends on the next run's first particle
+    for (let r = 0; r < R.length; r++) {
+      const it = R[r];
+      if (it.kind === 'run') {
+        const len = Math.hypot(it.b[0] - it.a[0], it.b[1] - it.a[1], it.b[2] - it.a[2]);
+        const n = Math.max(2, Math.round(len / SPACING) + 1);
+        for (let k = 0; k < n; k++) {
+          const t = k / (n - 1);
+          const local = [0, 1, 2].map((i) => it.a[i] + (it.b[i] - it.a[i]) * t);
+          if (xs.length) { rest.push(k === 0 && pending ? pending.seg : len / (n - 1)); segSpan.push(k === 0 && pending ? pending.k : -1); }
+          if (k === 0 && pending) { pending.s1 = rest.length; pending = null; }
+          xs.push(apply(T[it.l], local));
+          pins.push({ l: it.l, p: local });
+          partSpan.push(-1);
+        }
+      } else {
+        const prev = R[r - 1], next = R[r + 1];
+        const pts = [apply(T[prev.l], prev.b), ...it.guide.map(([l, p]) => apply(T[l], p)), apply(T[next.l], next.a)];
+        const cum = [0];
+        for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1], pts[i][2] - pts[i - 1][2]));
+        const m = Math.max(1, Math.round(it.len / SPACING) - 1);
+        const k = SPANS.length;
+        const S = { key: it.key, name: it.name, len0: it.len, seg: it.len / (m + 1), k, s0: rest.length, s1: 0 };
+        SPANS.push(S);
+        for (let j = 1; j <= m; j++) {
+          const s = (cum[cum.length - 1] * j) / (m + 1);
+          let i = 1;
+          while (i < cum.length - 1 && cum[i] < s) i++;
+          const f = (s - cum[i - 1]) / Math.max(cum[i] - cum[i - 1], 1e-9);
+          rest.push(S.seg); segSpan.push(k);
+          xs.push([0, 1, 2].map((a) => pts[i - 1][a] + (pts[i][a] - pts[i - 1][a]) * f));
+          pins.push(null);
+          partSpan.push(k);
+        }
+        pending = S;
+      }
+    }
+    N = xs.length;
+    X = new Float64Array(N); Y = new Float64Array(N); Z = new Float64Array(N);
+    W = new Float64Array(N);
+    PINS = []; const free = [];
+    xs.forEach((p, i) => {
+      X[i] = p[0]; Y[i] = p[1]; Z[i] = p[2];
+      if (pins[i]) { PINS.push({ i, l: pins[i].l, x: pins[i].p[0], y: pins[i].p[1], z: pins[i].p[2] }); W[i] = 0; }
+      else { W[i] = 1; free.push(i); }
+    });
+    PX = X.slice(); PY = Y.slice(); PZ = Z.slice();
+    REST = new Float64Array(rest); SEG_SPAN = Int8Array.from(segSpan); PART_SPAN = Int8Array.from(partSpan);
+    CUM = new Float64Array(N);
+    for (let s = 0; s < N - 1; s++) CUM[s + 1] = CUM[s] + REST[s];
+    FREE = Int32Array.from(free);
+  }
+  function resetCable() { SPANS = []; buildCable(); }
+
+  function pins() {
+    for (const k of PINS) {
+      const m = T[k.l];
+      X[k.i] = m[0] * k.x + m[1] * k.y + m[2] * k.z + m[3];
+      Y[k.i] = m[4] * k.x + m[5] * k.y + m[6] * k.z + m[7];
+      Z[k.i] = m[8] * k.x + m[9] * k.y + m[10] * k.z + m[11];
+      PX[k.i] = X[k.i]; PY[k.i] = Y[k.i]; PZ[k.i] = Z[k.i];
+    }
+  }
+  function integrate() {
+    for (let n = 0; n < FREE.length; n++) {
+      const i = FREE[n];
+      const vx = (X[i] - PX[i]) * (1 - DAMP), vy = (Y[i] - PY[i]) * (1 - DAMP), vz = (Z[i] - PZ[i]) * (1 - DAMP);
+      PX[i] = X[i]; PY[i] = Y[i]; PZ[i] = Z[i];
+      X[i] += vx; Y[i] += vy; Z[i] += vz + grav;
+    }
+  }
+  function lengths(back) {
+    const n = N - 1;
+    for (let k = 0; k < n; k++) {
+      const s = back ? n - 1 - k : k, i = s, j = s + 1;
+      const wi = W[i], wj = W[j], ws = wi + wj;
+      if (ws === 0) continue;
+      const dx = X[j] - X[i], dy = Y[j] - Y[i], dz = Z[j] - Z[i];
+      const d = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-9;
+      const f = (d - REST[s]) / (d * ws);
+      X[i] += wi * f * dx; Y[i] += wi * f * dy; Z[i] += wi * f * dz;
+      X[j] -= wj * f * dx; Y[j] -= wj * f * dy; Z[j] -= wj * f * dz;
+    }
+  }
+  function bend() {
+    for (const [step, kb] of BENDS) {
+      for (let i = 0; i + step < N; i++) {
+        const j = i + step, wi = W[i], wj = W[j], ws = wi + wj;
+        if (ws === 0) continue;
+        const rest = CUM[j] - CUM[i];
+        const dx = X[j] - X[i], dy = Y[j] - Y[i], dz = Z[j] - Z[i];
+        const d = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-9;
+        if (d >= rest) continue;
+        const f = (kb * (d - rest)) / (d * ws);
+        X[i] += wi * f * dx; Y[i] += wi * f * dy; Z[i] += wi * f * dz;
+        X[j] -= wj * f * dx; Y[j] -= wj * f * dy; Z[j] -= wj * f * dz;
+      }
+    }
+  }
+  function collide(i) {
+    let x = X[i], y = Y[i], z = Z[i], hit = false;
+    for (let l = 0; l < 7; l++) {
+      const L = LK[l];
+      if (!L.list.length) continue;
+      const m = Ti[l];
+      let lx = m[0] * x + m[1] * y + m[2] * z + m[3];
+      let ly = m[4] * x + m[5] * y + m[6] * z + m[7];
+      let lz = m[8] * x + m[9] * y + m[10] * z + m[11];
+      const bx = lx - L.c[0], by = ly - L.c[1], bz = lz - L.c[2], br = L.r + GAP + 1;
+      if (bx * bx + by * by + bz * bz > br * br) continue;
+      let moved = false;
+      for (const c of L.list) {
+        const dx = lx - c.at[0], dy = ly - c.at[1], dz = lz - c.at[2], rr = c.rb + GAP + 0.5;
+        if (dx * dx + dy * dy + dz * dz > rr * rr) continue;
+        const P = c.Pi;
+        const px = P[0] * lx + P[1] * ly + P[2] * lz + P[3];
+        const py = P[4] * lx + P[5] * ly + P[6] * lz + P[7];
+        const pz = P[8] * lx + P[9] * ly + P[10] * lz + P[11];
+        const d = sdf(c, px, py, pz);
+        if (d >= GAP) continue;
+        const Q = c.P, push = GAP - d;
+        lx += (Q[0] * N3[0] + Q[1] * N3[1] + Q[2] * N3[2]) * push;
+        ly += (Q[4] * N3[0] + Q[5] * N3[1] + Q[6] * N3[2]) * push;
+        lz += (Q[8] * N3[0] + Q[9] * N3[1] + Q[10] * N3[2]) * push;
+        moved = true;
+      }
+      if (moved) {
+        const M = T[l];
+        x = M[0] * lx + M[1] * ly + M[2] * lz + M[3];
+        y = M[4] * lx + M[5] * ly + M[6] * lz + M[7];
+        z = M[8] * lx + M[9] * ly + M[10] * lz + M[11];
+        hit = true;
+      }
+    }
+    if (hit) {
+      X[i] = x; Y[i] = y; Z[i] = z;
+      PX[i] += (x - PX[i]) * FRIC; PY[i] += (y - PY[i]) * FRIC; PZ[i] += (z - PZ[i]) * FRIC;
+    }
+  }
+  function substep() {
+    for (let j = 0; j < 6; j++) {
+      const d = qGoal[j] - qCur[j];
+      qCur[j] += Math.abs(d) <= RATE ? d : Math.sign(d) * RATE;
+    }
+    fk();
+    pins();
+    integrate();
+    for (let it = 0; it < ITER; it++) {
+      bend();
+      for (let p = 0; p < PASSES; p++) lengths(p & 1);
+      for (let n = 0; n < FREE.length; n++) collide(FREE[n]);
+    }
+  }
+  const run = (seconds) => { const n = Math.round(seconds / DT); for (let k = 0; k < n; k++) substep(); };
+  const reached = () => qCur.every((v, j) => Math.abs(qGoal[j] - v) < 1e-9);
+
+  // ======================================================================================
+  // Page: sliders, sections table, 3D.
+  const JOINT_NAMES = ['베이스', '어깨', '팔꿈치', '손목 1', '손목 2', '손목 3'];
+  const sliders = CH.map((j, i) => {
+    const [lo, hi] = DATA.limits[i];
+    const label = document.createElement('label');
+    label.htmlFor = `joint-${i + 1}`;
+    label.innerHTML = '<b></b><span></span>';
+    label.querySelector('b').textContent = `J${i + 1}`;
+    label.querySelector('span').textContent = JOINT_NAMES[i];
+    const input = document.createElement('input');
+    input.type = 'range'; input.id = `joint-${i + 1}`;
+    input.min = String(Math.round(deg(lo))); input.max = String(Math.round(deg(hi))); input.step = '1';
+    const out = document.createElement('output');
+    out.htmlFor = input.id;
+    $('joints').append(label, input, out);
+    return { input, out };
+  });
+
+  qCur.set(DATA.poses.pick); qGoal.set(DATA.poses.pick);
+  resetCable();
+  run(2.5);
+
+  // ---------- 3D ----------
+  const stageEl = $('stage'), canvas = $('gl'), tagsEl = $('tags'), errEl = $('gl-error');
+  if (typeof THREE === 'undefined') { errEl.hidden = false; return; }
+  let renderer;
+  try { renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: /[?&]shot/.test(location.search) }); }
+  catch (e) { errEl.hidden = false; return; }
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.outputEncoding = THREE.sRGBEncoding;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  const reduceMQ = window.matchMedia('(prefers-reduced-motion: reduce)');
+  let reduce = reduceMQ.matches;
+  if (reduceMQ.addEventListener) reduceMQ.addEventListener('change', (e) => { reduce = e.matches; });
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(30, 1, 5, 9000);
+  let controls;
+  if (THREE.OrbitControls) {
+    controls = new THREE.OrbitControls(camera, canvas);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.1;
+    controls.rotateSpeed = 0.8;
+    controls.screenSpacePanning = true;
+    controls.minDistance = 80;
+    controls.maxDistance = 2600;
+  } else {
+    controls = { target: new THREE.Vector3(), update() { camera.lookAt(this.target); }, addEventListener() {} };
+  }
+  const tok = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || '#888888';
+  const lin = (hex) => new THREE.Color(hex).convertSRGBToLinear();
+  const W3 = (x, y, z) => new THREE.Vector3(x, z, -y); // robot (x forward, y left, z up) to three.js (y up)
+
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x8d8a84, 0.75));
+  const key = new THREE.DirectionalLight(0xffffff, 0.85);
+  key.position.copy(W3(-300, 420, 1100));
+  key.target.position.copy(W3(80, 0, 0));
+  key.castShadow = true;
+  key.shadow.mapSize.set(2048, 2048);
+  Object.assign(key.shadow.camera, { left: -520, right: 520, top: 520, bottom: -520, near: 200, far: 2600 });
+  key.shadow.bias = -0.0004;
+  scene.add(key, key.target);
+  const fill = new THREE.DirectionalLight(0xffffff, 0.35);
+  fill.position.copy(W3(600, -500, 500));
+  scene.add(fill);
+
+  const R = new THREE.Group();
+  R.rotation.x = -Math.PI / 2;
+  scene.add(R);
+
+  const M = {
+    body: new THREE.MeshStandardMaterial({ color: lin(tok('--pla-white')), roughness: 0.55 }),
+    cap: new THREE.MeshStandardMaterial({ color: lin(tok('--pla-black')), roughness: 0.45 }),
+    frame: new THREE.MeshStandardMaterial({ color: lin(tok('--pla-black')), roughness: 0.5 }),
+    base: new THREE.MeshStandardMaterial({ color: lin(tok('--pla-black')), roughness: 0.5 }),
+    grip: new THREE.MeshStandardMaterial({ color: lin(tok('--pla-black')), roughness: 0.5 }),
+    metal: new THREE.MeshStandardMaterial({ color: lin('#9aa0a6'), roughness: 0.35, metalness: 0.5 }),
+    camera: new THREE.MeshStandardMaterial({ color: lin(tok('--cam')), roughness: 0.4, metalness: 0.35 }),
+    glass: new THREE.MeshStandardMaterial({ color: lin('#0b0c0e'), roughness: 0.12, metalness: 0.3 }),
+    lens: new THREE.MeshStandardMaterial({ color: lin('#1b2433'), roughness: 0.08, metalness: 0.6 }),
+    pi: new THREE.MeshStandardMaterial({ color: lin(tok('--pcb')), roughness: 0.6 }),
+    port: new THREE.MeshStandardMaterial({ color: lin('#b9bec3'), roughness: 0.3, metalness: 0.6 }),
+    plug: new THREE.MeshStandardMaterial({ color: lin('#1d2024'), roughness: 0.6 }),
+    clip: new THREE.MeshStandardMaterial({ color: lin(tok('--clip')), roughness: 0.5 }),
+    desk: new THREE.MeshStandardMaterial({ color: lin('#d4d2cc'), roughness: 0.9 }),
+    cable: new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.5 }),
+  };
+  const edgeWhite = new THREE.LineBasicMaterial({ color: lin('#8f948f'), transparent: true, opacity: 0.4 });
+  function add(parent, geom, material, o = {}) {
+    const m = new THREE.Mesh(geom, material);
+    m.castShadow = o.cast !== false;
+    m.receiveShadow = o.receive !== false;
+    if (o.edges) m.add(new THREE.LineSegments(new THREE.EdgesGeometry(geom, 30), o.edges));
+    parent.add(m);
+    return m;
+  }
+  function primGeom(p) {
+    if (p.s === 'box') return new THREE.BoxGeometry(2 * p.z[0], 2 * p.z[1], 2 * p.z[2]);
+    if (p.s === 'prism') {
+      const sh = new THREE.Shape(p.pts.map(([x, y]) => new THREE.Vector2(x, y)));
+      const g = new THREE.ExtrudeGeometry(sh, { depth: 2 * p.z[0], bevelEnabled: false });
+      g.translate(0, 0, -p.z[0]);
+      return g;
+    }
+    if (p.s === 'cyl') {
+      const g = new THREE.CylinderGeometry(p.z[0], p.z[0], 2 * p.z[1], 56);
+      g.rotateX(Math.PI / 2);
+      return g;
+    }
+    if (p.s === 'dtube') {
+      const a = Math.asin((p.z[0] - p.z[2]) / p.z[0]);
+      const sh = new THREE.Shape();
+      sh.absarc(0, 0, p.z[0], -a, Math.PI + a, false);
+      sh.closePath();
+      const g = new THREE.ExtrudeGeometry(sh, { depth: 2 * p.z[1], bevelEnabled: false, curveSegments: 48 });
+      g.translate(0, 0, -p.z[1]);
+      return g;
+    }
+    const s = new THREE.Shape();
+    s.absarc(0, 0, p.z[0], 0, Math.PI * 2, false);
+    const hole = new THREE.Path();
+    hole.absarc(0, 0, p.z[2], 0, Math.PI * 2, true);
+    s.holes.push(hole);
+    const g = new THREE.ExtrudeGeometry(s, { depth: 2 * p.z[1], bevelEnabled: false, curveSegments: 56 });
+    g.translate(0, 0, -p.z[1]);
+    return g;
+  }
+  function placePrim(parent, p) {
+    const mat = M[p.c] || M.frame;
+    const m = add(parent, primGeom(p), mat, { edges: p.c === 'body' ? edgeWhite : null });
+    const r = p.r;
+    new THREE.Matrix4().set(r[0], r[1], r[2], p.p[0], r[3], r[4], r[5], p.p[1], r[6], r[7], r[8], p.p[2], 0, 0, 0, 1)
+      .decompose(m.position, m.quaternion, m.scale);
+    return m;
+  }
+
+  // Desk and its grid.
+  {
+    const g = new THREE.BoxGeometry(340, 550, 40);
+    g.translate(115, 0, -20);
+    add(R, g, M.desk, { cast: false });
+    const pts = [];
+    for (let x = -50; x <= 280; x += 50) pts.push(x, -275, 0.4, x, 275, 0.4);
+    for (let y = -250; y <= 250; y += 50) pts.push(-55, y, 0.4, 285, y, 0.4);
+    const lg = new THREE.BufferGeometry();
+    lg.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    R.add(new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: lin('#b4b0a8'), transparent: true, opacity: 0.55 })));
+  }
+
+  // Tags (HTML labels that follow points in the scene).
+  const tags = [];
+  function tag(parentObj, p, text, cls = '') {
+    const a = new THREE.Object3D();
+    a.position.set(p[0], p[1], p[2]);
+    parentObj.add(a);
+    const el = document.createElement('div');
+    el.className = 'tag ' + cls;
+    el.hidden = true;
+    el.innerHTML = '<span class="dot"></span><span class="ln"></span><span class="txt"></span>';
+    el.querySelector('.txt').textContent = text;
+    tagsEl.appendChild(el);
+    tags.push({ a, el, shown: false, flip: null });
+  }
+
+  // Robot: nested groups along the kinematic chain, the same as fk().
+  const robot = new THREE.Group();
+  R.add(robot);
+  const links = [];
+  {
+    let parent = robot;
+    for (const j of CH) {
+      const jg = new THREE.Group();
+      jg.position.set(...j.origin);
+      parent.add(jg);
+      const rg = new THREE.Group();
+      rg.userData.axis = new THREE.Vector3(...j.axis);
+      jg.add(rg);
+      links.push(rg);
+      parent = rg;
+    }
+  }
+  const frameOf = (l) => (l === 0 ? robot : links[l - 1]);
+  for (const p of ARM.prims) placePrim(frameOf(p.l), p);
+  for (const t of ARM.tags) tag(frameOf(t.l), t.p, t.t, t.t.startsWith('J') ? 'j' : '');
+  tag(robot, DATA.pi.at, '카메라 파이');
+
+  // Tube lettering (0019), as on the arm page.
+  function labelTexture(text, ink) {
+    const CW = 160, CH2 = 512;
+    const c = document.createElement('canvas');
+    c.width = CW; c.height = CH2;
+    const ctx = c.getContext('2d');
+    ctx.translate(CW / 2, CH2 / 2);
+    ctx.rotate(-Math.PI / 2);
+    let size = Math.round(CW * 0.7);
+    const setFont = (px) => { ctx.font = `600 ${px}px "Barlow Condensed", "Arial Narrow", sans-serif`; };
+    setFont(size);
+    const fit = (CH2 * 0.86) / ctx.measureText(text).width;
+    if (fit < 1) { size = Math.floor(size * fit); setFont(size); }
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = ink;
+    ctx.fillText(text, 0, 0);
+    const t = new THREE.CanvasTexture(c);
+    t.encoding = THREE.sRGBEncoding;
+    return t;
+  }
+  const labelMats = [];
+  for (const lb of ARM.labels || []) {
+    const len = Math.min(2 * lb.half * 0.7, 80), arc = 26 / lb.r;
+    const g = new THREE.CylinderGeometry(lb.r + 0.35, lb.r + 0.35, len, 32, 1, true, -arc / 2, arc);
+    g.rotateX(Math.PI / 2);
+    const mat = new THREE.MeshStandardMaterial({ map: labelTexture(lb.text, '#b9bab4'), alphaTest: 0.35, roughness: 0.5 });
+    const m = new THREE.Mesh(g, mat);
+    m.receiveShadow = true;
+    m.position.set(...lb.c);
+    if (lb.flip) m.rotation.z = Math.PI;
+    frameOf(lb.l).add(m);
+    labelMats.push({ mat, text: lb.text });
+  }
+  if (document.fonts && document.fonts.load) {
+    document.fonts.load('600 100px "Barlow Condensed"').then(() => {
+      for (const lm of labelMats) { lm.mat.map.dispose(); lm.mat.map = labelTexture(lm.text, '#b9bab4'); lm.mat.needsUpdate = true; }
+    }, () => {});
+  }
+
+  // Clips: a small block on the part's surface that the cable passes through.
+  for (const k of DATA.clips) {
+    const o = new THREE.Vector3(...k.o).normalize(), d = new THREE.Vector3(...k.d).normalize();
+    const s = new THREE.Vector3().crossVectors(d, o);
+    const g = new THREE.BoxGeometry(5.8, 9.2, 8);
+    const m = add(frameOf(k.l), g, M.clip);
+    m.matrixAutoUpdate = true;
+    const basis = new THREE.Matrix4().makeBasis(o, s, d);
+    m.quaternion.setFromRotationMatrix(basis);
+    m.position.set(k.p[0] - o.x * 0.6, k.p[1] - o.y * 0.6, k.p[2] - o.z * 0.6);
+    if (k.tag) tag(frameOf(k.l), [k.p[0] + o.x * 8, k.p[1] + o.y * 8, k.p[2] + o.z * 8], k.tag, 'c');
+  }
+
+  // Cable tube: rings around every particle, rebuilt each frame.
+  const SIDES = 10, RV = RC;
+  const ring = Array.from({ length: SIDES }, (_, s) => [Math.cos((s / SIDES) * 2 * Math.PI), Math.sin((s / SIDES) * 2 * Math.PI)]);
+  let tubeGeo = null, tubeMesh = null, tubePos, tubeNor, tubeCol;
+  function makeTube() {
+    if (tubeMesh) { R.remove(tubeMesh); tubeGeo.dispose(); }
+    tubeGeo = new THREE.BufferGeometry();
+    tubePos = new Float32Array(N * SIDES * 3); tubeNor = new Float32Array(N * SIDES * 3); tubeCol = new Float32Array(N * SIDES * 3);
+    const idx = [];
+    for (let i = 0; i < N - 1; i++) {
+      for (let s = 0; s < SIDES; s++) {
+        const a = i * SIDES + s, b = i * SIDES + ((s + 1) % SIDES);
+        idx.push(a, b, a + SIDES, b, b + SIDES, a + SIDES);
+      }
+    }
+    tubeGeo.setIndex(idx);
+    tubeGeo.setAttribute('position', new THREE.BufferAttribute(tubePos, 3));
+    tubeGeo.setAttribute('normal', new THREE.BufferAttribute(tubeNor, 3));
+    tubeGeo.setAttribute('color', new THREE.BufferAttribute(tubeCol, 3));
+    tubeMesh = add(R, tubeGeo, M.cable);
+    tubeMesh.frustumCulled = false;
+  }
+  function updateTube() {
+    const col = lin(tok('--cable'));
+    let nx = 0, ny = 0, nz = 1;
+    for (let i = 0; i < N; i++) {
+      const i0 = Math.max(0, i - 1), i1 = Math.min(N - 1, i + 1);
+      let tx = X[i1] - X[i0], ty = Y[i1] - Y[i0], tz = Z[i1] - Z[i0];
+      const tl = Math.hypot(tx, ty, tz) || 1;
+      tx /= tl; ty /= tl; tz /= tl;
+      if (i === 0) { if (Math.abs(tz) < 0.9) { nx = 0; ny = 0; nz = 1; } else { nx = 1; ny = 0; nz = 0; } }
+      const dd = nx * tx + ny * ty + nz * tz;
+      nx -= dd * tx; ny -= dd * ty; nz -= dd * tz;
+      const nl = Math.hypot(nx, ny, nz) || 1;
+      nx /= nl; ny /= nl; nz /= nl;
+      const bx = ty * nz - tz * ny, by = tz * nx - tx * nz, bz = tx * ny - ty * nx;
+      for (let s = 0; s < SIDES; s++) {
+        const [ca, sa] = ring[s];
+        const ox = ca * nx + sa * bx, oy = ca * ny + sa * by, oz = ca * nz + sa * bz;
+        const k = (i * SIDES + s) * 3;
+        tubePos[k] = X[i] + RV * ox; tubePos[k + 1] = Y[i] + RV * oy; tubePos[k + 2] = Z[i] + RV * oz;
+        tubeNor[k] = ox; tubeNor[k + 1] = oy; tubeNor[k + 2] = oz;
+        tubeCol[k] = col.r; tubeCol[k + 1] = col.g; tubeCol[k + 2] = col.b;
+      }
+    }
+    tubeGeo.attributes.position.needsUpdate = true;
+    tubeGeo.attributes.normal.needsUpdate = true;
+    tubeGeo.attributes.color.needsUpdate = true;
+  }
+  makeTube();
+
+  // ---------- controls ----------
+  const nowPose = $('now-pose'), demoBtn = $('demo');
+  let demo = null; // {i, hold}
+  let poseText = '집는 자세';
+  function setGoal(q, text) { qGoal.set(q); poseText = text; }
+  function stopDemo() { demo = null; demoBtn.setAttribute('aria-pressed', 'false'); demoBtn.textContent = '끝까지 돌려 보기'; }
+  function demoText(f) {
+    if (f.deg === null) return `J${f.j + 1} ${JOINT_NAMES[f.j]} · 집는 자세로 돌아가는 중`;
+    return `J${f.j + 1} ${JOINT_NAMES[f.j]} · 끝까지 돌리는 중 (${fmt(f.deg)})`;
+  }
+  $('pose-pick').addEventListener('click', () => { stopDemo(); setGoal(DATA.poses.pick, '집는 자세'); });
+  $('pose-place').addEventListener('click', () => { stopDemo(); setGoal(DATA.poses.place, '쌓는 자세'); });
+  demoBtn.addEventListener('click', () => {
+    if (demo) { stopDemo(); return; }
+    demo = { i: 0, hold: 0 };
+    setGoal(DATA.demo[0].q, demoText(DATA.demo[0]));
+    demoBtn.setAttribute('aria-pressed', 'true');
+    demoBtn.textContent = '멈춤';
+  });
+  $('reset').addEventListener('click', () => {
+    resetCable();
+    run(1.5);
+    makeTube();
+  });
+  sliders.forEach((s, i) => s.input.addEventListener('input', () => {
+    stopDemo();
+    qGoal[i] = rad(Number(s.input.value));
+    poseText = '직접 움직이는 중';
+  }));
+
+  // ---------- camera ----------
+  const VIEWS = {
+    back: { pos: W3(-520, 700, 560), target: W3(70, 40, 165) },
+    front: { pos: W3(812, -560, 600), target: W3(95, 0, 150) },
+  };
+  const viewBtns = Array.from(document.querySelectorAll('[data-view]'));
+  let viewMode = 'back', camTween = null, userMoved = false;
+  const wristAt = new THREE.Vector3(), tmpV = new THREE.Vector3();
+  const wristAnchor = new THREE.Object3D();
+  frameOf(5).add(wristAnchor);
+  wristAnchor.position.set(15, 0, 45);
+  const WRIST_OFF = W3(180, 300, 220);
+  controls.addEventListener('start', () => { userMoved = true; camTween = null; });
+  function viewEnd() {
+    if (viewMode === 'wrist') {
+      wristAnchor.getWorldPosition(wristAt);
+      return { p: wristAt.clone().add(WRIST_OFF), t: wristAt.clone() };
+    }
+    const v = VIEWS[viewMode];
+    const off = v.pos.clone().sub(v.target).multiplyScalar(Math.max(1, Math.pow(1.45 / camera.aspect, 0.85)));
+    return { p: v.target.clone().add(off), t: v.target.clone() };
+  }
+  function setView(mode, instant) {
+    viewMode = mode;
+    userMoved = false;
+    viewBtns.forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === mode)));
+    if (instant || reduce) { const e = viewEnd(); camera.position.copy(e.p); controls.target.copy(e.t); controls.update(); camTween = null; }
+    else camTween = { t: 0, p0: camera.position.clone(), q0: controls.target.clone() };
+  }
+  viewBtns.forEach((b) => b.addEventListener('click', () => setView(b.dataset.view, false)));
+  function resize() {
+    const w = Math.max(1, stageEl.clientWidth), h = Math.max(1, stageEl.clientHeight);
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    if (!userMoved && !camTween && viewMode !== 'wrist') setView(viewMode, true);
+  }
+  if ('ResizeObserver' in window) new ResizeObserver(resize).observe(stageEl);
+  else window.addEventListener('resize', resize);
+  function applyTheme() { scene.background = lin(tok('--stage')); }
+  applyTheme();
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', applyTheme);
+  new MutationObserver(applyTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+  const tmp = new THREE.Vector3();
+  function placeTags() {
+    const w = stageEl.clientWidth, h = stageEl.clientHeight;
+    for (const t of tags) {
+      t.a.getWorldPosition(tmp).project(camera);
+      const x = ((tmp.x + 1) / 2) * w, y = ((1 - tmp.y) / 2) * h;
+      const show = tmp.z < 1 && x > 6 && x < w - 6 && y > 6 && y < h - 30;
+      if (show !== t.shown) { t.el.hidden = !show; t.shown = show; }
+      if (show) {
+        const flip = x > w * 0.64;
+        if (flip !== t.flip) { t.el.classList.toggle('flip', flip); t.flip = flip; }
+        t.el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
+      }
+    }
+  }
+  function syncLinks() { links.forEach((g, i) => g.quaternion.setFromAxisAngle(g.userData.axis, qCur[i])); }
+
+  // ---------- frame loop ----------
+  const easeInOut = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+  let last = performance.now(), uiTick = 1;
+  function tick(now) {
+    const dt = Math.min(0.05, Math.max(0, (now - last) / 1000));
+    last = now;
+    for (let k = 0; k < SUB; k++) substep();
+    if (demo && reached()) {
+      demo.hold += dt;
+      if (demo.hold >= DATA.demo[demo.i].hold) {
+        demo.i += 1; demo.hold = 0;
+        if (demo.i >= DATA.demo.length) { stopDemo(); poseText = '집는 자세'; }
+        else setGoal(DATA.demo[demo.i].q, demoText(DATA.demo[demo.i]));
+      }
+    }
+    syncLinks();
+    updateTube();
+    if (camTween) {
+      camTween.t = Math.min(1, camTween.t + dt / 0.9);
+      const s = easeInOut(camTween.t), e = viewEnd();
+      camera.position.lerpVectors(camTween.p0, e.p, s);
+      controls.target.lerpVectors(camTween.q0, e.t, s);
+      if (camTween.t >= 1) camTween = null;
+    } else if (viewMode === 'wrist') {
+      wristAnchor.getWorldPosition(tmpV);
+      const off = camera.position.clone().sub(controls.target);
+      controls.target.copy(tmpV);
+      camera.position.copy(tmpV).add(off);
+    }
+    controls.update();
+    renderer.render(scene, camera);
+    placeTags();
+    if ((uiTick += dt) > 0.12) {
+      uiTick = 0;
+      nowPose.textContent = poseText;
+      sliders.forEach((s, i) => {
+        if (document.activeElement !== s.input) s.input.value = String(Math.round(deg(qCur[i])));
+        s.out.textContent = fmt(deg(qCur[i]));
+      });
+    }
+    requestAnimationFrame(tick);
+  }
+
+  // Local screenshots: ?shot=N runs the demo up to step N first (no effect on the published page).
+  const shot = new URLSearchParams(location.search).get('shot');
+  if (shot !== null) {
+    const n = Number(shot);
+    for (let i = 0; i < Math.min(n, DATA.demo.length); i++) { qGoal.set(DATA.demo[i].q); let g = 0; while (!reached() && g++ < 400000) substep(); run(DATA.demo[i].hold); }
+    if (n > 0) poseText = demoText(DATA.demo[Math.min(n, DATA.demo.length) - 1]);
+    const v = new URLSearchParams(location.search).get('view');
+    if (v) viewMode = v;
+  }
+  syncLinks();
+  resize();
+  R.updateMatrixWorld(true);
+  setView(viewMode, true);
+  requestAnimationFrame(tick);
+})();
+</script>

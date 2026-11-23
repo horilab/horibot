@@ -5,9 +5,9 @@ from __future__ import annotations
 import mujoco
 import numpy as np
 
-from horilab_design.mjcf import build_spec
-from horilab_design.robot import Joint, Mat, Robot, Vec3, flange_pose
-from horilab_design.statics import (
+from horibot_design.mjcf import build_spec
+from horibot_design.robot import Joint, Mat, Robot, Vec3, flange_pose
+from horibot_design.statics import (
     FLANGE,
     GRAVITY,
     PointMass,

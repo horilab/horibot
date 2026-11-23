@@ -62,15 +62,15 @@ horibot/
 ```
 
 - 폴더는 첫 코드를 넣을 때 만든다. 지금 있는 것은 servo, controller, bench 크레이트, design, servo, sim, camera 패키지와 params, data, docs, tools, tests, typings다.
-- 이름: Python 패키지의 import 이름은 `horilab_<폴더>`, Rust 크레이트 이름은 `horilab-<폴더>`, 응용은 `horilab_<응용>`이다.
+- 이름: Python 패키지의 import 이름은 `horibot_<폴더>`, Rust 크레이트 이름은 `horibot-<폴더>`, 응용은 `horibot_<응용>`이다.
 - 의존 방향:
-  - design, servo, camera, client는 다른 horilab 패키지를 불러오지 않는다.
+  - design, servo, camera, client는 다른 horibot 패키지를 불러오지 않는다.
   - sim은 camera만 불러온다 (흉내 낸 카메라 영상을 같은 형식으로 보낸다). design은 불러오지 않고 생성된 MJCF와 서보 사양(`params/servos.toml`)만 읽는다.
-  - 응용은 client와 camera만 불러온다. 로봇 안쪽(design, servo, sim)을 부르지 않아서, 응용을 다른 레포로 옮길 때 폴더만 옮기면 된다. 응용도 패키지와 같은 꼴(`apps/<이름>/src/horilab_<이름>/`)로 둔다.
+  - 응용은 client와 camera만 불러온다. 로봇 안쪽(design, servo, sim)을 부르지 않아서, 응용을 다른 레포로 옮길 때 폴더만 옮기면 된다. 응용도 패키지와 같은 꼴(`apps/<이름>/src/horibot_<이름>/`)로 둔다.
   - 서보에 직접 닿는 코드(시리얼 포트, 서보 SDK, servo 패키지)는 `crates/servo`와 Python 기준 구현(`packages/servo`)에만 있다. 응용과 클라이언트는 컨트롤러를 거친다.
   - 파이에서도 도는 servo, camera와 다른 레포·환경에서 쓸 client는 무거운 라이브러리를 불러오지 않는다.
   - 따로 설치되는 것(servo, camera, client, 응용)은 불러오는 것을 모두 자기 pyproject에 적는다. 한 환경에 다 깔린 PC에서는 빠진 의존성이 드러나지 않기 때문이다.
-  - Rust: controller와 bench는 servo를 부른다. servo는 다른 horilab 크레이트를 부르지 않는다. 시리얼 크레이트는 servo만 쓴다.
+  - Rust: controller와 bench는 servo를 부른다. servo는 다른 horibot 크레이트를 부르지 않는다. 시리얼 크레이트는 servo만 쓴다.
 - 경계는 문서에만 두지 않고 코드 검사로 막는다.
   - Python: `tests/test_structure.py`가 커밋 전 검사에서 위 규칙을 모두 본다. 규칙의 원본은 그 파일이고, 아직 없는 패키지(client)와 응용의 규칙도 미리 들어 있다. 규칙이 없는 새 패키지는 테스트를 통과하지 못한다. 서보에 직접 닿는 import는 ruff(banned-api)가 편집기에서도 바로 표시한다.
   - Rust: 크레이트는 Cargo.toml에 적은 크레이트만 부를 수 있고, 크레이트 안의 경계(움직이는 명령은 joints만, [0024](0024-servo-bus.md))는 모듈 공개 범위로 컴파일러가 막는다. 크레이트 사이 방향과 시리얼 크레이트 자리는 같은 테스트가 `cargo metadata`로 본다.

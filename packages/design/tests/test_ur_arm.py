@@ -7,15 +7,15 @@ import math
 import numpy as np
 import pytest
 
-from horilab_design.parts import camera_mount as cmt
-from horilab_design.parts import flange, links, wrist
-from horilab_design.parts import gripper as gp
-from horilab_design.parts import joint as j
-from horilab_design.printcheck import printed_mass_g
-from horilab_design.studies import packaging as pk
-from horilab_design.studies import ur_arm
-from horilab_design.studies.packaging import DEG, MM
-from horilab_design.values import load_measured
+from horibot_design.parts import camera_mount as cmt
+from horibot_design.parts import flange, links, wrist
+from horibot_design.parts import gripper as gp
+from horibot_design.parts import joint as j
+from horibot_design.printcheck import printed_mass_g
+from horibot_design.studies import packaging as pk
+from horibot_design.studies import ur_arm
+from horibot_design.studies.packaging import DEG, MM
+from horibot_design.values import load_measured
 
 UP = (0.0, -1.0, 0.0)  # 몸통은 원통 앞 끝을 바닥에 두고 뽑는다
 

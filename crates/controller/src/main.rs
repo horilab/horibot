@@ -3,15 +3,15 @@
 //! 로봇 설정 확인, 포트 목록, 값 적용(0024 만드는 순서 2~3), 맨 서보 확인(만드는 순서 5), 영점 재기와 시험
 //! 순서 실행(0034)이 있다. 레포 루트에서 돌린다:
 //!
-//!     cargo run -p horilab-controller -- settings
-//!     cargo run -p horilab-controller -- apply --port COM5            (바꿀 칸만 보여 준다)
-//!     cargo run -p horilab-controller -- apply --port COM5 --yes      (쓴다)
-//!     cargo run -p horilab-controller -- check --port COM5 --id 20    (할 일을 보여 주고 상태를 읽는다)
-//!     cargo run -p horilab-controller -- check --port COM5 --id 20 --yes
-//!     cargo run -p horilab-controller -- check-state --port COM5 --id 20
-//!     cargo run -p horilab-controller -- zero --port COM5 --joint j2 [--yes]
-//!     cargo run -p horilab-controller -- run --script <파일> --port COM5 [--yes]
-//!     cargo run -p horilab-controller -- run --script <파일> --sim 127.0.0.1:5600 --yes
+//!     cargo run -p horibot-controller -- settings
+//!     cargo run -p horibot-controller -- apply --port COM5            (바꿀 칸만 보여 준다)
+//!     cargo run -p horibot-controller -- apply --port COM5 --yes      (쓴다)
+//!     cargo run -p horibot-controller -- check --port COM5 --id 20    (할 일을 보여 주고 상태를 읽는다)
+//!     cargo run -p horibot-controller -- check --port COM5 --id 20 --yes
+//!     cargo run -p horibot-controller -- check-state --port COM5 --id 20
+//!     cargo run -p horibot-controller -- zero --port COM5 --joint j2 [--yes]
+//!     cargo run -p horibot-controller -- run --script <파일> --port COM5 [--yes]
+//!     cargo run -p horibot-controller -- run --script <파일> --sim 127.0.0.1:5600 --yes
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -21,23 +21,23 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use chrono::Local;
-use horilab_controller::check::{
+use horibot_controller::check::{
     self, BENCH_RANGE, Check, Clock, Console, SPARE_IDS, STEPS, Terminal, WallClock,
 };
-use horilab_controller::joints::{BENCH_CAPS, Caps, Joints, Servo, Snapshot};
-use horilab_controller::prepare::{self, Change};
-use horilab_controller::record::{self, Log};
-use horilab_controller::runloop::{Mode, RunLoop};
-use horilab_controller::runner::{Runner, Script, Status, Step};
-use horilab_controller::settings::{Direction, GRIPPER_NAME, Joint, Settings};
-use horilab_controller::zero;
-use horilab_servo::feetech::registers::BAUD_RATES;
-use horilab_servo::feetech::{Bus, Error, SerialLink, ServoBus};
-use horilab_servo::sim::{SimBus, SimServo};
+use horibot_controller::joints::{BENCH_CAPS, Caps, Joints, Servo, Snapshot};
+use horibot_controller::prepare::{self, Change};
+use horibot_controller::record::{self, Log};
+use horibot_controller::runloop::{Mode, RunLoop};
+use horibot_controller::runner::{Runner, Script, Status, Step};
+use horibot_controller::settings::{Direction, GRIPPER_NAME, Joint, Settings};
+use horibot_controller::zero;
+use horibot_servo::feetech::registers::BAUD_RATES;
+use horibot_servo::feetech::{Bus, Error, SerialLink, ServoBus};
+use horibot_servo::sim::{SimBus, SimServo};
 use serde_json::{Value, json};
 
 const USAGE: &str = "\
-쓰는 법: horilab-controller <명령> [옵션]
+쓰는 법: horibot-controller <명령> [옵션]
 
 명령:
   settings            로봇 설정을 읽어 검사하고 보여 준다
@@ -200,7 +200,7 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Options, String>
     );
     if needs_port && options.port.is_none() {
         return Err(
-            "이 명령에는 --port가 있어야 한다 (포트 목록: horilab-controller ports)".to_owned(),
+            "이 명령에는 --port가 있어야 한다 (포트 목록: horibot-controller ports)".to_owned(),
         );
     }
     let needs_id = matches!(options.command, Command::Check | Command::CheckState);
@@ -258,7 +258,7 @@ fn show_settings(options: &Options) -> Result<(), String> {
 }
 
 fn show_ports() -> Result<(), String> {
-    let names = horilab_servo::port_names().map_err(|e| format!("포트를 읽지 못했다: {e}"))?;
+    let names = horibot_servo::port_names().map_err(|e| format!("포트를 읽지 못했다: {e}"))?;
     if names.is_empty() {
         println!("시리얼 포트가 없다. 서보 어댑터의 USB를 꽂았는지 본다");
     }
@@ -409,7 +409,7 @@ fn open_bench(options: &Options, id: u8) -> Result<Option<(SerialJoints, u16)>, 
 fn no_reply(id: u8) -> String {
     format!(
         "서보 {id}가 응답하지 않는다. + 플러그를 꽂았는지, 서보 선과 USB, 포트 이름(ports)을 본다. 다 맞으면 \
-         `uv run python -m horilab_servo scan`으로 같은 서보가 찾아지는지 본다 (찾아지면 선과 전원은 맞고 \
+         `uv run python -m horibot_servo scan`으로 같은 서보가 찾아지는지 본다 (찾아지면 선과 전원은 맞고 \
          컨트롤러 쪽 문제다)"
     )
 }
@@ -695,7 +695,7 @@ fn measure_zero(options: &Options) -> Result<(), String> {
     burned.map(|_| ())
 }
 
-/// 시험 순서를 실행 루프로 돌린다 ([`horilab_controller::runner`], 0034).
+/// 시험 순서를 실행 루프로 돌린다 ([`horibot_controller::runner`], 0034).
 fn run_script(options: &Options) -> Result<(), String> {
     let settings = Settings::load(&options.settings)?;
     let path = options.script.as_ref().ok_or("--script가 없다")?;
@@ -1120,7 +1120,7 @@ mod tests {
 
     #[test]
     fn last_check_results_finds_the_newest_check_of_that_servo() {
-        let root = std::env::temp_dir().join(format!("horilab-lock-test-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("horibot-lock-test-{}", std::process::id()));
         let servo = root.join("servo");
         for (name, id, p) in [
             ("2026-11-12_100000_check-a", 20, Some(32)),

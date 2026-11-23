@@ -8,14 +8,14 @@ import math
 import numpy as np
 import pytest
 
-from horilab_design import placement as pl
-from horilab_design.parts import fake_forearm as ff
-from horilab_design.parts import joint as j
-from horilab_design.parts import links
-from horilab_design.parts import rest_shelf as rs
-from horilab_design.parts import shoulder as sp
-from horilab_design.parts.shapes import box, solid
-from horilab_design.printcheck import (
+from horibot_design import placement as pl
+from horibot_design.parts import fake_forearm as ff
+from horibot_design.parts import joint as j
+from horibot_design.parts import links
+from horibot_design.parts import rest_shelf as rs
+from horibot_design.parts import shoulder as sp
+from horibot_design.parts.shapes import box, solid
+from horibot_design.printcheck import (
     LAYER,
     air_walls,
     mid_layer_levels,
@@ -23,8 +23,8 @@ from horilab_design.printcheck import (
     printed_mass_g,
     wall_settings,
 )
-from horilab_design.studies import home_view as hv
-from horilab_design.studies import wiring as wr
+from horibot_design.studies import home_view as hv
+from horibot_design.studies import wiring as wr
 
 
 def _on_layer(height: float) -> bool:

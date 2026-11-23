@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from horilab_design.studies import error_budget as eb
+from horibot_design.studies import error_budget as eb
 
 
 def test_relative_error_comes_from_the_radial_component() -> None:

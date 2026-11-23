@@ -8,9 +8,9 @@
 //! 시작하는데 지금 MJCF(옛 골격)의 J4 범위는 80°~235°라 0°를 품지 않아서 J4에는 서보를 달지 않는다.
 //!
 //! ```text
-//! uv run python -m horilab_design.mjcf
-//! uv run python -m horilab_sim
-//! cargo run --release -p horilab-controller --example sim_timing [-- <서버 주소, 기본 127.0.0.1:5600>]
+//! uv run python -m horibot_design.mjcf
+//! uv run python -m horibot_sim
+//! cargo run --release -p horibot-controller --example sim_timing [-- <서버 주소, 기본 127.0.0.1:5600>]
 //! ```
 
 use std::cell::RefCell;
@@ -18,12 +18,12 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use horilab_controller::joints::{Caps, Joints, Servo};
-use horilab_controller::plan::{MotionLimits, move_joints};
-use horilab_controller::runloop::{Mode, RunLoop};
-use horilab_controller::settings::{Calibration, Direction, Joint, Settings};
-use horilab_servo::feetech::{Error, Fault, LinkStats, Register, Reply, ServoBus, SyncRead};
-use horilab_servo::sim::{SimBus, SimServo};
+use horibot_controller::joints::{Caps, Joints, Servo};
+use horibot_controller::plan::{MotionLimits, move_joints};
+use horibot_controller::runloop::{Mode, RunLoop};
+use horibot_controller::settings::{Calibration, Direction, Joint, Settings};
+use horibot_servo::feetech::{Error, Fault, LinkStats, Register, Reply, ServoBus, SyncRead};
+use horibot_servo::sim::{SimBus, SimServo};
 
 const PERIOD: Duration = Duration::from_millis(10);
 /// 관절의 소프트 한계 [rad]: 팔 설계 범위인 양쪽 160°

@@ -4,19 +4,19 @@ from __future__ import annotations
 
 import pytest
 
-from horilab_design.parts import base as b
-from horilab_design.parts import joint as j
-from horilab_design.parts import shoulder as sh
-from horilab_design.printcheck import (
+from horibot_design.parts import base as b
+from horibot_design.parts import joint as j
+from horibot_design.parts import shoulder as sh
+from horibot_design.printcheck import (
     air_walls,
     mid_layer_levels,
     overhangs,
     printed_mass_g,
     wall_settings,
 )
-from horilab_design.studies import ur_arm
-from horilab_design.studies.packaging import MM
-from horilab_design.values import ServoModel, load_measured
+from horibot_design.studies import ur_arm
+from horibot_design.studies.packaging import MM
+from horibot_design.values import ServoModel, load_measured
 
 BED = 256.0  # 출력 범위 [mm]
 HORN_MASS_G = 2.0  # STS 서보의 출력 혼과 가운데 나사 (실측)

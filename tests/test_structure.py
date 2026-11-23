@@ -23,34 +23,34 @@ from tools import sync
 
 ROOT = Path(__file__).resolve().parents[1]
 
-# 패키지마다 불러와도 되는 다른 horilab 패키지. 아직 없는 패키지(client)도 미리 적어 둔다.
+# 패키지마다 불러와도 되는 다른 horibot 패키지. 아직 없는 패키지(client)도 미리 적어 둔다.
 # 새 패키지는 여기에 규칙을 먼저 넣어야 테스트가 통과한다.
 ALLOWED_INTERNAL: dict[str, set[str]] = {
-    "horilab_design": set(),
-    "horilab_servo": set(),
-    "horilab_camera": set(),
-    "horilab_client": set(),
-    "horilab_sim": {"horilab_camera"},
+    "horibot_design": set(),
+    "horibot_servo": set(),
+    "horibot_camera": set(),
+    "horibot_client": set(),
+    "horibot_sim": {"horibot_camera"},
 }
 
 # 응용(apps/)은 모두 같은 규칙이다. 로봇 안쪽을 부르지 않아야 다른 레포로 옮길 수 있다.
-APP_ALLOWED_INTERNAL = {"horilab_client", "horilab_camera"}
+APP_ALLOWED_INTERNAL = {"horibot_client", "horibot_camera"}
 
 # 서보에 직접 닿는 모듈. servo 패키지 밖에서 부르면 안전 검사를 건너뛰는 길이 생긴다 (0009).
-SERVO_ACCESS = {"horilab_servo", "serial", "scservo_sdk"}
+SERVO_ACCESS = {"horibot_servo", "serial", "scservo_sdk"}
 
 # 따로 설치되는 패키지(파이, 다른 레포, 별도 환경)와, 그 패키지가 불러오면 안 되는 무거운 라이브러리
-LIGHT_PACKAGES = ("horilab_servo", "horilab_camera", "horilab_client")
+LIGHT_PACKAGES = ("horibot_servo", "horibot_camera", "horibot_client")
 HEAVY_LIBRARIES = {"build123d", "OCP", "bd_warehouse", "ocp_vscode", "mujoco", "mink", "eaik"}
 
-# Rust 크레이트마다 부를 수 있는 다른 horilab 크레이트. 새 크레이트는 여기에 규칙을 먼저 넣어야 테스트가 통과한다.
+# Rust 크레이트마다 부를 수 있는 다른 horibot 크레이트. 새 크레이트는 여기에 규칙을 먼저 넣어야 테스트가 통과한다.
 CRATE_ALLOWED_INTERNAL: dict[str, set[str]] = {
-    "horilab-servo": set(),
-    "horilab-controller": {"horilab-servo"},
-    "horilab-bench": {"horilab-servo"},
+    "horibot-servo": set(),
+    "horibot-controller": {"horibot-servo"},
+    "horibot-bench": {"horibot-servo"},
 }
 
-# 시리얼 포트를 여는 크레이트. 서보에 닿는 길이라 horilab-servo만 쓴다.
+# 시리얼 포트를 여는 크레이트. 서보에 닿는 길이라 horibot-servo만 쓴다.
 SERIAL_CRATES = {"serialport", "serial2", "tokio-serial", "mio-serial", "rustypot"}
 
 # 검사하지 않는 폴더 (생성물, 받은 도구, 가상환경). git에서 뺀 데이터 폴더(tools/sync.py의 SYNC_DIRS)도
@@ -64,7 +64,7 @@ def _projects(folder: str) -> dict[str, Path]:
     if not base.is_dir():
         return {}
     return {
-        "horilab_" + path.name.replace("-", "_"): path
+        "horibot_" + path.name.replace("-", "_"): path
         for path in sorted(base.iterdir())
         if (path / "pyproject.toml").exists()
     }
@@ -121,8 +121,8 @@ _DISTRIBUTIONS = importlib.metadata.packages_distributions()
 
 
 def _distributions_of(module: str) -> set[str]:
-    if module.startswith("horilab_"):
-        return {_normalize(module)}  # 워크스페이스 패키지: horilab_servo → horilab-servo
+    if module.startswith("horibot_"):
+        return {_normalize(module)}  # 워크스페이스 패키지: horibot_servo → horibot-servo
     return {_normalize(name) for name in _DISTRIBUTIONS.get(module, [])}
 
 
@@ -153,12 +153,12 @@ def test_crate_dependencies_follow_direction() -> None:
     for crate in _crates():
         name = crate["name"]
         dependencies = {dependency["name"] for dependency in crate["dependencies"]}
-        internal = {d for d in dependencies if d.startswith("horilab-")}
+        internal = {d for d in dependencies if d.startswith("horibot-")}
         allowed = CRATE_ALLOWED_INTERNAL.get(name, set())
         assert internal <= allowed, f"{name}: {sorted(internal - allowed)}"
         serial = dependencies & SERIAL_CRATES
-        assert not serial or name == "horilab-servo", (
-            f"{name}: {sorted(serial)}. 시리얼 포트는 horilab-servo만 연다"
+        assert not serial or name == "horibot-servo", (
+            f"{name}: {sorted(serial)}. 시리얼 포트는 horibot-servo만 연다"
         )
 
 
@@ -176,7 +176,7 @@ def test_project_imports(name: str) -> None:
 def test_internal_imports_follow_dependency_direction(name: str) -> None:
     allowed = (APP_ALLOWED_INTERNAL if name in APPS else ALLOWED_INTERNAL[name]) | {name}
     for path in _source_files(name):
-        internal = {n for n in _top_level_imports(path) if n.startswith("horilab_")}
+        internal = {n for n in _top_level_imports(path) if n.startswith("horibot_")}
         assert internal <= allowed, f"{path.relative_to(ROOT)}: {sorted(internal - allowed)}"
 
 

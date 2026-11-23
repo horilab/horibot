@@ -17,8 +17,8 @@ use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use horilab_servo::feetech::registers::{self as reg, Area, Fault, Register};
-use horilab_servo::feetech::{Bus, Port};
+use horibot_servo::feetech::registers::{self as reg, Area, Fault, Register};
+use horibot_servo::feetech::{Bus, Port};
 use serde_json::{Map, Value, json};
 
 use crate::joints::{Enabled, Joints, Snapshot};
@@ -1378,7 +1378,7 @@ pub fn state_report<P: Port>(
 mod tests {
     use std::collections::VecDeque;
 
-    use horilab_servo::feetech::fake::{FakePort, FakeServo, open_fake_bus};
+    use horibot_servo::feetech::fake::{FakePort, FakeServo, open_fake_bus};
 
     use super::*;
     use crate::joints::{BENCH_CAPS, Servo};
@@ -1440,7 +1440,7 @@ mod tests {
     }
 
     fn temp_dir(name: &str) -> std::path::PathBuf {
-        let path = std::env::temp_dir().join(format!("horilab-{name}-{}", std::process::id()));
+        let path = std::env::temp_dir().join(format!("horibot-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&path);
         std::fs::create_dir_all(&path).unwrap();
         path

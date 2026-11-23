@@ -1,6 +1,6 @@
 //! 실행 루프를 시뮬레이션 서버에 붙여 돌린다 (docs/decisions/0033의 만드는 순서 1).
 //!
-//! Python 시뮬레이션 서버(`uv run python -m horilab_sim --port 0`)를 띄워 쓴다. 관절 층과 실행 루프는
+//! Python 시뮬레이션 서버(`uv run python -m horibot_sim --port 0`)를 띄워 쓴다. 관절 층과 실행 루프는
 //! 실물과 같은 코드이고, 서보 버스만 시뮬레이션이다.
 
 use std::io::{BufRead, BufReader};
@@ -8,11 +8,11 @@ use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
-use horilab_controller::joints::{Caps, Joints, Servo};
-use horilab_controller::plan::{MotionLimits, move_joints};
-use horilab_controller::runloop::{Mode, RunLoop, Trajectory};
-use horilab_controller::settings::{Calibration, Direction, Joint, LoopSettings, RAD_PER_STEP};
-use horilab_servo::sim::{SimBus, SimServo};
+use horibot_controller::joints::{Caps, Joints, Servo};
+use horibot_controller::plan::{MotionLimits, move_joints};
+use horibot_controller::runloop::{Mode, RunLoop, Trajectory};
+use horibot_controller::settings::{Calibration, Direction, Joint, LoopSettings, RAD_PER_STEP};
+use horibot_servo::sim::{SimBus, SimServo};
 
 const PERIOD: Duration = Duration::from_millis(10);
 
@@ -36,9 +36,9 @@ fn start_server() -> (Server, String) {
         root.join(".venv/bin/python")
     };
     // 시뮬레이션은 설계를 불러오지 않고 설계가 쓴 MJCF만 읽는다 (0007)
-    let model = std::env::temp_dir().join(format!("horilab-sim-{}.xml", std::process::id()));
+    let model = std::env::temp_dir().join(format!("horibot-sim-{}.xml", std::process::id()));
     let written = Command::new(&python)
-        .args(["-m", "horilab_design.mjcf", "--out"])
+        .args(["-m", "horibot_design.mjcf", "--out"])
         .arg(&model)
         .current_dir(&root)
         .stdout(Stdio::null())
@@ -47,7 +47,7 @@ fn start_server() -> (Server, String) {
         .expect("설계 MJCF를 쓰는 명령을 띄우지 못했다");
     assert!(written.success(), "설계 MJCF를 쓰지 못했다");
     let mut child = Command::new(&python)
-        .args(["-m", "horilab_sim", "--port", "0", "--model"])
+        .args(["-m", "horibot_sim", "--port", "0", "--model"])
         .arg(&model)
         .arg("--servos")
         .arg(root.join("params/servos.toml"))

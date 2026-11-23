@@ -5,20 +5,20 @@
 //! 자기 충돌 검사는 아직 없어서 재지 않는다. 기구학과 기준값은 레포의 로봇 설정이다.
 //!
 //! ```text
-//! cargo run --release -p horilab-controller --example plan_timing
-//! uv run tools/pi_build.py -p horilab-controller --example plan_timing
+//! cargo run --release -p horibot-controller --example plan_timing
+//! uv run tools/pi_build.py -p horibot-controller --example plan_timing
 //!     (파이용: target/aarch64-unknown-linux-musl/release/examples/plan_timing)
 //! ```
 
 use std::time::Instant;
 
-use horilab_controller::joints::{Caps, Joints, Servo};
-use horilab_controller::kinematics::{Pose, PoseLine};
-use horilab_controller::plan::{MotionLimits, ToolLimits, move_joints, move_line};
-use horilab_controller::runloop::{Mode, RunLoop};
-use horilab_controller::settings::{Calibration, Direction, Settings};
-use horilab_servo::feetech::Bus;
-use horilab_servo::feetech::fake::{FakePort, FakeServo, open_fake_bus};
+use horibot_controller::joints::{Caps, Joints, Servo};
+use horibot_controller::kinematics::{Pose, PoseLine};
+use horibot_controller::plan::{MotionLimits, ToolLimits, move_joints, move_line};
+use horibot_controller::runloop::{Mode, RunLoop};
+use horibot_controller::settings::{Calibration, Direction, Settings};
+use horibot_servo::feetech::Bus;
+use horibot_servo::feetech::fake::{FakePort, FakeServo, open_fake_bus};
 
 const PERIOD: f64 = 0.01;
 /// 굽힌 작업 자세 [rad] (곧게 선 영점은 특이 자세다)

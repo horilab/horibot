@@ -145,7 +145,7 @@ fn tls() -> Result<String, Error> {
 }
 
 fn serial() -> Result<String, Error> {
-    let names = horilab_servo::port_names()?;
+    let names = horibot_servo::port_names()?;
     Ok(if names.is_empty() {
         "없음 (어댑터를 꽂으면 보인다)".to_owned()
     } else {

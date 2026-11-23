@@ -7,11 +7,11 @@ import math
 import pytest
 from build123d import Compound
 
-from horilab_design.parts import flange
-from horilab_design.parts import gripper as g
-from horilab_design.parts import joint as j
-from horilab_design.parts.shapes import COMB_PITCH, box, solid
-from horilab_design.printcheck import LAYER, air_walls, mid_layer_levels, overhangs, wall_settings
+from horibot_design.parts import flange
+from horibot_design.parts import gripper as g
+from horibot_design.parts import joint as j
+from horibot_design.parts.shapes import COMB_PITCH, box, solid
+from horibot_design.printcheck import LAYER, air_walls, mid_layer_levels, overhangs, wall_settings
 
 
 @pytest.mark.slow

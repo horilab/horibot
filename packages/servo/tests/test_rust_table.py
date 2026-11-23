@@ -8,8 +8,8 @@ Python 기준 구현을 지울 때 이 검사도 같이 지운다.
 import re
 from pathlib import Path
 
-from horilab_servo.feetech import registers as reg
-from horilab_servo.feetech.registers import Area, Encoding
+from horibot_servo.feetech import registers as reg
+from horibot_servo.feetech.registers import Area, Encoding
 
 ROOT = Path(__file__).resolve().parents[3]
 RUST_TABLE = ROOT / "crates" / "servo" / "src" / "feetech" / "registers.rs"

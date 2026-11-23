@@ -15,7 +15,7 @@
 ```
 
 - 값 파일은 TOML이고 네 종류(설계 값, 실측 값, 로봇 설정·캘리브레이션, 구매 데이터)로 나눈다. 파일의 단위는 mm와 도이고 키 이름에 단위를 붙인다. 코드 안에서는 SI(m, rad)다.
-- 지금 있는 값 파일은 `params/arm.toml`(팔의 치수, 관절 범위, 관절마다 서보), `params/servos.toml`(서보 명목 사양), `data/measured.toml`(실측 값)이다. `horilab_design.values`가 읽어서 검사하고 로봇 기술(SI)로 바꾼다. 모르는 키가 있으면(단위를 빠뜨린 키 이름 등) 읽을 때 실패한다. 구매 데이터는 `data/purchases.toml`이고, `uv run python -m horilab_design.bom`이 [bom.md](bom.md)를 만든다. 로봇 설정은 `data/robot.toml`이고 컨트롤러만 읽는다 ([0024](decisions/0024-servo-bus.md)). 설계와 맞는지는 `tests/test_robot_settings.py`가 본다.
+- 지금 있는 값 파일은 `params/arm.toml`(팔의 치수, 관절 범위, 관절마다 서보), `params/servos.toml`(서보 명목 사양), `data/measured.toml`(실측 값)이다. `horibot_design.values`가 읽어서 검사하고 로봇 기술(SI)로 바꾼다. 모르는 키가 있으면(단위를 빠뜨린 키 이름 등) 읽을 때 실패한다. 구매 데이터는 `data/purchases.toml`이고, `uv run python -m horibot_design.bom`이 [bom.md](bom.md)를 만든다. 로봇 설정은 `data/robot.toml`이고 컨트롤러만 읽는다 ([0024](decisions/0024-servo-bus.md)). 설계와 맞는지는 `tests/test_robot_settings.py`가 본다.
 - 설계 값은 명목값이고 잰 값으로 덮어쓰지 않는다. 출력할 때마다 같은 차이는 부품 형상으로 보정하고, 로봇마다 다른 차이(영점 등)는 로봇 설정에 두고 실물을 움직일 때만 적용하고, 처짐·백래시 같은 움직임 차이는 시뮬레이션 파라미터로 맞춘다. 표는 [0006](decisions/0006-data-and-pipeline.md)에 있다.
 - 무게는 출력 전에는 출력 설정(벽 두께, 채움 비율)으로 근사하고, 출력한 뒤에는 저울로 잰 값을 쓴다. 부피에 필라멘트 밀도를 그냥 곱하면 속이 꽉 찬 것으로 계산돼 실제보다 무겁게 나온다. 서보와 베어링 무게를 더해 URDF와 MJCF의 inertial에 넣는다.
 - 축은 정확히 직교하거나 평행하게 만든다. 그래서 모델을 만드는 과정의 오차(CAD에서 URDF를 뽑을 때 생기는 오차)는 없어진다. 하지만 출력과 조립 오차는 남으므로 캘리브레이션은 여전히 필요하다. 마스터링 핀으로 영점을 물리적으로 정해서 캘리브레이션할 변수를 줄인다.
@@ -35,7 +35,7 @@
 
 ## 시뮬레이션 (MuJoCo)
 
-- 지금 MJCF는 골격 설계용 막대 모델이다 (`horilab_design.mjcf`, 옛 골격 값). 아래의 충돌 형상, 보이는 메시, 무게는 골격 값을 새 관절로 바꿀 때부터 넣는다 ([status.md](status.md)의 설계 순서).
+- 지금 MJCF는 골격 설계용 막대 모델이다 (`horibot_design.mjcf`, 옛 골격 값). 아래의 충돌 형상, 보이는 메시, 무게는 골격 값을 새 관절로 바꿀 때부터 넣는다 ([status.md](status.md)의 설계 순서).
 - MJCF를 같은 치수 값에서 MuJoCo의 MjSpec으로 만든다. 그리퍼는 따로 만들어 플랜지 사이트에 붙인다.
 - 충돌 형상은 치수 값에서 만든 기본 도형(상자, 원기둥, 캡슐)이고, 튀어나온 볼트 머리까지 부품을 다 감싸는 크기로 만든다. CAD 부품이 그 안에 들어가는지 테스트로 확인한다. 보이는 모양만 CAD 메시를 쓴다.
 - 출력하기 전에 시뮬레이션에서 움직여 보고 작업 범위, IK, 특이점, 충돌을 확인한다. 이전 프로젝트의 손목 문제 같은 걸 만들기 전에 잡으려는 것이다.
@@ -60,7 +60,7 @@
 - 관절은 이름으로 부르고, 단위는 rad와 s다. 서보 값과 rad 사이 변환은 관절 층에서만 한다 (실물과 시뮬레이션이 같이 쓴다).
 - 컨트롤러는 Rust로 짜고(`crates/controller`, 서보 버스는 `crates/servo`) 로봇 옆 컨트롤러 파이에서 돈다. 개발과 시뮬레이션은 PC에서 같은 프로그램으로 한다 ([0025](decisions/0025-controller-on-pi.md)). 로봇 설정은 data/에서만 읽는다.
 - 안전 검사(시작 절차, 한계, 통신 오류, 서보 보호, 막힘과 부하, 온도, 정지)는 실행 루프에 있다 ([0032](decisions/0032-run-loop.md)). 자기 충돌과 안전 평면은 실행 전에 궤적을 통째로 검사하며, 팔 부품이 정해진 뒤 만든다. 실물을 처음 움직이기 전에 통과할 시험은 [0009](decisions/0009-control-architecture.md)에 있다.
-- 서보 버스는 메모리 표, 서보마다 확인하는 동기 읽기, EEPROM 쓰기 절차를 둔다. 실물이 없는 PC에서는 가짜 서보 버스로 시험한다 ([0024](decisions/0024-servo-bus.md)). 공식 SDK 위에 Python으로 먼저 짠 것(`horilab_servo.feetech`)은 기준 구현이다.
+- 서보 버스는 메모리 표, 서보마다 확인하는 동기 읽기, EEPROM 쓰기 절차를 둔다. 실물이 없는 PC에서는 가짜 서보 버스로 시험한다 ([0024](decisions/0024-servo-bus.md)). 공식 SDK 위에 Python으로 먼저 짠 것(`horibot_servo.feetech`)은 기준 구현이다.
 - 프로그램은 기본으로 시뮬레이션만 움직이고, 실물은 명시적으로 켰을 때만 움직인다.
 
 ## 하드웨어 연결

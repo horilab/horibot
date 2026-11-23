@@ -1,6 +1,6 @@
 # 팔의 설계 값 (명목값). 재서 얻은 값은 data/measured.toml에 따로 둔다 (docs/decisions/0006).
 # 단위는 키 이름에 붙인다. 코드는 읽을 때 SI로 바꾼다 (docs/conventions.md).
-# 읽는 코드: packages/design/src/horilab_design/values.py
+# 읽는 코드: packages/design/src/horibot_design/values.py
 
 # UR형 6축 (0013). 영점 자세에서 팔은 위로 곧게 서고, 모든 링크 좌표계가 베이스와 같은 방향이다.
 # J1은 z축, J2·J3·J4는 y축, J5는 영점에서 z축, J6는 y축으로 돈다.

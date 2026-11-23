@@ -1,5 +1,5 @@
 [package]
-name = "horilab-servo"
+name = "horibot-servo"
 description = "서보 버스: 서보와 이야기하는 맨 아래층 (docs/decisions/0024-servo-bus.md)"
 version.workspace = true
 edition.workspace = true

@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 from build123d import Box, Pos
 
-from horilab_design import coupons
-from horilab_design.parts import links
+from horibot_design import coupons
+from horibot_design.parts import links
 
 
 @pytest.mark.slow
@@ -79,7 +79,7 @@ def test_shoulder_bearing_coupons_bracket_the_6806_result() -> None:
 
 
 def test_st3120_horn_coupon_sits_on_the_measured_rim() -> None:
-    from horilab_design.parts import shoulder as sh
+    from horibot_design.parts import shoulder as sh
 
     # 자리 깊이(2.0)가 테 두께(2.5) 안이고, 가운데 구멍이 혼 가운데 돋움(가정 지름 14)을 비키며 혼 볼트 구멍과 살이 남는다
     assert coupons.HORN_RECESS_DEPTH < sh.HORN_T

@@ -18,8 +18,8 @@ fn main() {
         Some(_) => "true",
         None => "unknown",
     };
-    println!("cargo:rustc-env=HORILAB_COMMIT={commit}");
-    println!("cargo:rustc-env=HORILAB_UNCOMMITTED={uncommitted}");
+    println!("cargo:rustc-env=HORIBOT_COMMIT={commit}");
+    println!("cargo:rustc-env=HORIBOT_UNCOMMITTED={uncommitted}");
     // 이 크레이트와 서보 크레이트의 코드, 커밋, 색인이 바뀌면 다시 읽는다.
     for path in [
         "build.rs",

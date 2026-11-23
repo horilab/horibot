@@ -2,8 +2,8 @@
 
 결정과 이유는 docs/decisions/0026-pi-runtime-deploy-records.md의 3에 있다.
 
-    uv run tools/pi_build.py -p horilab-bench --bin smoke         musl 정적 실행 파일 (기본)
-    uv run tools/pi_build.py --gnu -p horilab-bench --bin smoke   glibc 2.35판 (비교용)
+    uv run tools/pi_build.py -p horibot-bench --bin smoke         musl 정적 실행 파일 (기본)
+    uv run tools/pi_build.py --gnu -p horibot-bench --bin smoke   glibc 2.35판 (비교용)
 
 - cargo-zigbuild와 zig는 uv 개발 의존성으로 레포 환경에 있다. PC에 따로 설치하지 않는다.
 - cargo-zigbuild가 레포 환경의 zig를 스스로 찾지 못해서(Windows), 깔린 zig의 자리를 알려 준다.

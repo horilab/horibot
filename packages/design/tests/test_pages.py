@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from horilab_design.pages import HERE, arm_page, joint_page
-from horilab_design.parts import camera_mount, gripper
+from horibot_design.pages import HERE, arm_page, joint_page
+from horibot_design.parts import camera_mount, gripper
 
 
 def test_templates_have_one_data_slot() -> None:

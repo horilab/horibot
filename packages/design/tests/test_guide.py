@@ -11,8 +11,8 @@ import numpy as np
 import pytest
 from build123d import Box, Pos
 
-from horilab_design.guide import cables, selftest
-from horilab_design.guide.build import (
+from horibot_design.guide import cables, selftest
+from horibot_design.guide.build import (
     GuideError,
     guide_json,
     plate_refs,
@@ -20,17 +20,17 @@ from horilab_design.guide.build import (
     resolve,
     write_site,
 )
-from horilab_design.guide.guides import (
+from horibot_design.guide.guides import (
     first_joint,
     plug_measure,
     prints,
     st3120_horn,
     wrist_end,
 )
-from horilab_design.guide.meshes import pack, tessellate, unpack
-from horilab_design.guide.model import Guide, Move, PrintGuide, ScenePart, Step, View
-from horilab_design.parts import joint as j
-from horilab_design.parts.shapes import solid
+from horibot_design.guide.meshes import pack, tessellate, unpack
+from horibot_design.guide.model import Guide, Move, PrintGuide, ScenePart, Step, View
+from horibot_design.parts import joint as j
+from horibot_design.parts.shapes import solid
 
 UP = View((0, 1, 0), (0, 0, 1))
 

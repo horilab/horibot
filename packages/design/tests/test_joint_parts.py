@@ -6,11 +6,11 @@ import math
 
 import pytest
 
-from horilab_design.parts import joint as j
-from horilab_design.parts import links, wrist
-from horilab_design.parts.shapes import box, cyl_y, solid
-from horilab_design.printcheck import LAYER, air_walls, mid_layer_levels, overhangs, wall_settings
-from horilab_design.values import ServoModel, load_measured
+from horibot_design.parts import joint as j
+from horibot_design.parts import links, wrist
+from horibot_design.parts.shapes import box, cyl_y, solid
+from horibot_design.printcheck import LAYER, air_walls, mid_layer_levels, overhangs, wall_settings
+from horibot_design.values import ServoModel, load_measured
 
 BED = 256.0  # 출력 범위 [mm]
 

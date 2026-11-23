@@ -2,7 +2,7 @@
 # 로봇마다 다른 값(서보 ID, 영점, 방향)과 컨트롤러의 기준값을 둔다. 설계 값(params/)은 옮기지 않는다.
 # 각도는 도이고 키 이름에 단위를 붙인다. 컨트롤러 안에서는 rad다. 모르는 키가 있으면 읽을 때 실패한다.
 # 읽는 코드: crates/controller/src/settings.rs. 설계와 맞는지(서보 모델, 소프트 한계가 설계 범위 안인지)는
-# tests/test_robot_settings.py가 본다. 고친 뒤 확인: cargo run -p horilab-controller -- settings
+# tests/test_robot_settings.py가 본다. 고친 뒤 확인: cargo run -p horibot-controller -- settings
 # 관절은 조립하는 대로 더한다. 지금은 옛 관절 시험의 J3만 있고, UR식 관절(0028)로 다시 설계하며 바꾼다.
 
 # 서보 값의 0/4095 경계를 소프트 한계에서 떨어뜨릴 각도 [°] (0024의 영점). 위치 모드는 경계를 넘지 않아서,
@@ -34,7 +34,7 @@ torque_cap_percent = 40 # 실행 루프에서 서보 토크 한도의 상한. �
 
 # 팔의 기구학 (0009, 0033): 영점 자세(팔이 곧게 섬)에서 관절마다 부모 좌표계에서 본 원점 [mm]과 축, 그리고
 # 플랜지(J6 좌표계에서 본 위치 [mm]와 회전). 영점 자세에서는 모든 링크 좌표계가 베이스와 같은 방향이다.
-# 설계(params/arm.toml, horilab_design.values.arm_robot)와 같아야 한다 (tests/test_robot_settings.py가 본다).
+# 설계(params/arm.toml, horibot_design.values.arm_robot)와 같아야 한다 (tests/test_robot_settings.py가 본다).
 [kinematics]
 origins_mm = [[0, 0, 0], [0, 0, 160], [0, 0, 220], [0, 0, 180], [0, 63, 0], [0, 0, 63]]
 axes = [[0, 0, 1], [0, 1, 0], [0, 1, 0], [0, 1, 0], [0, 0, 1], [0, 1, 0]]
@@ -45,7 +45,7 @@ flange_rotation = [[0, 1, 0], [0, 0, 1], [1, 0, 0]]
 # 그대로다 (단위는 crates/servo/src/feetech/registers.rs). 여기 없는 칸은 메모리 표의 초기값으로 맞추고,
 # 메모리 표가 초기값을 비워 둔 칸은 꼭 적는다. ID와 통신 속도는 값 적용이 바꾸지 않고, 위치 오프셋은
 # 관절의 영점과 같이 적고, 각도 한계는 소프트 한계에서 계산하므로 여기에 적지 않는다. 관절마다 다른 값(팔에서 재서 고른 게인 등)은
-# [joints.<이름>.registers]에 적는다. 확인과 쓰기: cargo run -p horilab-controller -- apply --port <포트>
+# [joints.<이름>.registers]에 적는다. 확인과 쓰기: cargo run -p horibot-controller -- apply --port <포트>
 
 # STS3250: 첫 덤프(2026-11-11, ID 3) 값 그대로다. 가진 STS3250이 하나라 견줄 덤프가 없다. 보호 설정(보호·알림
 # 조건, 보호 전류, 과부하)은 첫 덤프 값 그대로 켜 둔다 (2026-11-14, 0024의 서보 보호). 다 만든 팔에서 다시 본다.

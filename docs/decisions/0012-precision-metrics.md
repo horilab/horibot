@@ -37,7 +37,7 @@
 
 ## 오차 예산
 
-UR식 관절의 팔([0029](0029-joint-parts.md))로 계산했다 (2026-11-15, 선의 무게를 넣은 모델). `uv run python -m horilab_design.studies.error_budget`로 다시 낸다. 팔의 형상과 무게는 `studies/ur_arm.py`의 값이고(어깨는 서보가 오기 전이라 도면 치수로 그렸다), 서보의 값은 다른 사람이 잰 값이다 ([hardware.md](../hardware.md#다른-사람이-잰-값)). 잰 값이 아니라 설계할 때의 어림이라, 다 만든 팔에서 잰 값으로 바꾼다. 도구가 아래, TCP 높이 2 cm, 반지름 30 cm에서 X는 반지름 쪽, Y는 둘레 쪽이다.
+UR식 관절의 팔([0029](0029-joint-parts.md))로 계산했다 (2026-11-15, 선의 무게를 넣은 모델). `uv run python -m horibot_design.studies.error_budget`로 다시 낸다. 팔의 형상과 무게는 `studies/ur_arm.py`의 값이고(어깨는 서보가 오기 전이라 도면 치수로 그렸다), 서보의 값은 다른 사람이 잰 값이다 ([hardware.md](../hardware.md#다른-사람이-잰-값)). 잰 값이 아니라 설계할 때의 어림이라, 다 만든 팔에서 잰 값으로 바꾼다. 도구가 아래, TCP 높이 2 cm, 반지름 30 cm에서 X는 반지름 쪽, Y는 둘레 쪽이다.
 
 ### 반복 정밀도
 

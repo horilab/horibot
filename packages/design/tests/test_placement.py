@@ -6,13 +6,13 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from horilab_design import placement as pl
-from horilab_design.parts import joint as j
-from horilab_design.parts import wrist
-from horilab_design.parts.shapes import box, solid
-from horilab_design.robot import Robot, flange_pose, link_poses
-from horilab_design.studies import ur_arm
-from horilab_design.studies.packaging import MM
+from horibot_design import placement as pl
+from horibot_design.parts import joint as j
+from horibot_design.parts import wrist
+from horibot_design.parts.shapes import box, solid
+from horibot_design.robot import Robot, flange_pose, link_poses
+from horibot_design.studies import ur_arm
+from horibot_design.studies.packaging import MM
 
 # 영점, 범위의 가운데, 관절마다 부호가 다르게 섞인 자세들 [°]. J4는 범위가 180° 둘레다
 POSES_DEG = (

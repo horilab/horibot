@@ -14,9 +14,9 @@
 
 use std::time::Duration;
 
-use horilab_servo::feetech::ServoBus;
-use horilab_servo::feetech::bus::Reply;
-use horilab_servo::feetech::registers::{self as reg, Fault, Register};
+use horibot_servo::feetech::ServoBus;
+use horibot_servo::feetech::bus::Reply;
+use horibot_servo::feetech::registers::{self as reg, Fault, Register};
 
 use crate::prepare::{model_name, plan};
 use crate::settings::{Calibration, Joint, LoopSettings, RAD_PER_STEP, angle_limits};
@@ -581,9 +581,9 @@ impl<B: ServoBus> Joints<B> {
 }
 
 #[cfg(test)]
-impl Joints<horilab_servo::feetech::Bus<horilab_servo::feetech::fake::FakePort>> {
+impl Joints<horibot_servo::feetech::Bus<horibot_servo::feetech::fake::FakePort>> {
     /// 시험에서 가짜 서보 상태를 보고 고장을 넣는다.
-    pub(crate) fn wire(&mut self) -> &mut horilab_servo::feetech::fake::FakeWire {
+    pub(crate) fn wire(&mut self) -> &mut horibot_servo::feetech::fake::FakeWire {
         self.bus.wire()
     }
 }
@@ -591,9 +591,9 @@ impl Joints<horilab_servo::feetech::Bus<horilab_servo::feetech::fake::FakePort>>
 /// 시험용: 서보의 EEPROM 목표를 구운 가짜 서보 (값 적용을 한 것처럼, 전원을 껐다 켜도 남는다).
 #[cfg(test)]
 pub(crate) fn programmed(
-    mut fake: horilab_servo::feetech::fake::FakeServo,
+    mut fake: horibot_servo::feetech::fake::FakeServo,
     servo: &Servo,
-) -> horilab_servo::feetech::fake::FakeServo {
+) -> horibot_servo::feetech::fake::FakeServo {
     for &(register, value) in &servo.eeprom {
         fake.set(register, value);
     }
@@ -604,8 +604,8 @@ pub(crate) fn programmed(
 
 #[cfg(test)]
 mod tests {
-    use horilab_servo::feetech::Bus;
-    use horilab_servo::feetech::fake::{FakePort, FakeServo, open_fake_bus};
+    use horibot_servo::feetech::Bus;
+    use horibot_servo::feetech::fake::{FakePort, FakeServo, open_fake_bus};
 
     use super::*;
     use crate::settings::{Direction, Settings, TEST_J3};

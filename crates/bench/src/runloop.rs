@@ -10,8 +10,8 @@
 
 use std::time::Duration;
 
-use horilab_servo::feetech::fake::{FakeServo, open_fake_bus};
-use horilab_servo::feetech::registers as reg;
+use horibot_servo::feetech::fake::{FakeServo, open_fake_bus};
+use horibot_servo::feetech::registers as reg;
 use serde_json::{Value, json};
 
 use crate::rt;

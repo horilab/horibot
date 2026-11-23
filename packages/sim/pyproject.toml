@@ -1,5 +1,5 @@
 [project]
-name = "horilab-sim"
+name = "horibot-sim"
 version = "0.1.0"
 description = "시뮬레이션 서버 (MuJoCo): 컨트롤러가 실물 서보 대신 TCP로 붙는다 (docs/decisions/0033)"
 requires-python = ">=3.12,<3.15"

@@ -1,6 +1,6 @@
 # 부품표
 
-이 파일은 `uv run python -m horilab_design.bom`이 [data/purchases.toml](../data/purchases.toml)에서 만든다. 고칠 때는 데이터 파일을 고친다. 구매 방식은 [0004](decisions/0004-purchasing.md), 가진 것은 [hardware.md](hardware.md#가진-것)에 있다.
+이 파일은 `uv run python -m horibot_design.bom`이 [data/purchases.toml](../data/purchases.toml)에서 만든다. 고칠 때는 데이터 파일을 고친다. 구매 방식은 [0004](decisions/0004-purchasing.md), 가진 것은 [hardware.md](hardware.md#가진-것)에 있다.
 
 위에는 아직 손에 없는 것만 있다. 주문하면 배송 중으로 옮기고, 받으면 맨 아래 받은 것으로 옮겨 예산에 남긴다 (가진 것에도 넣는다).
 

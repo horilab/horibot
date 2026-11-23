@@ -50,7 +50,7 @@ crates/controller (Rust, 실행 파일)
 ├─ kinematics, plan, timing   경로 계획: IK, 관절 이동, 직선 이동 (0033)
 └─ (명령)              settings, ports, apply, check, check-state
 
-packages/servo/src/horilab_servo/feetech (Python)   같은 설계의 기준 구현 (공식 SDK 위)
+packages/servo/src/horibot_servo/feetech (Python)   같은 설계의 기준 구현 (공식 SDK 위)
 ```
 
 - 서보 버스가 하는 일:
@@ -93,8 +93,8 @@ packages/servo/src/horilab_servo/feetech (Python)   같은 설계의 기준 구�
 ## 영향
 
 - 만드는 순서 (다른 문서에서는 "0024 만드는 순서 N번"으로 부른다). 하나씩 보여 주고 넘어간다.
-  1. 메모리 표, 서보 버스, 가짜 서보, 테스트. 둘 다 끝났다. Python 기준 구현은 `packages/servo/src/horilab_servo/feetech/`(테스트 `packages/servo/tests/`, SDK 형식 정보 `typings/scservo_sdk/`), Rust는 `crates/servo/src/feetech/`(테스트 `crates/servo/tests/`)이고 같은 시험 항목을 통과한다. 두 메모리 표가 같은지는 Python 쪽 시험이 본다 (`test_rust_table.py`).
-  2. 로봇 설정 파일과 읽는 코드 (J3부터). 끝났다: `data/robot.toml`(지금은 J3), `crates/controller/src/settings.rs`. 설계와 맞는지는 `tests/test_robot_settings.py`가 본다. 영점과 방향은 팔에 달고 재기 전에는 비워 두고, 비어 있는 관절은 움직이지 않는다. 확인 명령은 `cargo run -p horilab-controller -- settings`다.
+  1. 메모리 표, 서보 버스, 가짜 서보, 테스트. 둘 다 끝났다. Python 기준 구현은 `packages/servo/src/horibot_servo/feetech/`(테스트 `packages/servo/tests/`, SDK 형식 정보 `typings/scservo_sdk/`), Rust는 `crates/servo/src/feetech/`(테스트 `crates/servo/tests/`)이고 같은 시험 항목을 통과한다. 두 메모리 표가 같은지는 Python 쪽 시험이 본다 (`test_rust_table.py`).
+  2. 로봇 설정 파일과 읽는 코드 (J3부터). 끝났다: `data/robot.toml`(지금은 J3), `crates/controller/src/settings.rs`. 설계와 맞는지는 `tests/test_robot_settings.py`가 본다. 영점과 방향은 팔에 달고 재기 전에는 비워 두고, 비어 있는 관절은 움직이지 않는다. 확인 명령은 `cargo run -p horibot-controller -- settings`다.
   3. 서보 준비 명령: 찾기, 덤프, ID 바꾸기, 값 적용. 값 적용(`apply`, `crates/controller/src/prepare.rs`)을 먼저 만들었다 ([servo-setup.md](../servo-setup.md#값-적용)). 찾기, 덤프, ID 바꾸기는 Python 기준 구현으로 되므로 Rust로는 4~5번 뒤에 옮긴다.
   4. joints와 안전 검사. 끝났다: `crates/controller/src/joints.rs`. 토크 켜기(0009의 시작 절차와 이어받기), 한계 밖 목표 거르기, 잇단 통신 실패에 멈추기, 로봇 관절의 rad 변환, 잠근 채 바꿔 보기의 허락 범위를 가짜 서보로 시험한다.
   5. 맨 서보 확인 명령. 끝났다: `crates/controller/src/check.rs`, 기록의 `samples.csv`·`events.csv`(`record.rs`). 기록은 `records/` 아래라 동기화 목록에 이미 있다. 영점은 `zero` 명령으로 잰다 ([0034](0034-first-power-tools.md)). 게인 바꿔 보기는 팔을 조립할 때 더한다

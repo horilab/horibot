@@ -9,12 +9,12 @@ def test_zig_is_in_repo_environment() -> None:
 
 
 def test_musl_static_binary_is_default() -> None:
-    command = pi_build.command(["-p", "horilab-bench"])
+    command = pi_build.command(["-p", "horibot-bench"])
     assert command[:5] == ["cargo", "zigbuild", "--release", "--target", pi_build.MUSL]
-    assert command[5:] == ["-p", "horilab-bench"]
+    assert command[5:] == ["-p", "horibot-bench"]
 
 
 def test_gnu_flag_selects_glibc_target() -> None:
-    command = pi_build.command(["--gnu", "-p", "horilab-bench"])
+    command = pi_build.command(["--gnu", "-p", "horibot-bench"])
     assert pi_build.GNU in command
     assert "--gnu" not in command

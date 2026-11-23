@@ -5,9 +5,9 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from horilab_design.robot import Joint, Mat, Robot, Vec3, rotation
-from horilab_design.urdf import matrix_from_rpy
-from horilab_design.values import load_robot
+from horibot_design.robot import Joint, Mat, Robot, Vec3, rotation
+from horibot_design.urdf import matrix_from_rpy
+from horibot_design.values import load_robot
 
 X: Vec3 = (1.0, 0.0, 0.0)
 Y: Vec3 = (0.0, 1.0, 0.0)

@@ -6,10 +6,10 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use horilab_servo::feetech::bus::EEPROM_LATENCY;
-use horilab_servo::feetech::fake::{FakeServo, open_fake_bus};
-use horilab_servo::feetech::registers as reg;
-use horilab_servo::feetech::{Error, Fault};
+use horibot_servo::feetech::bus::EEPROM_LATENCY;
+use horibot_servo::feetech::fake::{FakeServo, open_fake_bus};
+use horibot_servo::feetech::registers as reg;
+use horibot_servo::feetech::{Error, Fault};
 
 #[test]
 fn ping_returns_model() {

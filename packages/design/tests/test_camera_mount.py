@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-from horilab_design.parts import camera_mount as cm
-from horilab_design.parts import joint as j
-from horilab_design.parts import wrist
-from horilab_design.printcheck import (
+from horibot_design.parts import camera_mount as cm
+from horibot_design.parts import joint as j
+from horibot_design.parts import wrist
+from horibot_design.printcheck import (
     LAYER,
     air_walls,
     mid_layer_levels,
@@ -15,7 +15,7 @@ from horilab_design.printcheck import (
     printed_mass_g,
     wall_settings,
 )
-from horilab_design.studies import ur_arm
+from horibot_design.studies import ur_arm
 
 
 @pytest.fixture(scope="module")

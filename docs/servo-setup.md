@@ -34,15 +34,15 @@
    - 전원선을 어댑터의 나사 단자에 물린다 (빨강 DC+, 검정 DC−). 가변 전원에는 − 플러그만 꽂고 + 플러그는 빼 둔다.
    - 어댑터 USB를 PC에 꽂는다.
 2. 전원 넣기: 전류 상한은 3 A로 맞춰 둔다. 화면에 상한이 보이지 않아서 클립을 서로 물려 맞춘다 (방법은 [hardware.md](hardware.md#전원), 2026-11-11에 맞춤). 가변 전원을 켜고 화면에서 12.0 V를 본다. 그다음 + 플러그를 꽂는다. C.C 표시등이 켜지면 전류 상한에 걸린 것이니 바로 + 플러그를 뺀다. 타는 냄새가 나도 바로 뺀다. 둘 다 정상이면 일어나지 않고, 선이 잘못 이어졌을 때의 신호다. 꽂은 뒤 화면의 전류를 읽어 알린다. 서보 하나가 토크 없이 쉴 때 먹는 전류이고, [0016](decisions/0016-servo-power.md)의 버팀 전류 계산에서 빼 두었던 값이다.
-3. 포트 확인: `uv run python -m horilab_servo ports`. 어댑터 포트에 "← 서보 어댑터"가 붙는다. 이 표시가 하나뿐이면 다음 명령들이 그 포트를 저절로 쓴다.
+3. 포트 확인: `uv run python -m horibot_servo ports`. 어댑터 포트에 "← 서보 어댑터"가 붙는다. 이 표시가 하나뿐이면 다음 명령들이 그 포트를 저절로 쓴다.
 4. ID 바꾸기 (서보마다 되풀이): ID는 관절 번호다 ([0024](decisions/0024-servo-bus.md)). STS3250은 3, STS3215 다섯은 1, 4, 5, 6, 11(그리퍼)이고, 남는 STS3215 하나는 예비 20이다. 펌웨어가 다른 STS3215가 보이면 그것을 예비로 돌린다. 나머지는 어느 서보를 어디에 써도 된다.
-   1. `uv run python -m horilab_servo set-id --to 3`으로 할 일을 본다 (15초쯤 찾는다). 서보 1개가 보여야 하고, 모델과 펌웨어도 같이 나온다. 확인한 뒤 `--yes`를 붙여 바꾼다.
+   1. `uv run python -m horibot_servo set-id --to 3`으로 할 일을 본다 (15초쯤 찾는다). 서보 1개가 보여야 하고, 모델과 펌웨어도 같이 나온다. 확인한 뒤 `--yes`를 붙여 바꾼다.
    2. 서보에 번호를 적은 테이프를 붙인다.
    3. + 플러그를 빼고 다음 서보로 바꿔 꽂은 뒤 + 플러그를 꽂는다. 7개를 다 바꿀 때까지 되풀이한다.
 5. 7개 모두 잇기: + 플러그를 빼고 서보를 단자 1에 3개, 단자 2에 4개로 나눠 잇는다. 서보에는 커넥터가 두 개 있고, 한 서보에서 다음 서보로 케이블 하나씩 잇는다. + 플러그를 꽂고 화면의 전류를 다시 읽어 알린다 (서보 7개가 쉴 때).
-6. 찾기: `uv run python -m horilab_servo scan` (15초쯤). 7개가 1, 3, 4, 5, 6, 11, 20으로 다 보이는지, 전압(12.0 V 가까이)을 본다. 하나라도 없으면 그 서보의 케이블을 본다.
-7. 기준 덤프: `uv run python -m horilab_servo dump`. 7개의 설정이 이 기록에 남고, 다음 덤프들이 이것과 견준다. 화면의 `*`는 메모리 표의 초기값과 다른 칸이고, `!`는 같은 모델끼리 다른 칸이다. 메모리 표 밖(71~127번)도 읽히면 같이 남는다.
-8. 통신 시간: `uv run python -m horilab_servo timing`으로 할 일을 보고, 확인한 뒤 `--yes`를 붙여 잰다 (1분쯤).
+6. 찾기: `uv run python -m horibot_servo scan` (15초쯤). 7개가 1, 3, 4, 5, 6, 11, 20으로 다 보이는지, 전압(12.0 V 가까이)을 본다. 하나라도 없으면 그 서보의 케이블을 본다.
+7. 기준 덤프: `uv run python -m horibot_servo dump`. 7개의 설정이 이 기록에 남고, 다음 덤프들이 이것과 견준다. 화면의 `*`는 메모리 표의 초기값과 다른 칸이고, `!`는 같은 모델끼리 다른 칸이다. 메모리 표 밖(71~127번)도 읽히면 같이 남는다.
+8. 통신 시간: `uv run python -m horibot_servo timing`으로 할 일을 보고, 확인한 뒤 `--yes`를 붙여 잰다 (1분쯤).
 9. 잠금 확인: 가변 전원은 켠 채 + 플러그를 뺐다 다시 꽂는다. `dump`를 다시 뜬다. 화면 끝의 "지난 덤프와 견줌"에서 모든 서보가 "같다"면, 잠근 채 쓴 응답 지연이 전원을 끄자 사라진 것이다 (메모리 표대로다). 응답 지연이 처음부터 0이었으면 `timing`이 바꾼 것이 없어서 이것으로는 확인되지 않는다. 그때는 맨 서보 확인에서 P를 잠근 채 바꿔 보며 확인한다.
 10. 끄기: 토크는 꺼져 있다. + 플러그를 빼고 가변 전원을 끈다.
 11. 기록 올리기: `uv run tools/sync.py push records`.
@@ -52,7 +52,7 @@
 같은 서보 줄과 어댑터를 hori3에 USB로 옮겨 꽂고 통신 시간을 잰다. 전원은 위와 같은 순서로 넣는다.
 
 - 처음 한 번: uv를 깔고(`curl -LsSf https://astral.sh/uv/install.sh | sh`) 레포를 받는다(`git clone https://github.com/horilab/horibot.git`). uv가 맞는 Python을 알아서 받는다.
-- 레포 폴더에서 `uv run --package horilab-servo python -m horilab_servo timing --yes`. 꽂힌 서보를 다 찾아서 잰다. 이 패키지의 의존성(공식 SDK, pyserial)만 깐다.
+- 레포 폴더에서 `uv run --package horibot-servo python -m horibot_servo timing --yes`. 꽂힌 서보를 다 찾아서 잰다. 이 패키지의 의존성(공식 SDK, pyserial)만 깐다.
 - 포트를 열지 못하면(권한) 사용자를 dialout 그룹에 넣고(`sudo usermod -aG dialout $USER`) 다시 로그인한다.
 - 기록은 hori3의 레포 폴더 `records/servo/` 아래에 생긴다. PC의 같은 자리로 가져와(scp) 올린다. 파이가 직접 올리는 것은 컨트롤러를 파이에 배포할 때 만든다 ([0026](decisions/0026-pi-runtime-deploy-records.md)).
 
@@ -64,7 +64,7 @@
 
 ### 새 서보 (ST-3120)
 
-다른 서보를 빼고 혼자 꽂아, 아무것도 쓰기 전에 `scan`과 `dump`를 뜬다. 새 서보의 덤프가 그 모델의 공장값이다. 이어서 혼자 꽂은 채 `set-id --to 2`로 ID를 2(어깨)로 바꾼다. 메모리 표의 ID 초기값이 1이라 J1과 겹치니, 바꾸기 전에는 다른 서보와 같은 버스에 두지 않는다. 처음 보는 모델 번호는 [hardware.md](hardware.md#서보-사양)의 표와 `registers.py`, `registers.rs`의 `MODELS`, 시뮬레이션의 `MODEL_NAMES`(`packages/sim/src/horilab_sim/world.py`)에 넣고, 그 덤프로 로봇 설정에 `[models.ST-3120.registers]`를 적는다 (Claude).
+다른 서보를 빼고 혼자 꽂아, 아무것도 쓰기 전에 `scan`과 `dump`를 뜬다. 새 서보의 덤프가 그 모델의 공장값이다. 이어서 혼자 꽂은 채 `set-id --to 2`로 ID를 2(어깨)로 바꾼다. 메모리 표의 ID 초기값이 1이라 J1과 겹치니, 바꾸기 전에는 다른 서보와 같은 버스에 두지 않는다. 처음 보는 모델 번호는 [hardware.md](hardware.md#서보-사양)의 표와 `registers.py`, `registers.rs`의 `MODELS`, 시뮬레이션의 `MODEL_NAMES`(`packages/sim/src/horibot_sim/world.py`)에 넣고, 그 덤프로 로봇 설정에 `[models.ST-3120.registers]`를 적는다 (Claude).
 
 2026-11-15에 했다: 모델 번호 3337, 펌웨어 3.10, ID 2. 기록은 `records/servo/2026-11-15_155927_dump-crazyhappy`(공장값)와 `2026-11-15_160021_set-id-crazyhappy`다.
 
@@ -72,7 +72,7 @@
 
 서보의 EEPROM을 로봇 설정([data/robot.toml](../data/robot.toml))에 맞춘다. 서보에 남은 값에 기대지 않으려는 것이다 ([0024](decisions/0024-servo-bus.md)). 명령은 컨트롤러(`crates/controller`)에 있고, 레포 루트에서 돌린다.
 
-- `cargo run -p horilab-controller -- apply --port <포트>`: 로봇 설정의 관절마다 서보를 찾아 모델 번호를 맞춰 보고, 덤프를 읽어 로봇 설정과 다른 칸을 보여 준다. 읽기만 한다. 포트 목록은 `cargo run -p horilab-controller -- ports`이고, `--joint j3`처럼 관절을 고를 수 있다.
+- `cargo run -p horibot-controller -- apply --port <포트>`: 로봇 설정의 관절마다 서보를 찾아 모델 번호를 맞춰 보고, 덤프를 읽어 로봇 설정과 다른 칸을 보여 준다. 읽기만 한다. 포트 목록은 `cargo run -p horibot-controller -- ports`이고, `--joint j3`처럼 관절을 고를 수 있다.
 - 같은 명령에 `--yes`를 붙이면 다른 칸만 EEPROM에 쓰고 다시 읽어 확인한다. 토크가 켜져 있으면 쓰지 않고, 서보는 움직이지 않는다. 쓰기 전후의 덤프와 그때의 로봇 설정이 `records/servo/<날짜시각>_apply-<컴퓨터>/meta.json`에 남는다. Claude는 `--yes`로 돌리기 전에 확인을 받는다.
 - 할 때: 원판이나 링크를 달기 전, 팔에서 고른 게인을 구울 때, 영점을 잰 뒤(서보 각도 한계가 소프트 한계로 바뀐다), 서보를 갈아 끼웠을 때.
 - J3(STS3250)은 로봇 설정의 값이 첫 덤프와 같아서, 지금은 쓸 칸이 없다 (2026-11-12, 첫 덤프로 견줌).
@@ -81,8 +81,8 @@
 
 팔에 단 관절은 영점을 재야 움직인다. 첫 동력 시험(다 조립한 팔에서 어깨 버티기)도 같은 명령으로 한다 ([0034](decisions/0034-first-power-tools.md)).
 
-- 영점: `cargo run -p horilab-controller -- zero --port <포트> --joint <관절>`로 지금 상태를 보고, `--yes`를 붙여 사용자가 보는 창에서 돌린다. 핀을 빼고 관절을 + 쪽으로 돌림 → 핀을 꽂고 틈을 + 쪽으로 붙임 → 위치 오프셋을 굽는다 (서보는 움직이지 않는다) → 핀을 뺀다. 핀은 미끄러워 손으로는 안 빠지므로 롱노즈로 곧게 당겨 뺀다 (귀를 받침 삼아 젖히지 않는다, [0029](decisions/0029-joint-parts.md)의 첫 관절 조립). 나온 세 줄은 Claude가 로봇 설정에 적고, 이어서 값 적용으로 각도 한계를 굽는다.
-- 시험 순서: `cargo run -p horilab-controller -- run --script <파일> --port <포트>`로 순서를 검사하고, 시뮬레이션(`--sim`)에서 먼저 돌려 본 뒤 `--yes`로 돌린다. 움직이거나 버티는 동안 Enter를 누르면 감속해 선다. 기록은 `records/run/`에 남는다.
+- 영점: `cargo run -p horibot-controller -- zero --port <포트> --joint <관절>`로 지금 상태를 보고, `--yes`를 붙여 사용자가 보는 창에서 돌린다. 핀을 빼고 관절을 + 쪽으로 돌림 → 핀을 꽂고 틈을 + 쪽으로 붙임 → 위치 오프셋을 굽는다 (서보는 움직이지 않는다) → 핀을 뺀다. 핀은 미끄러워 손으로는 안 빠지므로 롱노즈로 곧게 당겨 뺀다 (귀를 받침 삼아 젖히지 않는다, [0029](decisions/0029-joint-parts.md)의 첫 관절 조립). 나온 세 줄은 Claude가 로봇 설정에 적고, 이어서 값 적용으로 각도 한계를 굽는다.
+- 시험 순서: `cargo run -p horibot-controller -- run --script <파일> --port <포트>`로 순서를 검사하고, 시뮬레이션(`--sim`)에서 먼저 돌려 본 뒤 `--yes`로 돌린다. 움직이거나 버티는 동안 Enter를 누르면 감속해 선다. 기록은 `records/run/`에 남는다.
 
 ## 맨 서보 확인
 
@@ -105,15 +105,15 @@
 ### 순서
 
 1. 전원 넣기 (사용자): 첫 연결의 2와 같다. 화면에서 12.0 V를 본 뒤 + 플러그를 꽂는다.
-2. 응답 보기 (Claude): `cargo run -p horilab-controller -- ports`로 포트를 찾고, `cargo run -p horilab-controller -- check --port <포트> --id 20`으로 서보를 한 번 읽는다. 서보는 움직이지 않는다.
-   - 응답하지 않으면 + 플러그, 서보 선, USB를 보고, `uv run python -m horilab_servo scan`으로 같은 서보가 찾아지는지 본다.
+2. 응답 보기 (Claude): `cargo run -p horibot-controller -- ports`로 포트를 찾고, `cargo run -p horibot-controller -- check --port <포트> --id 20`으로 서보를 한 번 읽는다. 서보는 움직이지 않는다.
+   - 응답하지 않으면 + 플러그, 서보 선, USB를 보고, `uv run python -m horibot_servo scan`으로 같은 서보가 찾아지는지 본다.
    - 포트를 열지 못하면(장치가 작동하지 않는다는 오류) 어댑터의 USB를 뺐다 꽂는다 (2026-11-13, 2026-11-22에 이렇게 풀렸다. 클립에서 먼 PC 쪽에서 뽑는다).
 3. 확인 (창): 확인을 받고 같은 명령에 `--yes`를 붙여 창으로 띄운다. 사용자는 창의 말을 따른다:
    - 속도부터 위치 오프셋까지는 서보가 혼자 돈다. 손대지 않고, 혼에 손이나 선이 걸리지 않게만 둔다.
    - 과부하 보호 1, 2: 한 손으로 서보 몸통을 잡고, 다른 손 엄지와 검지로 혼 둘레를 꽉 잡은 뒤 Enter. 서보가 3초 동안 혼을 돌리려 한다 (혼 둘레에서 약 1.5 kgf). "이제 혼을 놓고 Enter"가 나오면 놓고 Enter. 손이 미끄러져 혼이 돌아도 괜찮다. 건너뛰려면 s.
    - 전압 보호: 전압 손잡이의 테이프를 떼고 Enter. 손잡이를 천천히 왼쪽으로 돌려 10.0 V 밑으로 내린다 (9.0 V 밑으로는 내리지 않는다). "전압 비트가 켜졌다"가 나오면 오른쪽으로 돌려 12.0 V로 맞추고 Enter. 건너뛰려면 s.
    - 통신이 끊겨 멈추면 선과 전원을 보고 Enter. 그만두려면 q.
-4. 끊겼을 때 (사용자가 하고 알리면 Claude가 읽는다): 끝나면 서보는 토크가 켜진 채 가운데에 있다. 넷 모두 `cargo run -p horilab-controller -- check-state --port <포트> --id 20 --situation <번호>`이고, 서보는 움직이지 않는다.
+4. 끊겼을 때 (사용자가 하고 알리면 Claude가 읽는다): 끝나면 서보는 토크가 켜진 채 가운데에 있다. 넷 모두 `cargo run -p horibot-controller -- check-state --port <포트> --id 20 --situation <번호>`이고, 서보는 움직이지 않는다.
    1. 그대로 (프로그램을 끈 뒤).
    2. 어댑터의 USB를 뽑았다가 다시 꽂은 뒤. 포트 이름이 바뀌었으면 `ports`로 본다.
    3. + 플러그를 뽑은 채. 서보가 응답하지 않으면 맞다. 응답하면 USB 전기로 서보가 살아 있는 것이다.

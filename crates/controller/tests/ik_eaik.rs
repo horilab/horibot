@@ -1,13 +1,13 @@
 //! 컨트롤러의 IK를 설계의 EAIK와 견준다 (docs/decisions/0033의 만드는 순서 2).
 //!
-//! 설계 패키지의 `python -m horilab_design.ik_cases`가 관절 범위 안의 무작위 자세와 그 EAIK 해를 JSON으로
+//! 설계 패키지의 `python -m horibot_design.ik_cases`가 관절 범위 안의 무작위 자세와 그 EAIK 해를 JSON으로
 //! 낸다 (가상환경의 Python으로 띄운다, `uv sync`가 먼저). 이 시험은 그 기구학 값으로 컨트롤러의 IK를 만들고,
 //! 자세마다 정기구학이 같은지, 해가 모두 자세에 닿는지, 처음 관절 각과 EAIK의 해를 모두 찾는지 본다.
 
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use horilab_controller::kinematics::{Kinematics, Mat3, Pose, Vec3, wrap};
+use horibot_controller::kinematics::{Kinematics, Mat3, Pose, Vec3, wrap};
 use serde_json::Value;
 
 fn vec3(value: &Value) -> Vec3 {
@@ -39,7 +39,7 @@ fn eaik_cases() -> Value {
     let output = Command::new(&python)
         .args([
             "-m",
-            "horilab_design.ik_cases",
+            "horibot_design.ik_cases",
             "--count",
             "300",
             "--seed",

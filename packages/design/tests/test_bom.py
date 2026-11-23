@@ -7,11 +7,11 @@ import datetime as dt
 import pytest
 from pydantic import ValidationError
 
-from horilab_design import bom
+from horibot_design import bom
 
 
 def test_bom_document_matches_the_purchase_data() -> None:
-    # 데이터를 고치고 문서를 다시 만들지 않으면 실패한다: uv run python -m horilab_design.bom
+    # 데이터를 고치고 문서를 다시 만들지 않으면 실패한다: uv run python -m horibot_design.bom
     expected = bom.render(bom.load_purchases())
     assert bom.BOM_FILE.read_text(encoding="utf-8") == expected
 

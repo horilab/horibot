@@ -6,10 +6,10 @@ import math
 
 import pytest
 
-from horilab_design.parts import joint as j
-from horilab_design.parts import links
-from horilab_design.parts import shoulder as s
-from horilab_design.printcheck import (
+from horibot_design.parts import joint as j
+from horibot_design.parts import links
+from horibot_design.parts import shoulder as s
+from horibot_design.printcheck import (
     LAYER,
     air_walls,
     mid_layer_levels,
@@ -17,9 +17,9 @@ from horilab_design.printcheck import (
     printed_mass_g,
     wall_settings,
 )
-from horilab_design.studies import clamp_plate, ur_arm
-from horilab_design.studies.packaging import MM
-from horilab_design.values import load_measured
+from horibot_design.studies import clamp_plate, ur_arm
+from horibot_design.studies.packaging import MM
+from horibot_design.values import load_measured
 
 BED = 256.0  # 출력 범위 [mm]
 # 혼 FT110M과 가운데 나사 (부피로 어림한 값. 출력 혼은 떼어 재지 않았다, data/measured.toml)

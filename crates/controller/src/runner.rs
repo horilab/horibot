@@ -26,7 +26,7 @@
 
 use std::collections::BTreeMap;
 
-use horilab_servo::feetech::ServoBus;
+use horibot_servo::feetech::ServoBus;
 use serde::Deserialize;
 
 use crate::check::Console;
@@ -439,9 +439,9 @@ impl Runner {
 
 #[cfg(test)]
 mod tests {
-    use horilab_servo::feetech::Bus;
-    use horilab_servo::feetech::fake::{FakePort, FakeServo, open_fake_bus};
-    use horilab_servo::feetech::registers as reg;
+    use horibot_servo::feetech::Bus;
+    use horibot_servo::feetech::fake::{FakePort, FakeServo, open_fake_bus};
+    use horibot_servo::feetech::registers as reg;
 
     use super::*;
     use crate::joints::{Caps, Joints, Servo, programmed};

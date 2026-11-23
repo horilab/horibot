@@ -1,6 +1,6 @@
 //! 실행 루프 부하 시험 (docs/decisions/0026-pi-runtime-deploy-records.md의 2, 미리 재기 2).
 //!
-//! 가짜 서보 7개(그리퍼 포함)를 물린 서보 버스로 100 Hz 실행 루프를 흉내 낸다 (`horilab_bench::runloop`).
+//! 가짜 서보 7개(그리퍼 포함)를 물린 서보 버스로 100 Hz 실행 루프를 흉내 낸다 (`horibot_bench::runloop`).
 //! 박자 기록은 메모리 줄에 넣기만 하고, 낮은 우선순위 스레드가 모아 1초마다 samples.csv에 쓴다. 줄이 차면
 //! 실행 루프는 기다리지 않고 기록을 버리며 버린 수를 센다 (0026의 5). 끝나면 meta.json에 요약과 통과
 //! 여부를 쓰고, 도수분포를 histogram.csv에 쓴다. meta.json에 끝 표시(`end`)가 없으면 중간에 끊긴 기록이다.
@@ -20,8 +20,8 @@ use std::thread;
 use std::time::Duration;
 
 use chrono::{Local, SecondsFormat};
-use horilab_bench::rt;
-use horilab_bench::runloop::{
+use horibot_bench::rt;
+use horibot_bench::runloop::{
     ARM_SERVOS, Beat, BusModel, DEFAULT_BUS_US, LoopSettings, LoopThread, PREFAULT_STACK, Second,
     Totals, WAKE_LIMIT_US, Worst, parse_duration, run_loop,
 };
@@ -509,7 +509,7 @@ fn load1() -> Option<String> {
 }
 
 fn system_info(host: &str) -> Value {
-    let uncommitted = match env!("HORILAB_UNCOMMITTED") {
+    let uncommitted = match env!("HORIBOT_UNCOMMITTED") {
         "true" => json!(true),
         "false" => json!(false),
         _ => Value::Null,
@@ -527,7 +527,7 @@ fn system_info(host: &str) -> Value {
             std::env::consts::OS,
             if cfg!(target_env = "musl") { "musl 정적" } else { "동적" }
         ),
-        "commit": env!("HORILAB_COMMIT"),
+        "commit": env!("HORIBOT_COMMIT"),
         "uncommitted_changes": uncommitted,
         "user": std::env::var("SUDO_USER").or_else(|_| std::env::var("USER")).ok(),
     })

@@ -25,7 +25,7 @@
 
 use std::collections::VecDeque;
 
-use horilab_servo::feetech::ServoBus;
+use horibot_servo::feetech::ServoBus;
 use rsruckig::prelude::*;
 
 use crate::joints::{Joints, MAX_FAILURES, Snapshot};
@@ -1269,9 +1269,9 @@ fn sample(trajectory: &Trajectory, time: f64, cursor: &mut usize) -> (Vec<f64>, 
 
 #[cfg(test)]
 mod tests {
-    use horilab_servo::feetech::Bus;
-    use horilab_servo::feetech::fake::{FakePort, FakeServo, open_fake_bus};
-    use horilab_servo::feetech::registers as reg;
+    use horibot_servo::feetech::Bus;
+    use horibot_servo::feetech::fake::{FakePort, FakeServo, open_fake_bus};
+    use horibot_servo::feetech::registers as reg;
 
     use super::*;
     use crate::joints::{BENCH_CAPS, Caps, Servo, programmed};

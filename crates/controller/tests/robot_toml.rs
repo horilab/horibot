@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use horilab_controller::settings::Settings;
+use horibot_controller::settings::Settings;
 
 #[test]
 fn repo_settings_load() {

@@ -205,14 +205,14 @@ J6의 출력 원판이 곧 플랜지다 (2026-11-13, `parts/flange.py`). 도구�
 
 숫자는 아래 명령으로 다시 만든다.
 
-- `uv run python -m horilab_design.parts.wrist` (첫 관절: 겹침, 틈, 무게, 걸침, 층 가운데에 걸친 수평면, 옆 홈에 너트가 들어가는 길)
-- `uv run python -m horilab_design.parts.shoulder` (어깨: 겹침, 틈, 무게, 걸침)
-- `uv run python -m horilab_design.parts.base` (J1: 겹침, 틈, 무게, 걸침, 나사가 물린 길이)
-- `uv run python -m horilab_design.parts.flange` (J6 플랜지: 겹침, 틈, 핀이 맞는지)
-- `uv run python -m horilab_design.parts.camera_mount` (D405 받침: 겹침, J6를 돌릴 때의 틈, 나사, 판이 휘는 양)
-- `uv run python -m horilab_design.parts.links` (링크: 크기, 무게, 걸침)
-- `uv run python -m horilab_design.studies.clamp_plate` (허브 판의 테가 누르는 힘과 휨 응력)
-- `uv run python -m horilab_design.studies.ur_arm` (쌓임과 무게, 세운 자세에서 관절마다 도는 범위), `... compare` (UR3e와 같은 자세 시험), `... zone` (주 작업 영역), `... lengths` (링크 길이 후보), `... view` (D405 화면), `... calib` (손목 카메라의 캘리브레이션 자세)
+- `uv run python -m horibot_design.parts.wrist` (첫 관절: 겹침, 틈, 무게, 걸침, 층 가운데에 걸친 수평면, 옆 홈에 너트가 들어가는 길)
+- `uv run python -m horibot_design.parts.shoulder` (어깨: 겹침, 틈, 무게, 걸침)
+- `uv run python -m horibot_design.parts.base` (J1: 겹침, 틈, 무게, 걸침, 나사가 물린 길이)
+- `uv run python -m horibot_design.parts.flange` (J6 플랜지: 겹침, 틈, 핀이 맞는지)
+- `uv run python -m horibot_design.parts.camera_mount` (D405 받침: 겹침, J6를 돌릴 때의 틈, 나사, 판이 휘는 양)
+- `uv run python -m horibot_design.parts.links` (링크: 크기, 무게, 걸침)
+- `uv run python -m horibot_design.studies.clamp_plate` (허브 판의 테가 누르는 힘과 휨 응력)
+- `uv run python -m horibot_design.studies.ur_arm` (쌓임과 무게, 세운 자세에서 관절마다 도는 범위), `... compare` (UR3e와 같은 자세 시험), `... zone` (주 작업 영역), `... lengths` (링크 길이 후보), `... view` (D405 화면), `... calib` (손목 카메라의 캘리브레이션 자세)
 
 - **조립 검사**: 첫 관절은 STS3215와 STS3250 모두 부품끼리 겹치지 않는다. 도는 부품과 서 있는 부품 사이는 출력 원판의 테두리와 원통 앞 끝 0.8 mm, 허브 판과 누름 틀 1.3 mm, 기둥과 원통 벽 1.15 mm(홈 속 0.75 mm)이고, 163°에서 기둥이 살에 닿는다. 영점 핀은 두 구멍에 0.15~0.17 mm 틈으로 든다. 누름 틀과 서보 받침의 너트 다섯은 옆 입구 밖 14 mm에서 자리까지 곧게 밀 때 부품과 겹치지 않는다 (맞변 5.5, 두께 2.4 mm 너트).
 - **서보 고정**: 벽 나사 둘이 마찰로 버티는 토크는 약 7 N·m다 (나사마다 500 N, 마찰 계수 0.35, 반지름 21 mm로 어림). STS3250이 끝까지 미는 토크는 4.9 N·m다. 그보다 큰 힘으로 미끄러져도 나사가 구멍 벽에 닿아 약 0.5° 안에서 멈춘다. 그런 일이 있으면 영점 핀으로 다시 확인한다.
@@ -275,4 +275,4 @@ J6의 출력 원판이 곧 플랜지다 (2026-11-13, `parts/flange.py`). 도구�
 - 나사: 관절 하나에 M3 × 8 다섯, M3 × 10 다섯(자식 몸통 넷, 멈춤 기둥 하나), M3 × 20 넷, M3 × 12 둘, 너트 열, 서보 뒷면 나사 넷(STS3250은 M2 × 5 둥근머리, STS3215는 옛 SO-101의 자가탭 나사)이다. J1은 M3 × 45 넷(가진 유두 렌치볼트)과 평와셔 여덟(조임 볼트 넷, 판 나사 넷), M3 × 12 넷(J1 몸통), M3 × 8 아홉(혼 나사 넷, 벽 나사 다섯), M3 × 10 다섯(멈춤 기둥 하나, 판 나사 넷), 너트 열여덟, 서보 뒷면 나사 넷이다. 모자라는 것은 팔 전체를 그린 뒤 세어 [부품표](../bom.md)에 넣는다.
 - 배선은 [0031](0031-wiring.md)에서 정했다. 남은 것: 선 누르개(J1).
 - 옛 관절 시험 부품의 코드(`parts/elbow.py`, `parts/joint_test.py`)는 무게 어림식을 맞춘 근거라서, 새 부품을 뽑아 잴 때까지 둔다.
-- 3D 페이지(첫 관절, 어깨, J1, 손목 끝, 팔 전체)는 `uv run python -m horilab_design.pages.joint_page`와 `... pages.arm_page`가 `build/pages/`에 만든다.
+- 3D 페이지(첫 관절, 어깨, J1, 손목 끝, 팔 전체)는 `uv run python -m horibot_design.pages.joint_page`와 `... pages.arm_page`가 `build/pages/`에 만든다.

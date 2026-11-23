@@ -13,11 +13,11 @@ from pathlib import Path
 import pytest
 from serial.tools.list_ports_common import ListPortInfo
 
-from horilab_servo import first_connection as fc
-from horilab_servo.__main__ import main
-from horilab_servo.feetech import registers as reg
-from horilab_servo.feetech.bus import Bus, Refused
-from horilab_servo.feetech.fake import FakeServo, open_fake_bus
+from horibot_servo import first_connection as fc
+from horibot_servo.__main__ import main
+from horibot_servo.feetech import registers as reg
+from horibot_servo.feetech.bus import Bus, Refused
+from horibot_servo.feetech.fake import FakeServo, open_fake_bus
 
 STS3215, STS3250 = 777, 2825
 

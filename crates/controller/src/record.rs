@@ -6,7 +6,7 @@ use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Local, SecondsFormat};
-use horilab_servo::feetech::registers as reg;
+use horibot_servo::feetech::registers as reg;
 use serde_json::{Map, Value, json};
 
 use crate::prepare::{model_name, value_in};
@@ -61,7 +61,7 @@ pub fn time_text(time: &DateTime<Local>) -> String {
 
 /// 어디서 어떤 코드로 돌렸나. 기록만 보고 다른 PC에서 분석할 수 있게 남긴다 (0022).
 pub fn run_info(port: &str, baud: u32) -> Value {
-    let uncommitted = match env!("HORILAB_UNCOMMITTED") {
+    let uncommitted = match env!("HORIBOT_UNCOMMITTED") {
         "true" => json!(true),
         "false" => json!(false),
         _ => Value::Null,
@@ -69,8 +69,8 @@ pub fn run_info(port: &str, baud: u32) -> Value {
     json!({
         "host": hostname(),
         "system": format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH),
-        "program": format!("horilab-controller {}", env!("CARGO_PKG_VERSION")),
-        "commit": env!("HORILAB_COMMIT"),
+        "program": format!("horibot-controller {}", env!("CARGO_PKG_VERSION")),
+        "commit": env!("HORIBOT_COMMIT"),
         "uncommitted_changes": uncommitted,
         "port": port,
         "baud": baud,
@@ -162,7 +162,7 @@ pub fn write_json(path: &Path, value: &Value) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use horilab_servo::feetech::fake::FakeServo;
+    use horibot_servo::feetech::fake::FakeServo;
 
     use super::*;
 
@@ -180,7 +180,7 @@ mod tests {
 
     #[test]
     fn record_dirs_do_not_collide() {
-        let root = std::env::temp_dir().join(format!("horilab-record-test-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("horibot-record-test-{}", std::process::id()));
         let started = Local::now();
         let first = new_record_dir(&root, "servo", "apply", &started).unwrap();
         let second = new_record_dir(&root, "servo", "apply", &started).unwrap();
@@ -200,7 +200,7 @@ mod tests {
 
     #[test]
     fn log_writes_csv_lines_as_it_goes() {
-        let root = std::env::temp_dir().join(format!("horilab-log-test-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("horibot-log-test-{}", std::process::id()));
         fs::create_dir_all(&root).unwrap();
         let mut log = Log::create(&root, &["present_position", "status"]).unwrap();
         log.sample(0.0204, "boundary", &[3900, 0]).unwrap();
