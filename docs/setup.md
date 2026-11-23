@@ -38,14 +38,17 @@ code --install-extension bernhard-42.ocp-cad-viewer@4.2.0
 ## 3. 레포 받기
 
 ```powershell
-git clone https://github.com/zzingobomi/horilab.git
-cd horilab
+mkdir <작업 폴더>\horilab
+cd <작업 폴더>\horilab
+git clone https://github.com/horilab/horibot.git
+cd horibot
 git log -1 --format="%an <%ae>"
 git config user.name "<위에서 본 이름>"
 git config user.email "<위에서 본 이메일>"
 uv sync
 ```
 
+- 작업 폴더 아래 `horilab/`에 레포 이름대로 받는다. 응용 레포도 그 옆에 받는다 ([0040](decisions/0040-github-organization.md)).
 - 커밋 작성자는 기존 커밋과 같게, 이 레포에만 설정한다 (`--global` 아님).
 - `uv sync`가 Python 3.12와 모든 패키지를 `.venv`에 맞춘다. VS Code는 이 `.venv`를 인터프리터로 쓴다 (`.vscode/settings.json`).
 

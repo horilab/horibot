@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-horilab: 3D 프린터로 출력한 부품과 Feetech 서보로 만드는 6축 로봇팔 호리봇(horibot). 이전 프로젝트도 레포 이름이 horibot이어서, 그쪽은 문서에서도 말할 때도 늘 "이전 프로젝트"라고 부른다. 문서는 모두 한국어로 쓴다.
+horibot: GitHub 조직 horilab의 로봇 레포. 3D 프린터로 출력한 부품과 Feetech 서보로 만드는 6축 로봇팔 호리봇(horibot)을 만든다 (조직과 레포는 [0040](docs/decisions/0040-github-organization.md)). 이전 프로젝트도 레포 이름이 horibot(zzingobomi/horibot)이어서, 그쪽은 문서에서도 말할 때도 늘 "이전 프로젝트"라고 부른다. 문서는 모두 한국어로 쓴다.
 
 ## 세션을 시작하면
 

@@ -33,7 +33,7 @@
 Python은 B로 하고, 맨 위는 언어 도구별로 나눈다. 이름은 하는 일을 따른다.
 
 ```
-horilab/
+horibot/
 ├── README.md, CLAUDE.md, .gitignore
 ├── Cargo.toml, rust-toolchain.toml   Rust 워크스페이스 (로봇 쪽 프로그램)
 ├── crates/

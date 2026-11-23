@@ -1,6 +1,6 @@
-# horilab
+# horibot
 
-3D 프린터로 출력한 부품과 Feetech 서보로 만드는 6축 로봇팔 호리봇(horibot).
+3D 프린터로 출력한 부품과 Feetech 서보로 만드는 6축 로봇팔 호리봇(horibot). GitHub 조직 horilab의 로봇 레포다 ([0040](docs/decisions/0040-github-organization.md)).
 
 지금 단계와 다음 할 일은 [진행 상황](docs/status.md)에 있다.
 

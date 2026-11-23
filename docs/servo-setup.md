@@ -51,7 +51,7 @@
 
 같은 서보 줄과 어댑터를 hori3에 USB로 옮겨 꽂고 통신 시간을 잰다. 전원은 위와 같은 순서로 넣는다.
 
-- 처음 한 번: uv를 깔고(`curl -LsSf https://astral.sh/uv/install.sh | sh`) 레포를 받는다(`git clone https://github.com/zzingobomi/horilab.git`). uv가 맞는 Python을 알아서 받는다.
+- 처음 한 번: uv를 깔고(`curl -LsSf https://astral.sh/uv/install.sh | sh`) 레포를 받는다(`git clone https://github.com/horilab/horibot.git`). uv가 맞는 Python을 알아서 받는다.
 - 레포 폴더에서 `uv run --package horilab-servo python -m horilab_servo timing --yes`. 꽂힌 서보를 다 찾아서 잰다. 이 패키지의 의존성(공식 SDK, pyserial)만 깐다.
 - 포트를 열지 못하면(권한) 사용자를 dialout 그룹에 넣고(`sudo usermod -aG dialout $USER`) 다시 로그인한다.
 - 기록은 hori3의 레포 폴더 `records/servo/` 아래에 생긴다. PC의 같은 자리로 가져와(scp) 올린다. 파이가 직접 올리는 것은 컨트롤러를 파이에 배포할 때 만든다 ([0026](decisions/0026-pi-runtime-deploy-records.md)).
