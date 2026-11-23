@@ -1,0 +1,30 @@
+{
+ "name": "arm-black-1-r1",
+ "made": "2026-11-23T14:03:09",
+ "studio": "02.09.01.70",
+ "profiles": "02.09.00.81",
+ "bed_type": "Textured PEI Plate",
+ "plates": [
+  {
+   "file": "01-black-13f0b0.3mf",
+   "image": "01-black-13f0b0.png",
+   "color": "black",
+   "preset": "0.20mm Strength @BBL X1C",
+   "minutes": 14,
+   "grams": 2.8,
+   "parts": [
+    {
+     "file": "shoulder_hub_plate.stl",
+     "label": "어깨 허브 판",
+     "module": "shoulder",
+     "count": 1,
+     "sha": "dd540f14104a",
+     "height_mm": 2.8,
+     "base_mm2": 1204,
+     "overhang_mm2": 0,
+     "slender": false
+    }
+   ]
+  }
+ ]
+}

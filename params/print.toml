@@ -12,7 +12,10 @@ machine = "Bambu Lab P1S 0.4 nozzle"
 filament = "Bambu PLA Basic @BBL P1S 0.4 nozzle"
 bed_type = "Textured PEI Plate" # 프린터에 딸려 온 판 (P1S 구성품)
 max_height_mm = 250.0           # 출력 범위 256 mm에서 여유
-overnight_hours = 4.0           # 이보다 긴 판은 밤에 돌리게 표시한다
+# 첫 층의 선과 퍼지 선(시작 G-code가 판 앞 끝 y 1.0, 1.5에 긋는 선) 사이의 가장 짧은 거리, 선의 가운데끼리 [mm].
+# 선 폭(퍼지 선 약 0.8, 첫 층 약 0.5)을 빼면 1.3 mm쯤 뜬다. 2026-11-23 검정 판 1의 어깨 허브 판은 0.13이었고 그 위에
+# 뽑혀 못 썼다. 책상에 무는 판은 2.55다
+purge_clearance_mm = 2.0
 
 [process]
 strength = "0.20mm Strength @BBL X1C" # 구조 부품

@@ -547,8 +547,6 @@ def _plate_step(plate: Plate, bed: str, scene_of: dict[str, int]) -> dict[str, A
     minutes = int(d["minutes"])
     folder = f"build/print/{plate.bundle}/"
     warn = ["슬라이스 뒤에 경고가 뜨면 보내지 않고 알립니다."]
-    if d.get("overnight"):
-        warn.append(f"{_hm(minutes)} 걸립니다. 밤에 돌리기 좋습니다.")
     warn += [
         f"{p['label']}은 높이에 비해 바닥이 좁아 넘어질 수 있습니다 (참고값)."
         for p in d["parts"]

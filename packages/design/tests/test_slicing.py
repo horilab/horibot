@@ -205,6 +205,60 @@ def test_bed_type_and_gcode_temperature() -> None:
     assert len(sl.bed_problems(CFG, _sliced(good, ""))) == 2
 
 
+# P1S 시작 G-code의 퍼지 선 (실제 판 파일에서 옮긴 줄, 속도는 뺐다)
+PURGE = """G90
+G1 X18.0 Y1.0 Z0.8 F18000
+G1 Z0.2
+G0 E2 F300
+G0 X240 E15
+G0 Y11 E0.700
+G0 X239.5
+G0 E0.2
+G0 Y1.5 E0.700
+G0 X18 E15
+"""
+AREA = {"printable_area": ["0x0", "256x0", "256x256", "0x256"]}
+
+
+def _first_layer(*moves: str) -> str:
+    return PURGE + "; CHANGE_LAYER\n" + "\n".join(moves) + "\n; CHANGE_LAYER\nG1 X0 Y0 E5\n"
+
+
+def test_first_layer_paths_split_purge_from_the_first_layer() -> None:
+    purge, first = sl.first_layer_paths(_first_layer("G1 X50 Y50", "G1 X60 Y50 E1"))
+    assert purge[0] == ((18.0, 1.0), (18.0, 1.0))  # 시작점의 덩어리
+    assert ((18.0, 1.0), (240.0, 1.0)) in purge and ((239.5, 1.5), (18.0, 1.5)) in purge
+    assert first == [((50.0, 50.0), (60.0, 50.0))]  # 두 번째 층은 보지 않는다
+
+
+def test_first_layer_must_keep_clear_of_the_purge_line() -> None:
+    far = _sliced(AREA, _first_layer("G1 X50 Y5", "G1 X100 Y5 E1"))
+    assert sl.first_layer_problems(CFG, far) == []  # 퍼지 선에서 3.5 mm
+    near = _sliced(AREA, _first_layer("G1 X50 Y3", "G1 X100 Y3 E1"))
+    assert any("퍼지 선에서 1.50 mm" in p for p in sl.first_layer_problems(CFG, near))
+    # 2026-11-23 어깨 허브 판처럼 판 앞 끝을 넘으면 퍼지 선과 겹치고 출력 영역 밖이다
+    over = _sliced(AREA, _first_layer("G1 X120 Y3", "G1 X120 Y-0.6 E1"))
+    problems = sl.first_layer_problems(CFG, over)
+    assert any("퍼지 선에서 0.00 mm" in p for p in problems)
+    assert any("출력 영역" in p for p in problems)
+
+
+def test_first_layer_arcs_are_followed_not_cut_short() -> None:
+    # 끝점끼리 이은 줄은 y 7에 있지만, 반시계 방향(G3) 반원은 y 2까지 내려와 퍼지 선(y 1.5)에 0.5 mm로 다가간다
+    arc = _sliced(AREA, _first_layer("G1 X50 Y7", "G3 X60 Y7 I5 J0 E1"))
+    assert any("퍼지 선에서 0.50 mm" in p for p in sl.first_layer_problems(CFG, arc))
+    # 시계 방향(G2) 반원은 위로 볼록해서 떨어져 있다
+    away = _sliced(AREA, _first_layer("G1 X50 Y7", "G2 X60 Y7 I5 J0 E1"))
+    assert sl.first_layer_problems(CFG, away) == []
+
+
+def test_first_layer_check_needs_the_purge_line_and_the_area() -> None:
+    no_purge = _sliced(AREA, "; CHANGE_LAYER\nG1 X50 Y50\nG1 X60 Y50 E1\n")
+    assert any("퍼지 선" in p for p in sl.first_layer_problems(CFG, no_purge))
+    no_area = _sliced({}, _first_layer("G1 X50 Y50", "G1 X60 Y50 E1"))
+    assert any("printable_area" in p for p in sl.first_layer_problems(CFG, no_area))
+
+
 def test_orientation_allows_only_turns_about_z() -> None:
     c, s = math.cos(0.7), math.sin(0.7)
     identity = (1, 0, 0, 0, 1, 0, 0, 0, 1, 10, 20, 0)

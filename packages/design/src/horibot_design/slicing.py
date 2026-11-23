@@ -12,8 +12,8 @@ plan:
   1. 스튜디오 앱 판, 프리셋 묶음 판, 펼친 프리셋 내용의 지문을 값 파일과 견준다. 다르면 자르지 않는다.
   2. 부품을 프리셋과 색으로 묶고, 묶음마다 한 번 자동 배치해 판 나눔을 알아낸 뒤 판마다 다시 자른다.
   3. 판마다 3MF를 검사한다: 핵심 설정, 판 종류와 G-code의 바닥 온도, 설정 전체의 지문, 서포트, 판 밖,
-     들어간 부품과 개수, 부품이 눕지 않았는지(Z축으로만 돌렸는지), 스튜디오의 실패와 경고(result.json, 무해하다고
-     적은 줄 말고는 막는다).
+     들어간 부품과 개수, 부품이 눕지 않았는지(Z축으로만 돌렸는지), G-code 첫 층이 퍼지 선에서 떨어져 있고 출력
+     영역 안인지, 스튜디오의 실패와 경고(result.json, 무해하다고 적은 줄 말고는 막는다).
   4. 모든 판이 통과해야 build/print/<이름>/에 판마다 3MF를, 레포의 data/prints/<이름>/에 판 계획(plan.json)과
      판 그림을 낸다 (작업 안내의 출력 안내가 읽는다, 0036). 하나라도 걸리면 3MF 폴더를 지우고(옛 파일을 뽑지 않게)
      아무것도 내지 않는다.
@@ -90,7 +90,7 @@ class PrintConfig:
     filament: str
     bed_type: str
     max_height_mm: float
-    overnight_hours: float
+    purge_clearance_mm: float
     process: dict[str, str]
     colors: dict[str, str]
     presets_sha: dict[str, str]
@@ -119,7 +119,7 @@ def load_config(path: Path = PRINT_FILE) -> PrintConfig:
         filament=str(d["printer"]["filament"]),
         bed_type=str(d["printer"]["bed_type"]),
         max_height_mm=float(d["printer"]["max_height_mm"]),
-        overnight_hours=float(d["printer"]["overnight_hours"]),
+        purge_clearance_mm=float(d["printer"]["purge_clearance_mm"]),
         process={str(k): str(v) for k, v in d["process"].items()},
         colors={str(k): str(v) for k, v in d["colors"].items()},
         presets_sha={str(k): str(v) for k, v in d["presets_sha"].items()},
@@ -460,6 +460,158 @@ def bed_problems(cfg: PrintConfig, sliced: Sliced) -> list[str]:
     return out
 
 
+# 첫 층 전에 이 높이 아래에서 뽑는 줄을 퍼지 선으로 본다 (시작 G-code의 nozzle load line은 Z 0.2에서 긋는다)
+PURGE_MAX_Z = 0.6
+ARC_STEP_DEG = 10.0  # 첫 층의 원호(G2, G3)를 이 각도마다 점으로 나눠 본다
+GCODE_WORD = re.compile(r"([XYZEIJ])(-?\d*\.?\d+)")
+
+Point2 = tuple[float, float]
+Segment = tuple[Point2, Point2]
+
+
+def _arc_points(start: Point2, end: Point2, i: float, j: float, clockwise: bool) -> list[Point2]:
+    """원호를 따라가는 점들 (시작점은 빼고 끝점은 넣는다). 시작과 끝이 같으면 한 바퀴다."""
+    cx, cy = start[0] + i, start[1] + j
+    r = math.hypot(i, j)
+    a0 = math.atan2(start[1] - cy, start[0] - cx)
+    sweep = math.atan2(end[1] - cy, end[0] - cx) - a0
+    if clockwise and sweep >= 0:
+        sweep -= 2 * math.pi
+    elif not clockwise and sweep <= 0:
+        sweep += 2 * math.pi
+    n = max(1, math.ceil(abs(math.degrees(sweep)) / ARC_STEP_DEG))
+    mid = [
+        (cx + r * math.cos(a0 + sweep * k / n), cy + r * math.sin(a0 + sweep * k / n))
+        for k in range(1, n)
+    ]
+    return [*mid, end]
+
+
+def first_layer_paths(gcode: str) -> tuple[list[Segment], list[Segment]]:
+    """(퍼지 선, 첫 층): 첫 층 전에 낮게 뽑는 줄과 첫 층에서 뽑는 줄 [mm, G-code의 판 좌표].
+
+    제자리에서 뽑는 것(퍼지 선 시작점의 덩어리)은 길이 0인 선으로 넣는다. 원호는 점으로 나눈다.
+    """
+    x = y = z = 0.0
+    absolute = True
+    layer = 0
+    purge: list[Segment] = []
+    first: list[Segment] = []
+    for raw in gcode.splitlines():
+        if raw.startswith(LAYER_MARK):
+            layer += 1
+            if layer > 1:
+                break
+            continue
+        code = raw.split(";", 1)[0].strip()
+        if not code:
+            continue
+        head = code.split(maxsplit=1)[0]
+        if head in ("G90", "G91"):
+            absolute = head == "G90"
+            continue
+        if head not in ("G0", "G1", "G2", "G3"):
+            continue
+        w = {k: float(v) for k, v in GCODE_WORD.findall(code)}
+        nx = (w["X"] if absolute else x + w["X"]) if "X" in w else x
+        ny = (w["Y"] if absolute else y + w["Y"]) if "Y" in w else y
+        nz = (w["Z"] if absolute else z + w["Z"]) if "Z" in w else z
+        if w.get("E", 0.0) > 0:
+            target = purge if layer == 0 and nz <= PURGE_MAX_Z else first if layer == 1 else None
+            if target is not None:
+                if head in ("G2", "G3") and ("I" in w or "J" in w):
+                    points = _arc_points(
+                        (x, y), (nx, ny), w.get("I", 0.0), w.get("J", 0.0), head == "G2"
+                    )
+                else:
+                    points = [(nx, ny)]
+                prev = (x, y)
+                for p in points:
+                    target.append((prev, p))
+                    prev = p
+        x, y, z = nx, ny, nz
+    return purge, first
+
+
+def _point_segment(p: Point2, s: Segment) -> float:
+    (ax, ay), (bx, by) = s
+    vx, vy = bx - ax, by - ay
+    length = vx * vx + vy * vy
+    t = 0.0 if length == 0 else max(0.0, min(1.0, ((p[0] - ax) * vx + (p[1] - ay) * vy) / length))
+    return math.hypot(p[0] - (ax + t * vx), p[1] - (ay + t * vy))
+
+
+def segment_distance(s: Segment, t: Segment) -> float:
+    """두 선분 사이의 가장 짧은 거리 [mm]. 엇갈리면 0이다."""
+
+    def side(o: Point2, p: Point2, q: Point2) -> float:
+        return (p[0] - o[0]) * (q[1] - o[1]) - (p[1] - o[1]) * (q[0] - o[0])
+
+    a, b = s
+    c, d = t
+    if side(c, d, a) * side(c, d, b) < 0 and side(a, b, c) * side(a, b, d) < 0:
+        return 0.0
+    return min(
+        _point_segment(a, t), _point_segment(b, t), _point_segment(c, s), _point_segment(d, s)
+    )
+
+
+def _area_box(value: object) -> tuple[float, float, float, float] | None:
+    """출력 영역(printable_area, "XxY" 점 목록)을 감싸는 상자 (P1S는 0 ~ 256 네모다)."""
+    if not isinstance(value, list) or not value:
+        return None
+    try:
+        pts = [tuple(float(v) for v in str(p).split("x")) for p in value]  # pyright: ignore[reportUnknownVariableType, reportUnknownArgumentType]
+    except ValueError:
+        return None
+    xs = [p[0] for p in pts]
+    ys = [p[1] for p in pts]
+    return min(xs), min(ys), max(xs), max(ys)
+
+
+def first_layer_problems(cfg: PrintConfig, sliced: Sliced) -> list[str]:
+    """첫 층이 퍼지 선에서 떨어져 있고 출력 영역 안인지, 잘린 G-code로 본다.
+
+    스튜디오의 자동 배치는 퍼지 선을 피하지 않고 판 끝에서 1 mm쯤만 띄운다. 게다가 P1S 프리셋의 노즐 위치
+    보정(extruder_offset 0x2) 때문에 G-code는 모델 자리보다 2 mm 앞(y가 작은 쪽)에 놓인다. 그래서 2026-11-23 검정
+    판 1의 어깨 허브 판이 판 앞 끝을 넘어 퍼지 선 위에 뽑혔다 (0035).
+    """
+    if not sliced.gcode:
+        return []  # G-code가 없는 것은 check_plate가 따로 막는다
+    purge, first = first_layer_paths(sliced.gcode)
+    out: list[str] = []
+    if not purge:
+        out.append("G-code에서 퍼지 선(첫 층 전에 낮게 뽑는 줄)을 찾지 못했다")
+    if not first:
+        return [*out, "G-code에서 첫 층을 찾지 못했다"]
+    if purge:
+        gap, near = min((segment_distance(f, p), f) for f in first for p in purge)
+        if gap < cfg.purge_clearance_mm:
+            (x0, y0), _ = near
+            out.append(
+                f"첫 층이 퍼지 선에서 {gap:.2f} mm다 (선 가운데끼리, {cfg.purge_clearance_mm} mm 넘어야 한다. "
+                f"x {x0:.1f}, y {y0:.1f} 근처)"
+            )
+    box = _area_box(sliced.settings.get("printable_area"))
+    if box is None:
+        out.append("설정에서 출력 영역(printable_area)을 읽지 못했다")
+    else:
+        x_min, y_min, x_max, y_max = box
+        outside = [
+            p
+            for seg in first
+            for p in seg
+            if not (x_min <= p[0] <= x_max and y_min <= p[1] <= y_max)
+        ]
+        if outside:
+            ox, oy = outside[0]
+            out.append(
+                f"첫 층이 출력 영역({x_min:g} ~ {x_max:g}, {y_min:g} ~ {y_max:g}) 밖으로 나간다 "
+                f"({len(outside)}점, 처음 x {ox:.1f}, y {oy:.1f})"
+            )
+    return out
+
+
 def orientation_problems(transforms: Sequence[Sequence[float]]) -> list[str]:
     """부품을 Z축으로만 돌렸는지 (출력 방향이 그대로인지). 3MF 변환은 3 × 4 행렬을 행으로 늘어놓은 것이다."""
     for t in transforms:
@@ -677,6 +829,7 @@ def check_plate(cfg: PrintConfig, plate: Plate, sliced: Sliced) -> list[str]:
             out.append(f"판에 든 부품 {dict(got)}이 계획 {plate.items}과 다르다")
     out += setting_problems(sliced.settings, cfg.keys_for(plate.preset))
     out += bed_problems(cfg, sliced)
+    out += first_layer_problems(cfg, sliced)
     out += fingerprint_problems(cfg, plate.preset, sliced.settings)
     out += orientation_problems(sliced.transforms)
     if not sliced.gcode:
@@ -809,7 +962,6 @@ def publish(plan: Plan, out: Path = OUT_DIR, plans: Path = PLANS_DIR) -> Path:
                 "preset": cfg.process[plate.preset],
                 "minutes": round(plate.seconds / 60),
                 "grams": round(plate.grams, 1),
-                "overnight": plate.seconds > cfg.overnight_hours * 3600,
                 "parts": [
                     {
                         "file": f"{n}.stl",
@@ -858,11 +1010,10 @@ def describe(plan: Plan, cfg: PrintConfig) -> str:
     labels = {i.name: i.label for i in plan.items}
     modules = {i.name: i.module for i in plan.items}
     for k, plate in enumerate(plan.plates, start=1):
-        night = "  (밤에)" if plate.seconds > cfg.overnight_hours * 3600 else ""
         state = "통과" if not plate.problems else "막힘"
         lines.append(
             f"\n판 {k} [{state}] {COLOR_KO.get(plate.color, plate.color)} · {cfg.process[plate.preset]} · "
-            f"{_hm(plate.seconds)} · {plate.grams:.1f} g · 부품 {sum(plate.items.values())}개{night}"
+            f"{_hm(plate.seconds)} · {plate.grams:.1f} g · 부품 {sum(plate.items.values())}개"
         )
         for n, c in plate.items.items():
             g = plan.geometry[n]
