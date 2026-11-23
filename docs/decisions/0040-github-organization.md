@@ -55,7 +55,7 @@ GitHub 조직 `horilab` 아래에 레포 셋을 둔다. 모두 공개다.
 실물이 있는 PC에서 먼저 한다 (사용자 결정). 실물이 없는 PC는 그 뒤에 2와 4를 한다.
 
 1. GitHub (2026-11-23에 했다): `zzingobomi/horilab`을 조직 `horilab`으로 옮기면서 이름을 `horibot`으로 바꿨다 (`gh api -X POST repos/zzingobomi/horilab/transfer -f new_owner=horilab -f new_name=horibot`). 이름부터 바꾸면 이전 프로젝트 `zzingobomi/horibot`과 이름이 겹쳐 막힌다.
-2. PC마다 (실물이 있는 PC는 2026-11-23에 했다): Claude Code와 편집기, 레포의 파일을 연 프로그램(뱀부랩 스튜디오 등)을 닫고, 레포 밖에서(탐색기 또는 다른 셸) 한다.
+2. PC마다 (실물이 있는 PC와 없는 PC 모두 2026-11-23에 했다): Claude Code와 편집기, 레포의 파일을 연 프로그램(뱀부랩 스튜디오 등)을 닫고, 레포 밖에서(탐색기 또는 다른 셸) 한다.
    - 받아 둔 폴더를 `<작업 폴더>/horilab/horibot`으로 옮긴다. 예: `D:\Study\horilab`이면 잠깐 다른 이름(`horilab-moving`)으로 바꾸고, 새 `D:\Study\horilab` 폴더를 만들어 그 안에 `horibot`이라는 이름으로 옮긴다. 작업 폴더에 이전 프로젝트를 받은 `horibot` 폴더가 있으면 바로 `horibot`으로 바꿀 수 없어서 다른 이름을 거친다. git에서 뺀 폴더(`records/`, `videos/`, `tools/local/`, `docs-local/` 등)가 같이 옮겨진다.
    - 원격 주소를 바꾼다: `git remote set-url origin https://github.com/horilab/horibot.git`
    - `.venv`를 지우고 `uv sync`로 다시 만든다 (편집 설치가 옛 경로와 옛 패키지 이름을 가리킨다). Rust의 `target/`은 `cargo clean`으로 지운다 (옛 크레이트 이름으로 만든 빌드 파일이 남는다).
