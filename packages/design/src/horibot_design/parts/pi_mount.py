@@ -101,9 +101,8 @@ AD_ITEMS = {
 # 누르개에서 내려온 J3 줄(누르개가 몸통 뒤 왼쪽이다), 가운데 단자(2)에는 몸통 뒤 아래의 선 구멍에서 나온 J1 줄
 assert _M.servo_plug is not None and _M.desk is not None
 AD_PLUG_W = _M.servo_plug.width_mm  # 꽂은 플러그의 폭 (단자가 늘어선 쪽, 잰 값 9.01)
-# 플러그 뒤 끝(선이 나오는 곳)의 높이 (기판 밑면에서). 가정: 바짝 꺾은 선의 꼭대기를 잰 값(23.3)에서 꺾이는 몫을
-# 8 mm로 어림해 뺐다 (플러그 뒤 끝은 재지 않았다). 틀린 만큼 플러그 위의 고리가 오르내린다: 덮개 천장의 여유로 받는다
-AD_PLUG_BACK = b.ADAPTER_PLUG_TOP - 8.0
+# 플러그 뒤 끝(선이 나오는 곳)의 높이 (기판 밑면에서, 잰 값). 이 높이에서 플러그 위의 고리가 시작한다
+AD_PLUG_BACK = b.ADAPTER_PLUG_BACK
 # 서보 선이 플러그에서 나와 가는 길 (2026-11-22, 꺾임이 첫 조건이다. 0031). 단자가 위를 봐서 선은 위로 나왔다가
 # 내려와야 한다. 바짝 꺾지 않게, 플러그 위로 곧게 올린 뒤 넉넉한 반지름으로 앞(몸통 쪽)으로 반 바퀴 돌려 선 창으로
 # 내린다. 서보 선은 납작해서(4.85 × 1.5) 앞뒤·위아래로만 굽는다: 길 전체가 한 평면(앞뒤-위아래)에 있어 비틀리지 않는다.
@@ -129,9 +128,11 @@ AD_Y = b.Y_FLOOR + b.ADAPTER_SEAT  # 어댑터 기판의 밑면
 # 지붕은 선 창 위까지 덮는다 (창으로 내려간 선의 고리 윗부분이 덮개 속이다)
 CAP_WALL = 2.0
 CAP_ROOF = 2.0
-# 플러그 위 고리의 꼭대기(책상에서 36.05)와 천장 사이. 플러그 뒤 끝이 가정보다 2 mm 높아도 덮개가 고리를 누르지 않는다.
+# 덮개 천장의 높이 (책상에서). 플러그 뒤 끝을 15.3 mm로 어림해, 그 위 고리의 꼭대기(36.05)에서 2.55 mm 띄워 그렸다.
+# 잰 값(12.63)은 더 낮아 고리와 천장 사이가 넓어지기만 해서, 덮개는 그린 높이 그대로 뽑는다 (2026-11-23).
 # 천장은 책상에서 38.6이라 덮개를 뽑을 때 벽 끝이 층 경계다
-CAP_ROOM = 2.55
+_DRAWN_PLUG_BACK = 15.3
+CAP_CEIL = AD_Y - b.Y_DESK + _DRAWN_PLUG_BACK + AD_STRAIGHT + AD_LOOP_R + j.WIRE_T / 2 + 2.55
 CAP_SIDE_GAP = 0.3  # 옆벽과 옆 턱 사이
 CAP_END_GAP = 0.4  # 앞 끝과 날개 뒷면, 뒷벽과 뒤 판 끝 사이
 CAP_BACK_DROP = 3.0  # 뒷벽이 뒤 판 바닥의 윗면보다 내려온 길이 (바닥 두께 4 가운데 3에 걸린다)
@@ -146,8 +147,7 @@ PROVISIONAL = (
     "케이스의 M2.5 너트 (여덟 개가 있다고 봤다)",
     "기판 두께 BOARD_T, 게임패드 동글 DONGLE_OUT, USB A–C 플러그 UM2_OUT",
     "찍찍이 타이의 폭과 두께 (TIE)",
-    "서보 어댑터의 부품 자리와 높이 (AD_ITEMS: 치수 그림에서 읽은 값. DC 잭 높이와 바짝 꺾은 서보 선의 꼭대기만 쟀다)",
-    "꽂은 서보 플러그의 뒤 끝 높이 (AD_PLUG_BACK: 기판 밑면에서 15.3으로 어림했다. 덮개 천장에 2.5 mm 여유를 뒀다)",
+    "서보 어댑터의 부품 자리와 높이 (AD_ITEMS: 치수 그림에서 읽은 값. DC 잭 높이, 꽂은 서보 플러그의 윗면, 바짝 꺾은 서보 선의 꼭대기만 쟀다)",
 )
 
 Y_TRAY = b.Y_DESK + b.TRAY_UNDER  # 파이 판 밑면
@@ -476,8 +476,7 @@ def cover_extent() -> tuple[float, float, float, float]:
     """어댑터 덮개의 겉 크기: 뒤 끝 x, 앞 끝 x, 반폭, 윗면의 높이 (책상에서) [mm]."""
     x_out = b.DECK_END - CAP_END_GAP - CAP_WALL
     hw_out = b.DECK_RIB[1] + CAP_SIDE_GAP + CAP_WALL
-    top = loop_top() + CAP_ROOM + CAP_ROOF
-    return x_out, -b.EDGE - CAP_END_GAP, hw_out, top
+    return x_out, -b.EDGE - CAP_END_GAP, hw_out, CAP_CEIL + CAP_ROOF
 
 
 def adapter_cover() -> Compound:
@@ -613,7 +612,7 @@ def adapter_room() -> dict[str, float]:
             b.Y_FLOOR + b.RING_H
         )
         - (AD_Y + b.ADAPTER_T),
-        "플러그 위 고리의 꼭대기와 덮개 천장 사이": CAP_ROOM,
+        "플러그 위 고리의 꼭대기와 덮개 천장 사이": CAP_CEIL - loop_top(),
         "창 밑에서 올라오는 줄과 책상 뒷면 사이": -b.EDGE - AD_LEG_X - j.WIRE_T / 2,
         "USB 플러그 끝(가정한 길이)에서 벽까지": usb_end - wall,
         "뒤 판과 클램프 등 사이 (클램프를 뒤에서 끼우는 길)": jaw_in - b.DECK_HW,

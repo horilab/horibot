@@ -6,14 +6,13 @@
 뒷덮개로 다시 돌려 보기(cable_cover_300)로 넘어갔다. 선 시험은 2026-11-19에 끝나 그 안내와 출력 안내
 (prints.CABLE_MOTION)도 뺐다. D405 플러그 자리 재기(d405_plug)도 2026-11-19에 끝났다. 베이스·어깨 전 재기
 (base_measure)와 검정 판 전 재기(arm_measure)는 2026-11-22에 끝나 검정 판 3 전 재기(plug_measure)로 넘어갔다.
+검정 판 3 전 재기와 글자 핀 맞춰 보기(letter_pegs)는 2026-11-23에 끝났다.
 """
 
 from __future__ import annotations
 
 from horibot_design.guide.guides import (
     first_joint,
-    letter_pegs,
-    plug_measure,
     prints,
     st3120_horn,
     wrist_end,
@@ -22,8 +21,6 @@ from horibot_design.guide.model import Guide, PrintGuide
 
 ALL: tuple[Guide | PrintGuide, ...] = (
     prints.ARM,
-    plug_measure.GUIDE,
-    letter_pegs.GUIDE,
     prints.ST3120_COUPON,
     st3120_horn.GUIDE,
     first_joint.GUIDE,

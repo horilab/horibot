@@ -1,18 +1,17 @@
 {
  "name": "arm-black-2",
- "made": "2026-11-22T15:44:07",
+ "made": "2026-11-23T21:31:03",
  "studio": "02.09.01.70",
  "profiles": "02.09.00.81",
  "bed_type": "Textured PEI Plate",
  "plates": [
   {
-   "file": "01-black-9f8c6e.3mf",
-   "image": "01-black-9f8c6e.png",
+   "file": "01-black-a7e812.3mf",
+   "image": "01-black-a7e812.png",
    "color": "black",
    "preset": "0.20mm Strength @BBL X1C",
-   "minutes": 217,
-   "grams": 145.5,
-   "overnight": false,
+   "minutes": 222,
+   "grams": 146.7,
    "parts": [
     {
      "file": "adapter_cover.stl",
@@ -35,17 +34,104 @@
      "base_mm2": 23818,
      "overhang_mm2": 0,
      "slender": false
+    },
+    {
+     "file": "letter_bomi_m.stl",
+     "label": "글자 M (위팔)",
+     "module": "links",
+     "count": 1,
+     "sha": "e0950b3bd9e0",
+     "height_mm": 3.6,
+     "base_mm2": 112,
+     "overhang_mm2": 0,
+     "slender": false
+    },
+    {
+     "file": "letter_hori_h.stl",
+     "label": "글자 H (아래팔)",
+     "module": "links",
+     "count": 1,
+     "sha": "0cf6ad91d30b",
+     "height_mm": 3.2,
+     "base_mm2": 93,
+     "overhang_mm2": 0,
+     "slender": false
+    },
+    {
+     "file": "letter_hori_o.stl",
+     "label": "글자 O (아래팔)",
+     "module": "links",
+     "count": 1,
+     "sha": "e78eaf11dd4d",
+     "height_mm": 3.2,
+     "base_mm2": 95,
+     "overhang_mm2": 0,
+     "slender": false
+    },
+    {
+     "file": "letter_bomi_o.stl",
+     "label": "글자 O (위팔)",
+     "module": "links",
+     "count": 1,
+     "sha": "6faf39cb4998",
+     "height_mm": 3.6,
+     "base_mm2": 95,
+     "overhang_mm2": 0,
+     "slender": false
+    },
+    {
+     "file": "letter_bomi_b.stl",
+     "label": "글자 B (위팔)",
+     "module": "links",
+     "count": 1,
+     "sha": "0428e24d13c4",
+     "height_mm": 3.6,
+     "base_mm2": 104,
+     "overhang_mm2": 0,
+     "slender": false
+    },
+    {
+     "file": "letter_hori_r.stl",
+     "label": "글자 R (아래팔)",
+     "module": "links",
+     "count": 1,
+     "sha": "f6252b6155b0",
+     "height_mm": 3.2,
+     "base_mm2": 95,
+     "overhang_mm2": 0,
+     "slender": false
+    },
+    {
+     "file": "letter_bomi_i.stl",
+     "label": "글자 I (위팔)",
+     "module": "links",
+     "count": 1,
+     "sha": "2da65530c64a",
+     "height_mm": 3.6,
+     "base_mm2": 40,
+     "overhang_mm2": 0,
+     "slender": false
+    },
+    {
+     "file": "letter_hori_i.stl",
+     "label": "글자 I (아래팔)",
+     "module": "links",
+     "count": 1,
+     "sha": "7157277944c3",
+     "height_mm": 3.2,
+     "base_mm2": 40,
+     "overhang_mm2": 0,
+     "slender": false
     }
    ]
   },
   {
-   "file": "02-black-bf80cb.3mf",
-   "image": "02-black-bf80cb.png",
+   "file": "02-black-39c6e3.3mf",
+   "image": "02-black-39c6e3.png",
    "color": "black",
    "preset": "0.20mm Strength @BBL X1C",
    "minutes": 60,
    "grams": 30.5,
-   "overnight": false,
    "parts": [
     {
      "file": "pi_tray.stl",
