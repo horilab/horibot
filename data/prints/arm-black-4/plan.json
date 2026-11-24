@@ -1,0 +1,63 @@
+{
+ "name": "arm-black-4",
+ "made": "2026-11-24T09:27:45",
+ "studio": "02.09.01.70",
+ "profiles": "02.09.00.81",
+ "bed_type": "Textured PEI Plate",
+ "plates": [
+  {
+   "file": "01-black-685597.3mf",
+   "image": "01-black-685597.png",
+   "color": "black",
+   "preset": "0.20mm Strength @BBL X1C",
+   "minutes": 275,
+   "grams": 170.0,
+   "parts": [
+    {
+     "file": "shoulder_bearing_pusher.stl",
+     "label": "어깨 베어링을 미는 도구",
+     "module": "shoulder",
+     "count": 1,
+     "sha": "c19c629bc985",
+     "height_mm": 67.8,
+     "base_mm2": 2969,
+     "overhang_mm2": 0,
+     "slender": false
+    },
+    {
+     "file": "adapter_cover.stl",
+     "label": "어댑터 덮개",
+     "module": "pi_mount",
+     "count": 1,
+     "sha": "eade344d0f82",
+     "height_mm": 39.6,
+     "base_mm2": 3553,
+     "overhang_mm2": 0,
+     "slender": false
+    },
+    {
+     "file": "base_plate.stl",
+     "label": "책상에 무는 판",
+     "module": "base",
+     "count": 1,
+     "sha": "09e8b548025b",
+     "height_mm": 27.0,
+     "base_mm2": 23818,
+     "overhang_mm2": 0,
+     "slender": false
+    },
+    {
+     "file": "carrier.stl",
+     "label": "서보 받침",
+     "module": "wrist",
+     "count": 1,
+     "sha": "aa73d616a15d",
+     "height_mm": 20.0,
+     "base_mm2": 523,
+     "overhang_mm2": 9,
+     "slender": false
+    }
+   ]
+  }
+ ]
+}

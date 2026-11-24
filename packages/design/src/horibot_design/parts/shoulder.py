@@ -20,7 +20,7 @@ STS 관절(parts/joint.py)과 같은 짜임이고, 다른 점은 이렇다:
 재지 않은 값은 가정이고 ASSUMED에 모은다.
 뽑기 전에 재서 숫자를 바꾼다 (형상은 그 숫자를 따라간다).
 
-조립 순서: 베어링 → 누름 틀(옆 홈에 너트 셋을 먼저 넣는다)과 앞줄 벽 나사 셋 → 출력 원판(귀의 머리 자리 막을
+조립 순서: 베어링(열린 뒤 끝에서 64 mm 안이라 미는 도구로) → 누름 틀(옆 홈에 너트 셋을 먼저 넣는다)과 앞줄 벽 나사 셋 → 출력 원판(귀의 머리 자리 막을
 뚫고 밑면의 너트 여섯과 멈춤 기둥을 먼저 단다, 앞에서)과 허브 판(뒤에서) → 선을 꽂고 받침을 단 서보(옆 홈에 너트
 셋을 먼저 넣는다) → 혼 볼트 여덟 → 뒷줄 벽 나사 셋(서보 잠금) → 뒷덮개 → 위팔.
 옆면 커넥터는 집 속에서 꽂을 수 없다 (옆 틈 9.5 mm, 플러그 9.6 mm). 서보를 넣기 전에 꽂는다.
@@ -121,7 +121,9 @@ M25_FREE = 3.1
 M25_HEAD = 2.0  # M2.5 둥근머리의 높이
 # 재지 않아 가정으로 둔 값. 뽑기 전에 재서 바꾼다 (docs/status.md의 사용자 순서). 2026-11-20에 모두 쟀다:
 # BACK_HOLES와 몸체 단면은 도면 값과 0.3 mm 안에서 맞아 도면 값을 그대로 쓴다 (data/measured.toml)
-ASSUMED: tuple[str, ...] = ()
+ASSUMED: tuple[str, ...] = (
+    "6808 바깥 링의 안쪽 지름 (PUSH_LAND 49.05: 잰 6806의 39.05와 단면이 같다고 보고 옮긴 값. 베어링 미는 도구가 쓴다)",
+)
 PROVISIONAL = ASSUMED  # 다른 부품 모듈과 같은 이름
 
 # ---- 베어링과 축 방향 쌓임 ----
@@ -713,6 +715,36 @@ def clearances(
     return out
 
 
+# ---- 베어링을 미는 도구 ----
+# 6808은 집의 열린 뒤 끝에서 B0 - BACK_END(64.4 mm) 안의 자리까지 들어가고, 마지막 6.6 mm(자리)는 눌러야 들어간다.
+# 손목 몸통(42 mm)과 달리 손가락이 닿지 않아, 베이스의 6806을 미는 도구(base.bearing_pusher)와 같은 통으로 바깥 링만
+# 민다. 통의 끝이 턱에 앉은 베어링에 닿았을 때 손잡이 테가 원통 뒤 끝에서 PUSH_STOP만큼 뜬다 (테는 멈춤이 아니라
+# 눈금이다. 베어링은 원통 앞 끝의 턱이 세운다). J1 몸통을 원통 앞 끝이 바닥에 닿게 세우고 위에서 누른다.
+PUSH_R = R_BORE - 0.3  # 통의 바깥 반지름 25.85: 좁은 자리(반지름 26.15)를 0.3 틈으로 지난다
+# 6808 바깥 링의 안쪽 지름 (가정, ASSUMED). 6806은 바깥 지름 42, 안쪽 지름 39.05로 재서(2026-11-22) 링 두께가
+# 1.475 mm였고, 6808은 같은 68 계열로 단면 높이(6 mm)와 폭(7 mm)이 같다
+PUSH_LAND = BRG_OD - (42.0 - 39.05)
+# 통의 안 반지름: 링 가장자리에서 6806 도구와 같은 0.275 mm를 띄워 옆 덮개(ZZ)에는 닿지 않는다 (벽 1.05 mm)
+PUSH_BORE = PUSH_LAND / 2 + 0.275
+PUSH_STOP = 0.4
+# 손잡이 테의 반지름과 두께: 원통 뒤 끝(반지름 26.25 ~ 28.6)에 겹쳐 눈금이 된다
+PUSH_GRIP = (31.0, 3.0)
+
+
+def bearing_pusher() -> Compound:
+    """6808을 미는 도구. 손잡이 테를 바닥에 두고 세워 뽑는다 (미는 끝이 맨 위 층이다).
+
+    좌표는 도구의 것이다: 축이 y, 미는 끝이 y = 0, 손잡이 테의 안쪽 면이 y = -(깊이)다.
+    """
+    reach = (B0 - BACK_END) + PUSH_STOP  # 원통 뒤 끝에서 턱에 앉은 베어링의 뒷면까지 64.8
+    grip_r, grip_t = PUSH_GRIP
+    tool = j.ring(PUSH_R, PUSH_BORE, -reach - 0.01, 0.0) + cyl_y(grip_r, -reach - grip_t, -reach)
+    tool = solid(tool - cyl_y(4.0, -reach - grip_t - 1, -reach + 1))  # 공기가 빠지는 구멍
+    if not tool.is_valid:
+        raise RuntimeError("어깨 베어링을 미는 도구 형상이 깨졌다")
+    return solid(tool)
+
+
 # 뽑는 부품: 이름 → (형상, 뽑을 때 위를 보는 방향, 색, 프리셋).
 # 집과 뒷덮개는 여기 없다. 뽑는 것은 목이 돌림판까지 내려오고 바닥판이 달린 J1 몸통과 그 뒷덮개다
 # (parts/base.py의 printed: j1_body, j1_cover)
@@ -721,6 +753,7 @@ LABELS = {  # 뽑는 부품의 한글 이름 (출력 안내에 쓴다, horibot_d
     "shoulder_hub_plate": "어깨 허브 판",
     "shoulder_retainer": "어깨 누름 틀",
     "shoulder_carrier": "어깨 서보 받침",
+    "shoulder_bearing_pusher": "어깨 베어링을 미는 도구",
 }
 
 
@@ -730,6 +763,8 @@ def printed() -> dict[str, tuple[Compound, tuple[float, float, float], str, str]
         "shoulder_hub_plate": (hub_plate(), (0.0, -1.0, 0.0), "black", "strength"),
         "shoulder_retainer": (retainer(), (0.0, -1.0, 0.0), "black", "strength"),
         "shoulder_carrier": (carrier(), (0.0, 1.0, 0.0), "black", "strength"),
+        # 팔에 달리지 않는 조립 도구다 (색은 상관없다)
+        "shoulder_bearing_pusher": (bearing_pusher(), (0.0, 1.0, 0.0), "black", "strength"),
     }
 
 

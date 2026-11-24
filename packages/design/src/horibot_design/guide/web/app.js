@@ -72,6 +72,15 @@
     for (let s = xs + 0.5; s < xs + L - 0.2; s += 0.5) th += 'M' + f(s) + ',' + f(cy - d / 2) + 'L' + f(s + 0.25) + ',' + f(cy + d / 2);
     return svgWrap(W, H, '<path class="mf" d="' + domeHead(x0, xs, cy, dk) + '"/><rect class="mf" x="' + f(xs) + '" y="' + f(cy - d / 2) + '" width="' + L + '" height="' + d + '"/><path class="th" d="' + th + '"/>', 'M3 × ' + L);
   }
+  function drawCap(L) {
+    // DIN 912 유두 M3: 머리 지름 5.5, 높이 3.0, 머리 끝에 육각 구멍 (2.5 mm 렌치)
+    const dk = 5.5, k = 3.0, d = 3, pad = 0.4, W = pad * 2 + k + L, H = pad * 2 + dk, cy = H / 2, x0 = pad, xs = pad + k;
+    let th = '';
+    for (let s = xs + 0.5; s < xs + L - 0.2; s += 0.5) th += 'M' + f(s) + ',' + f(cy - d / 2) + 'L' + f(s + 0.25) + ',' + f(cy + d / 2);
+    const head = '<rect class="mf" x="' + f(x0) + '" y="' + f(cy - dk / 2) + '" width="' + f(k) + '" height="' + f(dk) + '" rx="0.4"/>';
+    const socket = '<rect class="hole" x="' + f(x0) + '" y="' + f(cy - 1.25) + '" width="1.2" height="2.5"/>';
+    return svgWrap(W, H, head + socket + '<rect class="mf" x="' + f(xs) + '" y="' + f(cy - d / 2) + '" width="' + L + '" height="' + d + '"/><path class="th" d="' + th + '"/>', 'M3 × ' + L + ' 유두');
+  }
   function drawNut() {
     const s = 5.5, R = s / Math.sqrt(3), pad = 0.4, W = 2 * R + pad * 2, H = s + pad * 2, cx = W / 2, cy = H / 2;
     let p = '';
@@ -95,6 +104,7 @@
   }
   function drawFor(d) {
     if (d.t === 'screw') return drawScrew(d.L);
+    if (d.t === 'cap') return drawCap(d.L);
     if (d.t === 'nut') return drawNut();
     if (d.t === 'pin') return drawPin(d.L, d.d);
     if (d.t === 'tap') return drawTap(d.L);

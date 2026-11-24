@@ -14,7 +14,7 @@
 ## 만든 것
 
 - 출력 준비 도구 `packages/design/src/horibot_design/slicing.py`:
-  - `uv run python -m horibot_design.slicing plan --name <묶음> <부품...>`: 부품은 `wrist`(그 모듈의 출력 부품 모두), `wrist.wrist_body:2`(n벌), `coupons.fit3_6806_bores@white`(시험편은 색을 붙인다)로 준다. 모든 판이 통과해야 `build/print/<묶음>/`에 판마다 3MF를, 레포의 `data/prints/<묶음>/`에 판 그림과 `plan.json`(판마다 3MF 이름, 색, 프리셋, 시간, 무게, 부품과 그 모듈, 그때의 STL 해시)을 낸다. 판 계획을 레포에 두는 까닭은 [0036](0036-work-guide-site.md)의 출력 안내에 있다. 하나라도 걸리면 3MF 폴더를 지우고 아무것도 내지 않는다 (data/prints의 옛 계획은 뽑은 판의 기록일 수 있어 그대로 둔다).
+  - `uv run python -m horibot_design.slicing plan --name <묶음> <부품...>`: 부품은 `wrist`(그 모듈의 출력 부품 모두), `wrist.wrist_body:2`(n벌), `coupons.fit3_6806_bores@white`(시험편은 색을 붙인다)로 준다. 모든 판이 통과해야 `build/print/<묶음>/`에 판마다 3MF를, 레포의 `data/prints/<묶음>/`에 판 그림과 `plan.json`(판마다 3MF 이름, 색, 프리셋, 시간, 무게, 부품과 그 모듈, 그때의 STL 해시)을 낸다. 판 계획을 레포에 두는 까닭은 [0036](0036-work-guide-site.md)의 출력 안내에 있다. 하나라도 걸리면 3MF 폴더를 지우고 아무것도 내지 않는다 (data/prints의 옛 계획은 뽑은 판의 기록일 수 있어 그대로 둔다). 같은 부품을 다시 잘라도 3MF의 바이트가 달라 파일 이름 끝 6자리가 바뀐다 (같은 PC에서 다시 잘라 확인했다, 2026-11-24). 그래서 다른 PC에서 낸 묶음은 판을 뽑는 PC에서 같은 명령으로 다시 만들고, 판 계획이 부품, STL 해시, 시간, 무게까지 같은지 견준 뒤 작업 안내를 다시 올린다.
   - `uv run python -m horibot_design.slicing reference <화면에서 저장한 프로젝트 3MF>`: 가정 B. 프로젝트 옆에 화면에서 낸 플레이트 슬라이스 파일(`<이름>.gcode.3mf`)이 있어야 한다. 두 길로 견준다: 화면 프로젝트를 그대로 다시 잘라 설정과 층마다 뽑는 양을, 프로젝트에 적힌 원래 STL을 판을 낼 때와 같은 옵션으로 잘라 설정을. 통과하면 판을 낼 때의 길의 설정 지문을 알려 준다.
 - 값 파일 `params/print.toml`: 앱·프리셋 묶음 판, 펼친 프리셋 내용의 지문, 프린터·필라멘트·공정 프리셋, 판 종류, 설정 전체의 지문(가정 B로 정했다), 가정 B에서 빼는 기록 칸, 핵심 설정, 무해한 로그 줄.
 - 부품 모듈마다 파일 이름별 한글 이름 `LABELS` (모든 출력 부품에 있는지 각 모듈의 시험이 본다).
