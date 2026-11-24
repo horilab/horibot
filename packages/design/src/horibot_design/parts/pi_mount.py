@@ -1,7 +1,7 @@
 """파이 자리: 날개 위의 기둥에 얹는 파이 판(작은 판)과, 그 위아래에 놓이는 것들의 자리 (docs/decisions/0038-base-layout.md).
 
 책상에 무는 판(parts/base.py의 plate)의 날개가 곧 파이 받침이다. 날개의 기둥 넷 위에 파이 판을 M3 × 8 넷으로 달고,
-파이 판에 파이(기판만)와 덮개 기둥 넷을 단다. 덮개는 가진 적층 아크릴 케이스의 팬 구멍 판과 팬이다. 파이 판 밑에는
+파이 판에 파이(기판만)와 덮개 기둥 넷을 단다. 덮개는 가진 적층 아크릴 케이스의 팬 구멍 판과 팬, 뽑은 철망이다. 파이 판 밑에는
 클램프의 위 턱이 든다. 파이와 덮개에 맞춘 것은 모두 이 작은 판에 있어서, 가정한 값이 틀리면 이 판만 다시 뽑는다.
 
 서보 어댑터는 몸통 바로 뒤 가운데, 책상 뒤 가장자리 밖으로 나온 뒤 판에 눕힌다 (parts/base.py의 "서보 어댑터 자리").
@@ -16,7 +16,8 @@
 - 덮개 기둥(육각 황동, 몸통 22.93, 한 끝 M3 수나사 6.2): 수나사가 파이 판의 긴 구멍을 지나 판 밑의 M3 너트에 물린다.
   긴 구멍은 x 쪽으로 ±1 mm 길다 (판이 기판 가운데에 맞는지 모른다: 가정).
 - 조립 순서: 손에 든 파이 판에 덮개 기둥 넷(밑에서 너트)과 파이(밑에서 너트) → 파이 판을 기둥에 얹고 M3 × 8 넷
-  → 젠더와 플러그 → 팬을 단 아크릴 판. 클램프는 파이 판을 떼지 않고 뒤에서 끼우고 뺀다.
+  → 젠더와 플러그 → 팬과 철망을 단 아크릴 판 (팬 나사 넷이 철망, 판, 팬을 묶는다). 클램프는 파이 판을 떼지 않고 뒤에서
+  끼우고 뺀다.
 - 서보 어댑터 (파이와 따로, 언제든 손이 닿는다): 뒤 판의 돋움 넷에 M2 × 5 넷 → 전원선을 나사 단자에 위에서 조인다
   → 서보 플러그 둘(왼쪽 단자에 J3 줄, 가운데 단자에 J1 줄)과 USB-C → 덮개를 위에서 얹는다. 덮개는 선을 뽑지 않고
   들어 뗀다.
@@ -28,11 +29,12 @@
 
 from __future__ import annotations
 
+import functools
 import itertools
 import math
 from dataclasses import dataclass
 
-from build123d import Compound, Pos
+from build123d import Compound, Pos, Rot, Sphere
 
 from horibot_design.parts import base as b
 from horibot_design.parts import joint as j
@@ -58,7 +60,7 @@ PI_HOLE_D = 3.0  # M2.5가 지나가는 구멍 (맞춤 없이 넉넉히)
 PI_BOSS = (3.1, 1.6)  # 나일론 링이 앉는 돋움의 반지름과 높이: 젠더와 판 나사 머리 사이를 띄운다
 POST_SLOT = (3.6, 1.0)  # 덮개 기둥 수나사의 긴 구멍: 폭, x 쪽으로 더 긴 반길이
 WINDOW = ((-12.0, 32.0), 17.0)  # 판 가운데의 창: x 범위, 옆 반폭 (바람이 통하고 선이 지난다)
-# 찍찍이 타이 구멍 (가정: 타이 폭 12, 두께 1.3. 아직 사지 않았다): 긴 변마다 하나, 앞 변에 둘
+# 찍찍이 타이 구멍 (가정: 타이 폭 12, 두께 1.3. 2026-11-24에 샀고 아직 재지 않았다): 긴 변마다 하나, 앞 변에 둘
 TIE = (14.0, 3.0)
 TIE_EDGE = 4.0  # 구멍과 판 가장자리 사이의 살
 TIE_FRONT_V = (7.5, 20.5)  # 앞 변 구멍의 옆 범위 (SD 카드와 파이 돋움 사이)
@@ -82,6 +84,27 @@ PORTS = {
 }
 DONGLE_OUT = 30.0  # 게임패드 동글이 단자 밖으로 나온 길이 (가정: 재지 않았다)
 UM2_OUT = 30.0  # 파이와 어댑터를 잇는 USB A–C 선의 플러그가 나온 길이 (가정: 재지 않았다)
+
+# ---- 덮개 철망 (0038의 파이 덮개, 2026-11-24) ----
+# 케이스의 금속 철망은 하나뿐이라 두 덮개에 같은 철망을 뽑는다. 금속 철망 자리 그대로 아크릴 판 위에 얹고, 팬 나사
+# 넷이 철망, 판, 팬을 같이 묶는다. 매끈하게 볼록한 동심원이다: 고리와 살을 판 윗면에서 곧게 세우고 윗면을 한 구면으로
+# 깎는다. 밑면이 모두 판 윗면 한 높이라 테를 바닥에 두고 서포트 없이 뽑고, 가운데는 나사 넷이 맞춘다.
+# 팬은 판 가운데에 있다고 본다 (위 PROVISIONAL의 아크릴 판 가정과 같다)
+FAN_HOLE_PITCH = _CASE.fan_hole_pitch_mm  # 팬 나사 구멍 가운데 사이 24.5 (잰 값)
+FAN_OPENING = _CASE.fan_opening_mm  # 판의 둥근 팬 구멍 지름 28.12 (잰 값)
+GRILLE_R = 13.75  # 고리 묶음의 바깥 반지름 (판의 팬 구멍 안 0.31)
+GRILLE_BAR = 0.6  # 고리와 살의 굵기
+GRILLE_HUB_R = 2.2  # 가운데 기둥
+GRILLE_GAPS = 5  # 가운데 기둥에서 바깥 고리까지 고리 사이 틈의 수 (고리는 바깥 고리까지 다섯)
+GRILLE_SPOKES = 8
+GRILLE_RIM = (16.5, 2.0)  # 둥근 테의 반지름과 두께 (판 윗면에서)
+GRILLE_EAR_R = 4.2  # 나사 귀의 반지름
+GRILLE_DOME = 4.5  # 테 윗면에서 꼭대기까지
+# 팬 나사 머리가 앉는 높이 (판 윗면에서). 가정: 금속 철망이 있던 자리라 그 두께만큼이면 지금 나사가 그대로 맞는다.
+# 팬 나사 길이와 너트, 금속 철망 두께를 재서 정한다. 층 경계(0.2 mm의 배수)에 둔다
+GRILLE_HEAD_SEAT = 1.0
+GRILLE_HEAD_BORE = 3.1  # 머리 자리 반지름 (가정: 머리 지름 5.7 아래)
+GRILLE_SCREW_R = 1.7  # 나사가 지나는 구멍 반지름
 
 # ---- 서보 어댑터 (parts/base.py의 "서보 어댑터 자리": 몸통 바로 뒤 가운데의 뒤 판) ----
 # 기판 위 부품의 자리: (u0, u1, v0, v1, 기판 위 높이). u는 서보 단자가 있는 긴 변을 따라가고(DC 잭 쪽 끝이 0),
@@ -141,9 +164,11 @@ CAP_NOTCH = (
     18.0,
 )  # 뒷벽의 홈: z 범위(전원선 ±3.9, USB 플러그 4.6 ~ 18.6), 윗변의 높이 (책상에서)
 
-LABELS = {"pi_tray": "파이 판", "adapter_cover": "어댑터 덮개"}
+LABELS = {"pi_tray": "파이 판", "adapter_cover": "어댑터 덮개", "fan_grille": "파이 덮개 철망"}
 PROVISIONAL = (
     "아크릴 판의 팬 구멍과 파이 고정 구멍의 자리 (판이 기판 가운데에 맞고 팬이 판 가운데에 있다고 봤다)",
+    "철망에서 팬 나사 머리가 앉는 높이와 머리 자리 (GRILLE_HEAD_SEAT, GRILLE_HEAD_BORE: 팬 나사와 금속 철망을 재서 "
+    "정한다)",
     "케이스의 M2.5 너트 (여덟 개가 있다고 봤다)",
     "기판 두께 BOARD_T, 게임패드 동글 DONGLE_OUT, USB A–C 플러그 UM2_OUT",
     "찍찍이 타이의 폭과 두께 (TIE)",
@@ -208,6 +233,48 @@ def tray_local() -> Compound:
     if not t.is_valid or len(t.solids()) != 1:
         raise RuntimeError("파이 판 형상이 깨졌다")
     return t
+
+
+def grille_gap() -> float:
+    """철망의 고리 사이 틈 [mm] (가운데 기둥과 첫 고리 사이도 같다)."""
+    inner = GRILLE_R - GRILLE_BAR - GRILLE_HUB_R
+    return (inner - (GRILLE_GAPS - 1) * GRILLE_BAR) / GRILLE_GAPS
+
+
+@functools.cache
+def fan_grille_local() -> Compound:
+    """덮개 철망 (기판 가운데가 x = 0, z = 0인 자리, 아크릴 판 위). 테 밑면을 바닥에 두고 뽑는다."""
+    y0 = Y_COVER + COVER[2]
+    rim_r, rim_t = GRILLE_RIM
+    rim_top = y0 + rim_t
+    apex = rim_top + GRILLE_DOME
+    # 윗면의 구: 바깥 고리 자리에서 테 윗면에 닿고 가운데가 꼭대기다
+    rs = (GRILLE_R**2 + GRILLE_DOME**2) / (2 * GRILLE_DOME)
+    tall = apex + 1.0
+    g = j.ring(GRILLE_R, GRILLE_R - GRILLE_BAR, y0, tall)
+    gap = grille_gap()
+    r = GRILLE_HUB_R + gap
+    for _ in range(GRILLE_GAPS - 1):
+        g = solid(g + j.ring(r + GRILLE_BAR, r, y0, tall))
+        r += GRILLE_BAR + gap
+    g = solid(g + cyl_y(GRILLE_HUB_R, y0, tall))
+    for k in range(GRILLE_SPOKES):
+        spoke = box(GRILLE_HUB_R - 0.2, GRILLE_R - 0.1, y0, tall, -GRILLE_BAR / 2, GRILLE_BAR / 2)
+        # 살은 나사 귀(대각선) 사이로 간다
+        g = solid(g + Rot(0, (k + 0.5) * 360 / GRILLE_SPOKES, 0) * spoke)
+    g = solid(g & (Pos(0, apex - rs, 0) * Sphere(rs)))
+    rim = solid(cyl_y(rim_r, y0, rim_top) - cyl_y(GRILLE_R, y0 - 1, rim_top + 1))
+    h = FAN_HOLE_PITCH / 2
+    holes = [(sx * h, sz * h) for sx in (1, -1) for sz in (1, -1)]
+    for x, z in holes:
+        rim = solid(rim + cyl_y(GRILLE_EAR_R, y0, rim_top, x, z))
+    g = solid(g + rim)
+    for x, z in holes:
+        g = solid(g - cyl_y(GRILLE_SCREW_R, y0 - 1, rim_top + 1, x, z))
+        g = solid(g - cyl_y(GRILLE_HEAD_BORE, y0 + GRILLE_HEAD_SEAT, rim_top + 1, x, z))
+    if not g.is_valid or len(g.solids()) != 1:
+        raise RuntimeError("철망 형상이 깨졌다")
+    return g
 
 
 def at(side: int) -> Pos:
@@ -334,6 +401,7 @@ def pi_parts(side: int) -> list[j.Part]:
     out.append(("덮개 판", _rbox(-cl / 2, cl / 2, -cw / 2, cw / 2, Y_COVER, Y_COVER + ct), "cap"))
     fs, ft = FAN
     out.append(("팬", _rbox(-fs / 2, fs / 2, -fs / 2, fs / 2, Y_COVER - ft, Y_COVER), "servo"))
+    out.append(("철망", fan_grille_local(), "cap"))
     for k, (u, v) in enumerate(screw_uv(), start=1):
         s = cyl_y(1.5, Y_TOP - 8.0, Y_TOP, u, -v) + cyl_y(2.85, Y_TOP, Y_TOP + 1.65, u, -v)
         out.append((f"파이 판 나사 M3x8 {k}", solid(s), "metal"))
@@ -582,6 +650,7 @@ def stack() -> dict[str, float]:
         "팬 밑면": Y_COVER - FAN[1] - desk,
         "아크릴 판 밑면": Y_COVER - desk,
         "아크릴 판 윗면": Y_COVER + COVER[2] - desk,
+        "철망 꼭대기": Y_COVER + COVER[2] + GRILLE_RIM[1] + GRILLE_DOME - desk,
         "띠 밑 (선의 고리가 생기는 높이)": b.FRONT - b.BAND_H - desk,
         "파이 나사 M2.5 × 12가 판 밑으로 나온 길이 (너트 2.0)": PI_SCREW
         - (BOARD_T + RING_H + PI_BOSS[1] + b.TRAY_T),
@@ -624,6 +693,8 @@ def printed() -> dict[str, tuple[Compound, tuple[float, float, float], str, str,
         "pi_tray": (tray_local(), (0.0, 1.0, 0.0), "black", "strength", 2),
         # 프리셋을 책상에 무는 판, 파이 판과 같게 해서 한 판에 같이 뽑는다
         "adapter_cover": (adapter_cover(), (0.0, -1.0, 0.0), "black", "strength", 1),
+        # 두 덮개에 하나씩. 테 밑면(판에 닿는 면)을 바닥에 둔다
+        "fan_grille": (fan_grille_local(), (0.0, 1.0, 0.0), "black", "strength", 2),
     }
 
 

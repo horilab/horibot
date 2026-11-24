@@ -117,7 +117,7 @@ LINK_TUBE: dict[
     "fore": (0.287, 16.7 * G, 0.0133),
 }
 # 링크에 더한 것 (uv run python -m horibot_design.parts.links). 글자: 낱자 넷의 출력 무게. 나사 자리: 아래팔 끝의 목
-# 양옆 돋움 하나 (링크의 세 덩어리와 따로 넣는다). 타이: D405 선을 묶는 찍찍이 타이 하나 (가정: 아직 사지 않았다)
+# 양옆 돋움 하나 (링크의 세 덩어리와 따로 넣는다). 타이: D405 선을 묶는 찍찍이 타이 하나 (가정: 2026-11-24에 샀고 아직 재지 않았다)
 LETTER_MASS = {"upper_arm": 0.58 * G, "forearm": 0.51 * G}
 SEAT_MASS = 0.26 * G
 TIE_MASS = lp.TIE_G * G

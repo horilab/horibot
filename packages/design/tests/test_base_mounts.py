@@ -66,6 +66,29 @@ def test_pi_tray_matches_the_wing_posts_the_pi_and_the_cover() -> None:
 
 
 @pytest.mark.slow
+def test_fan_grille_sits_on_the_acrylic_plate_over_the_fan_hole() -> None:
+    grille = pm.fan_grille_local().solids()[0]
+    plate_top = pm.Y_COVER + pm.COVER[2]
+    # 밑면이 판 윗면이라 판 구멍 밑(팬 날개 쪽)으로 내려가지 않는다
+    assert grille.bounding_box().min.Y == pytest.approx(plate_top, abs=1e-6)
+    # 고리 묶음은 판의 둥근 팬 구멍 안이고, 고리 사이로 떨어진 M3 나사(3 mm)가 빠지지 않는다
+    assert pm.GRILLE_R < pm.FAN_OPENING / 2 - 0.2
+    gap = pm.grille_gap()
+    assert 1.5 <= gap < 2.5
+    assert grille.is_inside((0.0, plate_top + 1.0, 0.0))  # 가운데 기둥
+    assert not grille.is_inside((pm.GRILLE_HUB_R + gap / 2, plate_top + 1.0, 0.0))  # 살 사이의 틈
+    # 나사 구멍 넷은 판의 팬 나사 구멍 자리이고, 머리가 앉는 높이는 층 경계다
+    h = pm.FAN_HOLE_PITCH / 2
+    for sx in (1, -1):
+        for sz in (1, -1):
+            assert not grille.is_inside((sx * h, plate_top + 0.5, sz * h))
+    assert math.isclose(pm.GRILLE_HEAD_SEAT / 0.2, round(pm.GRILLE_HEAD_SEAT / 0.2))
+    # 꼭대기는 그 위 서보 선의 고리가 생기는 높이보다 3 mm 넘게 낮다
+    stack = pm.stack()
+    assert stack["철망 꼭대기"] + 3.0 < stack["띠 밑 (선의 고리가 생기는 높이)"]
+
+
+@pytest.mark.slow
 def test_pi_side_parts_clear_the_core_the_plate_and_the_clamps() -> None:
     near = pm.clearances(limit=3.0)
     # 닿는 것은 기둥에 앉은 파이 판과 판 나사, 돋움에 앉은 서보 어댑터, 뒤 판에 얹은 어댑터 덮개뿐이다.
