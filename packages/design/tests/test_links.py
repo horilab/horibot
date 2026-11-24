@@ -198,8 +198,8 @@ def test_ties_clear_the_stop_ears_the_wire_windows_and_the_letters() -> None:
         tube_mid = frames[pl.LINK_FRAME[name]] @ np.array([-100.0, y, 0.0, 1.0])
         cable = frames[pl.LINK_FRAME[name]] @ np.array([-100.0, y, z, 1.0])
         assert cable[0] - tube_mid[0] == pytest.approx(-abs(z)), name
-    # 타이는 가정한 값이다 (아직 사지 않았다)
-    assert (links.TIE_W, links.TIE_T, links.TIE_G) == (12.0, 1.3, 0.6)
+    # 타이는 산 것의 값이다 (폭은 상품 규격, 한 겹 두께는 잰 값). 무게는 가정이다
+    assert (links.TIE_W, links.TIE_T, links.TIE_G) == (10.0, 0.93, 0.6)
     # 팔꿈치에서 마주 보는 두 타이는 아래팔이 다 접혀도 위에서 볼 때 겹치지 않는다 (J3 축에서의 거리)
     fore, tube_r, _foot = links.LINKS["forearm"]
     flat_hw = math.sqrt(tube_r**2 - (tube_r - links.EMBED) ** 2) + links.TIE_T

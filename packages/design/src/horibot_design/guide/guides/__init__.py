@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from horibot_design.guide.guides import (
     first_joint,
+    grille_measure,
     j1_base,
     prints,
     st3120_horn,
@@ -23,6 +24,7 @@ from horibot_design.guide.model import Guide, PrintGuide
 ALL: tuple[Guide | PrintGuide, ...] = (
     prints.ARM,
     j1_base.GUIDE,
+    grille_measure.GUIDE,
     prints.ST3120_COUPON,
     st3120_horn.GUIDE,
     first_joint.GUIDE,

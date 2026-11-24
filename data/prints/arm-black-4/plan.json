@@ -1,13 +1,13 @@
 {
  "name": "arm-black-4",
- "made": "2026-11-24T09:27:45",
+ "made": "2026-11-24T10:29:22",
  "studio": "02.09.01.70",
  "profiles": "02.09.00.81",
  "bed_type": "Textured PEI Plate",
  "plates": [
   {
-   "file": "01-black-685597.3mf",
-   "image": "01-black-685597.png",
+   "file": "01-black-e5dfa8.3mf",
+   "image": "01-black-e5dfa8.png",
    "color": "black",
    "preset": "0.20mm Strength @BBL X1C",
    "minutes": 275,

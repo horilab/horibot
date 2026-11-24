@@ -240,6 +240,16 @@ class PiCase(_Values):
     fan_opening_mm: float = Field(gt=0)  # 판의 팬 자리 둥근 구멍 지름
     pi_screw_mm: tuple[float, float]  # 파이를 다는 M2.5 접시머리 나사 (나사산 바깥 지름, 전체 길이)
     pi_spacer_mm: tuple[float, float]  # 파이 밑 나일론 링 (높이, 바깥 지름)
+    # 덮개에 쓰는 봉지째인 팬의 나사 (나사산 바깥 지름, 전체 길이, 머리 높이, 머리 지름)와 너트 두께
+    fan_screw_mm: tuple[float, float, float, float]
+    fan_nut_mm: float = Field(gt=0)
+
+
+class VelcroTie(_Values):
+    """D405 선을 묶는 찍찍이 타이 [mm]."""
+
+    width_mm: float = Field(gt=0)
+    thickness_mm: float = Field(gt=0)  # 한 겹
 
 
 class Desk(_Values):
@@ -274,6 +284,7 @@ class Measured(_Values):
     servo_plug: ServoPlug | None = None
     servo_back_screw: BackScrew | None = None
     pi_case: PiCase | None = None  # 적층 아크릴 케이스 (파이 덮개)
+    velcro_tie: VelcroTie | None = None  # D405 선을 묶는 찍찍이 타이 (0031)
     desk: Desk | None = None
     base_plug: dict[str, BasePlug] = {}  # 베이스에서 꽂는 플러그 (pi_power, lan, d405_usb_a)
     pi_adapter_cable: ThinCable | None = None  # 파이와 서보 어댑터를 잇는 USB A–C 선

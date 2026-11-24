@@ -1,0 +1,30 @@
+{
+ "name": "pi-grille",
+ "made": "2026-11-24T21:05:28",
+ "studio": "02.09.01.70",
+ "profiles": "02.09.00.81",
+ "bed_type": "Textured PEI Plate",
+ "plates": [
+  {
+   "file": "01-black-f535d5.3mf",
+   "image": "01-black-f535d5.png",
+   "color": "black",
+   "preset": "0.20mm Strength @BBL X1C",
+   "minutes": 26,
+   "grams": 4.7,
+   "parts": [
+    {
+     "file": "fan_grille.stl",
+     "label": "파이 덮개 철망",
+     "module": "pi_mount",
+     "count": 2,
+     "sha": "c4442fe63bc0",
+     "height_mm": 6.5,
+     "base_mm2": 600,
+     "overhang_mm2": 0,
+     "slender": false
+    }
+   ]
+  }
+ ]
+}
