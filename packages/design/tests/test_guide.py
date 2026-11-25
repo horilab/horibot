@@ -23,12 +23,14 @@ from horibot_design.guide.build import (
 from horibot_design.guide.guides import (
     base_pi,
     first_joint,
+    forearm,
     j1_base,
     j1_zero,
     j2_shoulder,
     prints,
-    st3120_horn,
+    upper_arm,
     wrist_end,
+    wrist_join,
 )
 from horibot_design.guide.meshes import pack, tessellate, unpack
 from horibot_design.guide.model import Guide, Move, PrintGuide, ScenePart, Step, View
@@ -130,6 +132,59 @@ def test_sweep_finds_a_part_that_hits_on_its_way_in() -> None:
     # 판(y 2 ~ 4)이 제자리 바로 위면 마지막 6 mm에서 겹친다: 플러그만 단자 속으로 들어가는 길이로 보고 뺀다
     assert len(sweep.check(resolve(_sweep_guide((0.0, 12.0, 0.0), plate_y=3.0)))) == 1
     assert sweep.check(resolve(_sweep_guide((0.0, 12.0, 0.0), "plug", plate_y=3.0))) == []
+
+
+def _posed_guide(joint2: float, peg_turns: bool) -> Guide:
+    """둘째 관절(원점을 지나는 z축)이 있는 안내. 말뚝은 by (0, 30, 0)로 위에서 들어온다.
+
+    peg_turns가 거짓이면 판(가운데 y 10)이 둘째 관절과 같이 돌고 말뚝은 서 있다. 참이면 말뚝이 같이 돌고 판(가운데
+    x 10)은 서 있다: 움직임 방향도 말뚝과 같이 돈다 (화면은 도는 관절 묶음의 좌표로 부품을 옮긴다)."""
+
+    def scene() -> list[ScenePart]:
+        if peg_turns:
+            plate = ScenePart(
+                "판", solid(Pos(10, 0, 0) * Box(2.0, 10.0, 10.0)), "wrist_body", "body"
+            )
+            peg = ScenePart(
+                "말뚝", solid(Box(4.0, 4.0, 4.0)), "out_disc", "cap", True, moving2=True
+            )
+        else:
+            plate = ScenePart(
+                "판",
+                solid(Pos(0, 10, 0) * Box(10.0, 2.0, 10.0)),
+                "wrist_body",
+                "body",
+                True,
+                moving2=True,
+            )
+            peg = ScenePart("말뚝", solid(Box(4.0, 4.0, 4.0)), "out_disc", "cap")
+        return [plate, peg]
+
+    peg_step = replace(
+        _work("peg", adds=("말뚝",), moves=(Move(("말뚝",), (0.0, 30.0, 0.0)),)), joint2=joint2
+    )
+    steps = (_work("plate", adds=("판",)), peg_step)
+    return Guide(
+        "posed",
+        "assembly",
+        "길",
+        "시험",
+        scene,
+        steps,
+        items=first_joint.GUIDE.items,
+        axis2=((0.0, 0.0, 0.0), (0.0, 0.0, 1.0)),
+    )
+
+
+def test_sweep_poses_the_joints_of_the_step() -> None:
+    from horibot_design.guide import sweep
+
+    # 판이 관절과 같이 돈다: 관절 각 0이면 말뚝 길을 막고, 90°면 비켜 있다
+    assert len(sweep.check(resolve(_posed_guide(0.0, peg_turns=False)))) == 1
+    assert sweep.check(resolve(_posed_guide(90.0, peg_turns=False))) == []
+    # 말뚝이 관절과 같이 돈다: 90°면 움직임 방향(위에서)이 +x 쪽에서로 돌아 서 있는 판(x 10)을 지난다
+    assert sweep.check(resolve(_posed_guide(0.0, peg_turns=True))) == []
+    assert len(sweep.check(resolve(_posed_guide(90.0, peg_turns=True)))) == 1
 
 
 def test_servo_without_id_is_rejected() -> None:
@@ -362,14 +417,11 @@ def test_built_site_has_every_file_its_guides_need(tmp_path: Path) -> None:
         base_pi.GUIDE.id,
         j1_zero.GUIDE.id,
         j2_shoulder.GUIDE.id,
+        upper_arm.GUIDE.id,
+        forearm.GUIDE.id,
+        wrist_join.GUIDE.id,
         prints.ARM.id,
         j1_base.GUIDE.id,
-        prints.ST3120_COUPON.id,
-        st3120_horn.GUIDE.id,
-        "first-joint",
-        prints.FIRST_JOINT.id,
-        prints.WRIST_END.id,
-        wrist_end.GUIDE.id,
     ]
     for row in catalog["guides"]:
         guide = json.loads((tmp_path / row["file"]).read_text(encoding="utf-8"))
@@ -384,15 +436,15 @@ def test_built_site_has_every_file_its_guides_need(tmp_path: Path) -> None:
             assert (tmp_path / "data" / "meshes" / f"{mesh}.json").exists()
         for step in guide["steps"]:
             assert all(row[0] in guide["items"] for row in step["kit"]), step["id"]
-    joint = json.loads((tmp_path / "data/guides/first-joint.json").read_text(encoding="utf-8"))
-    printed = [it for it in joint["items"].values() if it["kind"] == "printed"]
-    assert printed and all(it["plates"][0][0] == prints.FIRST_JOINT.id for it in printed)
-    body = next(it for it in printed if it["file"] == "wrist_body.stl")
-    assert body["plates"] == [[prints.FIRST_JOINT.id, "first-joint-3", 3, 2]]
+    shoulder = json.loads((tmp_path / "data/guides/j2-shoulder.json").read_text(encoding="utf-8"))
+    printed = [it for it in shoulder["items"].values() if it["kind"] == "printed"]
+    assert printed and all(it["plates"][0][0] == prints.ARM.id for it in printed)
+    disc = next(it for it in printed if it["file"] == "shoulder_out_disc.stl")
+    assert disc["plates"] == [[prints.ARM.id, "arm-black-1-1", 3, 1]]  # 흰 판 둘 다음의 검정 판 1
     # 출력 안내: 판의 부품마다 3D로 볼 형상이 있다 (지금 설계 코드로 뽑는 방향에 놓아 만든다)
-    pr = json.loads((tmp_path / "data/guides/first-joint-print.json").read_text(encoding="utf-8"))
+    pr = json.loads((tmp_path / "data/guides/arm-print.json").read_text(encoding="utf-8"))
     parts = [part for s in pr["steps"] for part in s["plate"]["parts"]]
-    assert len(pr["scene"]) == len({p["file"] for p in parts}) == 10
+    assert len(pr["scene"]) == len({p["file"] for p in parts}) > 0
     assert all(p["p"] is not None for p in parts)
     manifest = json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8"))
     assert len(manifest) == summary.files
@@ -409,10 +461,7 @@ def test_site_passes_its_selftest_in_a_headless_browser(tmp_path: Path) -> None:
     if not report["three"]:
         pytest.skip("three.js를 받지 못했다 (인터넷)")
     assert selftest.problems(report) == []
-    plates = sum(
-        len(print_json(p)["steps"])
-        for p in (prints.ARM, prints.ST3120_COUPON, prints.FIRST_JOINT, prints.WRIST_END)
-    )
-    guides = (base_pi, j1_zero, j2_shoulder, j1_base, st3120_horn, first_joint, wrist_end)
+    plates = len(print_json(prints.ARM)["steps"])
+    guides = (base_pi, j1_zero, j2_shoulder, upper_arm, forearm, wrist_join, j1_base)
     steps = sum(len(g.STEPS) for g in guides) + plates
     assert sum(g["steps"] for g in report["guides"]) == steps

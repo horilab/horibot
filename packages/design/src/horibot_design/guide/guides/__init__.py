@@ -7,20 +7,22 @@
 (prints.CABLE_MOTION)도 뺐다. D405 플러그 자리 재기(d405_plug)도 2026-11-19에 끝났다. 베이스·어깨 전 재기
 (base_measure)와 검정 판 전 재기(arm_measure)는 2026-11-22에 끝나 검정 판 3 전 재기(plug_measure)로 넘어갔다.
 검정 판 3 전 재기와 글자 핀 맞춰 보기(letter_pegs)는 2026-11-23에, 파이 덮개 철망 전 재기(grille_measure)는
-2026-11-24에 끝났다.
+2026-11-24에 끝났다. 첫 관절(first_joint, 11-18)과 손목 끝(wrist_end, 11-19), ST-3120 혼 자리(st3120_horn, 11-21)와
+그 출력 안내(prints.FIRST_JOINT, WRIST_END, ST3120_COUPON)는 2026-11-25에 뺐다: 아티팩트 한 판에 파일이 511개까지라
+팔 안내 셋을 더할 자리를 냈다.
 """
 
 from __future__ import annotations
 
 from horibot_design.guide.guides import (
     base_pi,
-    first_joint,
+    forearm,
     j1_base,
     j1_zero,
     j2_shoulder,
     prints,
-    st3120_horn,
-    wrist_end,
+    upper_arm,
+    wrist_join,
 )
 from horibot_design.guide.model import Guide, PrintGuide
 
@@ -28,12 +30,9 @@ ALL: tuple[Guide | PrintGuide, ...] = (
     base_pi.GUIDE,
     j1_zero.GUIDE,
     j2_shoulder.GUIDE,
+    upper_arm.GUIDE,
+    forearm.GUIDE,
+    wrist_join.GUIDE,
     prints.ARM,
     j1_base.GUIDE,
-    prints.ST3120_COUPON,
-    st3120_horn.GUIDE,
-    first_joint.GUIDE,
-    prints.FIRST_JOINT,
-    prints.WRIST_END,
-    wrist_end.GUIDE,
 )
