@@ -21,6 +21,8 @@ def main() -> None:
     build = sub.add_parser("build", help="검사하고 사이트 파일을 쓴다")
     build.add_argument("--out", type=Path, default=OUT, help="쓸 폴더 (기본 build/guide)")
     sub.add_parser("check", help="안내 정의를 장면과 부품 목록에 맞춰 검사만 한다")
+    sweep = sub.add_parser("sweep", help="끼우는 길에서 부품이 이미 붙은 부품과 겹치는지 본다")
+    sweep.add_argument("ids", nargs="*", help="안내 id (주지 않으면 모든 조립 안내)")
     test = sub.add_parser(
         "selftest", help="만든 사이트를 헤드리스 브라우저로 열어 모든 단계를 넘겨 본다"
     )
@@ -37,6 +39,25 @@ def main() -> None:
         print(f"안내 {len(report['guides'])}개, 단계 {steps}개를 넘겨 봤다 ({three})")
         for p in found:
             print(f"  고칠 것: {p}")
+        if found:
+            raise SystemExit(1)
+    elif args.cmd == "sweep":
+        from horibot_design.guide import sweep as sw
+        from horibot_design.guide.guides import ALL
+
+        prints = [g for g in ALL if isinstance(g, PrintGuide)]
+        found = 0
+        for g in ALL:
+            if isinstance(g, PrintGuide) or (args.ids and g.id not in args.ids):
+                continue
+            hits = sw.check(resolve(g, prints))
+            found += len(hits)
+            print(f"{g.id}: 끼우는 길에서 겹침 {len(hits)}곳")
+            for h in hits:
+                print(
+                    f"  {h.step}: '{h.part}'가 제자리 {h.before_mm:.1f} mm 앞에서 '{h.other}'와 겹친다 "
+                    f"(최대 {h.volume:.1f} mm³)"
+                )
         if found:
             raise SystemExit(1)
     elif args.cmd == "check":

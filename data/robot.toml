@@ -3,7 +3,7 @@
 # 각도는 도이고 키 이름에 단위를 붙인다. 컨트롤러 안에서는 rad다. 모르는 키가 있으면 읽을 때 실패한다.
 # 읽는 코드: crates/controller/src/settings.rs. 설계와 맞는지(서보 모델, 소프트 한계가 설계 범위 안인지)는
 # tests/test_robot_settings.py가 본다. 고친 뒤 확인: cargo run -p horibot-controller -- settings
-# 관절은 조립하는 대로 더한다. 지금은 옛 관절 시험의 J3만 있고, UR식 관절(0028)로 다시 설계하며 바꾼다.
+# 관절은 조립하는 대로 더한다. 지금은 J1과 옛 관절 시험의 J3이 있고, J3은 UR식 관절(0028)로 다시 설계하며 바꾼다.
 
 # 서보 값의 0/4095 경계를 소프트 한계에서 떨어뜨릴 각도 [°] (0024의 영점). 위치 모드는 경계를 넘지 않아서,
 # 관절이 갈 수 있는 자리에 경계가 있으면 서보가 먼 길로 돌아 기계 멈춤을 민다. 기계 멈춤이 소프트 한계에서
@@ -87,9 +87,35 @@ min_voltage = 60 # 15: 6.0 V (표 4.0 V)
 protection_current = 500 # 28: 6.5 mA 단위로 약 3.25 A (표 511)
 overcurrent_protection_time = 250 # 38: 10 ms 단위로 2.5 s (표 200)
 
+# STS3215: 첫 덤프(2026-11-11, ID 5, records/servo/2026-11-11_220557_dump) 값 그대로다. 손목 끝 영점(2026-11-19)에
+# 쓴 설정(records/servo/2026-11-19_wrist-end-bench/robot-wrist.toml)에서 옮겼다. 보호 설정은 STS3250처럼 첫 덤프
+# 값 그대로 켜 둔다 (0024의 서보 보호).
+[models.STS3215.registers]
+response_delay = 0 # 7
+max_voltage = 140 # 14: 14.0 V
+phase = 12 # 18: 특수 기능 비트, 바꾸지 않는다
+unload_condition = 44 # 19: 힘을 빼는 보호 = 과열, 과전류, 과부하
+led_alarm_condition = 47 # 20
+p_gain = 32 # 21: 다 만든 팔에서 재서 고른다
+d_gain = 32 # 22
+min_starting_torque = 16 # 24
+speed_p_gain = 10 # 37: 일정 속도 모드에서만 쓴다
+speed_i_gain = 200 # 39: 일정 속도 모드에서만 쓴다
+protection_current = 310 # 28: 메모리 표의 초기값(511)과 다른 칸
+
 # 그리퍼는 달 때 [gripper]로 더한다 (0030, 0032): id(11부터), model, pinion_radius_mm(설계 12.5),
 # max_width_mm(설계 60), force_percent(쥐는 힘, 과부하 기준보다 낮게), speed_mm_s, grasp_tolerance_mm, 그리고
 # 닫은 자리(손가락이 맞닿은 자리)를 영점처럼 재서 적는 position_offset, zero_raw, direction.
+
+# J1 (0029의 J1 관절). 관절 각은 운동학의 뜻이다: 베이스 +z(위)에 대한 오른손 법칙이라 위에서 볼 때 반시계가 +다.
+# 영점 핀은 J1 몸통의 뒤쪽 귀에서 돌림판을 지나 베이스 몸통의 살에 꽂고, 팔이 앞을 보는 자리가 0°다.
+# 설계로 본 방향은 -1이다: J1의 설계 부호가 -이고(conventions.md), STS3215는 서보 값이 늘 때 출력 쪽에서 볼 때
+# 시계 방향으로 돈다 (J5, J6에서 확인). 영점을 잴 때 손으로 잰 방향을 이 값과 견준다.
+[joints.j1]
+id = 1
+model = "STS3215"
+soft_limits_deg = [-160, 160] # 프로그램 한계 (멈춤 ±163°, 0029). 설계 범위(params/arm.toml의 ±175°) 안이다
+pin_deg = 0
 
 [joints.j3]
 id = 3 # 서보 ID는 관절 번호다 (0024)

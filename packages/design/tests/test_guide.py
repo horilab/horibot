@@ -21,9 +21,11 @@ from horibot_design.guide.build import (
     write_site,
 )
 from horibot_design.guide.guides import (
+    base_pi,
     first_joint,
-    grille_measure,
     j1_base,
+    j1_zero,
+    j2_shoulder,
     prints,
     st3120_horn,
     wrist_end,
@@ -96,6 +98,38 @@ def test_resolve_counts_once_and_rejects_bad_steps() -> None:
         resolve(_tiny_guide((_work("a", adds=("집",), moves=(Move(("너트 1",), (0, 1, 0)),)),)))
     with pytest.raises(GuideError, match="확인할 것"):
         resolve(_tiny_guide((Step("a", "a", "a", ("한다",), view=UP, adds=("집", "너트")),)))
+
+
+def _sweep_guide(
+    by: tuple[float, float, float], color: str = "cap", plate_y: float = 10.0
+) -> Guide:
+    """판(두께 2, 가운데 y = plate_y)이 있는 데로 말뚝(제자리 y -2 ~ 2)을 by만큼 떨어진 데서 넣는 안내."""
+
+    def scene() -> list[ScenePart]:
+        return [
+            ScenePart("판", solid(Pos(0, plate_y, 0) * Box(40.0, 2.0, 40.0)), "wrist_body", "body"),
+            ScenePart("말뚝", solid(Box(4.0, 4.0, 4.0)), "out_disc", color),
+        ]
+
+    steps = (
+        _work("plate", adds=("판",)),
+        _work("peg", adds=("말뚝",), moves=(Move(("말뚝",), by),)),
+    )
+    return Guide("sweep", "assembly", "길", "시험", scene, steps, items=first_joint.GUIDE.items)
+
+
+def test_sweep_finds_a_part_that_hits_on_its_way_in() -> None:
+    from horibot_design.guide import sweep
+
+    hits = sweep.check(resolve(_sweep_guide((0.0, 30.0, 0.0))))  # 위에서 판을 뚫고 내려온다
+    assert [(h.part, h.other) for h in hits] == [("말뚝", "판")]
+    # 말뚝 밑면(제자리 y -2)이 판 윗면(y 11)을 지나기 시작하는 곳: 제자리에서 13 mm 앞, 재는 간격 안
+    assert 13.0 - sweep.STEP_MM <= hits[0].before_mm < 13.0
+    # 밑에서 오면 판에 닿지 않는다
+    assert sweep.check(resolve(_sweep_guide((0.0, -30.0, 0.0)))) == []
+    # 판(y 2 ~ 4)이 제자리 바로 위면 마지막 6 mm에서 겹친다: 플러그만 단자 속으로 들어가는 길이로 보고 뺀다
+    assert len(sweep.check(resolve(_sweep_guide((0.0, 12.0, 0.0), plate_y=3.0)))) == 1
+    assert sweep.check(resolve(_sweep_guide((0.0, 12.0, 0.0), "plug", plate_y=3.0))) == []
 
 
 def test_servo_without_id_is_rejected() -> None:
@@ -325,9 +359,11 @@ def test_built_site_has_every_file_its_guides_need(tmp_path: Path) -> None:
     assert "/*@CSS@*/" not in page and "/*@JS@*/" not in page and "<title>작업 안내</title>" in page
     catalog = json.loads((tmp_path / "data" / "catalog.json").read_text(encoding="utf-8"))
     assert [g["id"] for g in catalog["guides"]] == [
+        base_pi.GUIDE.id,
+        j1_zero.GUIDE.id,
+        j2_shoulder.GUIDE.id,
         prints.ARM.id,
         j1_base.GUIDE.id,
-        grille_measure.GUIDE.id,
         prints.ST3120_COUPON.id,
         st3120_horn.GUIDE.id,
         "first-joint",
@@ -377,6 +413,6 @@ def test_site_passes_its_selftest_in_a_headless_browser(tmp_path: Path) -> None:
         len(print_json(p)["steps"])
         for p in (prints.ARM, prints.ST3120_COUPON, prints.FIRST_JOINT, prints.WRIST_END)
     )
-    guides = (j1_base, grille_measure, st3120_horn, first_joint, wrist_end)
+    guides = (base_pi, j1_zero, j2_shoulder, j1_base, st3120_horn, first_joint, wrist_end)
     steps = sum(len(g.STEPS) for g in guides) + plates
     assert sum(g["steps"] for g in report["guides"]) == steps
