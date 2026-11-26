@@ -47,7 +47,7 @@ HEAVY_LIBRARIES = {"build123d", "OCP", "bd_warehouse", "ocp_vscode", "mujoco", "
 CRATE_ALLOWED_INTERNAL: dict[str, set[str]] = {
     "horibot-servo": set(),
     "horibot-controller": {"horibot-servo"},
-    "horibot-bench": {"horibot-servo"},
+    "horibot-bench": {"horibot-servo", "horibot-controller"},
 }
 
 # 시리얼 포트를 여는 크레이트. 서보에 닿는 길이라 horibot-servo만 쓴다.

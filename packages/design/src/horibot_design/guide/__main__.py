@@ -1,7 +1,7 @@
 """작업 안내 사이트 만들기.
 
 uv run python -m horibot_design.guide build [--out 폴더]   # 검사하고 build/guide/에 쓴다
-uv run python -m horibot_design.guide check                 # 검사만
+uv run python -m horibot_design.guide check                 # 검사만 (끼우는 길과 나사에 공구가 닿는지도)
 """
 
 from __future__ import annotations
@@ -20,7 +20,10 @@ def main() -> None:
     sub = parser.add_subparsers(dest="cmd", required=True)
     build = sub.add_parser("build", help="검사하고 사이트 파일을 쓴다")
     build.add_argument("--out", type=Path, default=OUT, help="쓸 폴더 (기본 build/guide)")
-    sub.add_parser("check", help="안내 정의를 장면과 부품 목록에 맞춰 검사만 한다")
+    sub.add_parser(
+        "check",
+        help="안내 정의를 장면과 부품 목록에 맞춰 검사하고, 끼우는 길과 나사에 공구가 닿는지 본다",
+    )
     sweep = sub.add_parser("sweep", help="끼우는 길에서 부품이 이미 붙은 부품과 겹치는지 본다")
     sweep.add_argument("ids", nargs="*", help="안내 id (주지 않으면 모든 조립 안내)")
     test = sub.add_parser(
@@ -61,9 +64,12 @@ def main() -> None:
         if found:
             raise SystemExit(1)
     elif args.cmd == "check":
-        from horibot_design.guide.guides import ALL
+        from horibot_design.guide import reach as rc
+        from horibot_design.guide import sweep as sw
+        from horibot_design.guide.guides import ALL, KNOWN
 
         prints = [g for g in ALL if isinstance(g, PrintGuide)]
+        found = 0
         for g in ALL:
             if isinstance(g, PrintGuide):
                 print(f"{g.id}: 판 {print_json(g)['work']}개 (묶음 {', '.join(g.bundles)})")
@@ -73,6 +79,23 @@ def main() -> None:
             print(f"{g.id}: 장면 부품 {len(r.parts)}개, 작업 단계 {work}개")
             for w in r.warnings:
                 print(f"  알림: {w}")
+            issues = [
+                (
+                    h.step,
+                    f"끼우는 길: '{h.part}'가 제자리 {h.before_mm:.1f} mm 앞에서 '{h.other}'와 겹친다",
+                )
+                for h in sw.check(r)
+            ]
+            issues += [(p.step, f"공구: {p.text}") for p in rc.check(r)]
+            for step, text in issues:
+                why = KNOWN.get((g.id, step))
+                if why:
+                    print(f"  알려진 것 {step}: {text} ({why})")
+                else:
+                    found += 1
+                    print(f"  고칠 것 {step}: {text}")
+        if found:
+            raise SystemExit(1)
     else:
         s = write_site(args.out)
         try:

@@ -15,6 +15,7 @@ aws-lc-rs = ["rustls/aws_lc_rs", "rcgen/aws_lc_rs"]
 
 [dependencies]
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
+horibot-controller = { version = "0.1.0", path = "../controller" }
 horibot-servo = { version = "0.1.0", path = "../servo" }
 rcgen = { version = "0.14.10", default-features = false, features = ["pem"] }
 rustls = { version = "0.23.46", default-features = false, features = ["std", "tls12", "logging"] }

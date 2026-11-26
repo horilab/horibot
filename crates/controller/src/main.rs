@@ -12,24 +12,34 @@
 //!     cargo run -p horibot-controller -- zero --port COM5 --joint j2 [--yes]
 //!     cargo run -p horibot-controller -- run --script <파일> --port COM5 [--yes]
 //!     cargo run -p horibot-controller -- run --script <파일> --sim 127.0.0.1:5600 --yes
+//!     horibot-controller selfcheck                                    (컨트롤러 파이: 판과 실행 환경)
+//!
+//! 컨트롤러 파이(리눅스)에서 실물 서보로 `run`을 돌리면 실행 루프 스레드를 코어 3에 묶고 SCHED_FIFO 80으로
+//! 돌리며 메모리를 잠근다. 기록은 다른 코어의 낮은 우선순위 스레드가 쓴다 (0026의 2, 5).
 
 use std::collections::BTreeSet;
 use std::fs;
-use std::io::IsTerminal;
+use std::io::{self, BufRead, IsTerminal};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use std::time::Duration;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, SyncSender};
+use std::thread;
+use std::time::{Duration, Instant};
 
 use chrono::Local;
 use horibot_controller::check::{
-    self, BENCH_RANGE, Check, Clock, Console, SPARE_IDS, STEPS, Terminal, WallClock,
+    self, BENCH_RANGE, Check, Console, SPARE_IDS, STEPS, Terminal, WallClock,
 };
 use horibot_controller::joints::{BENCH_CAPS, Caps, Joints, Servo, Snapshot};
 use horibot_controller::prepare::{self, Change};
 use horibot_controller::record::{self, Log};
+use horibot_controller::rt;
 use horibot_controller::runloop::{Mode, RunLoop};
 use horibot_controller::runner::{Runner, Script, Status, Step};
 use horibot_controller::settings::{Direction, GRIPPER_NAME, Joint, Settings};
+use horibot_controller::system::{self, Environment, LoopThread};
 use horibot_controller::zero;
 use horibot_servo::feetech::registers::BAUD_RATES;
 use horibot_servo::feetech::{Bus, Error, SerialLink, ServoBus};
@@ -54,7 +64,10 @@ const USAGE: &str = "\
                       설정에 방향이 없으면) 핀 자리를 읽어 굽는다. 토크가 꺼져 있어야 하고 움직이지 않는다.
                       그리퍼(--joint gripper)는 손가락끼리 맞닿은 자리를 읽고, 방향은 --direction으로 준다
   run                시험 순서(--script)를 실행 루프로 돌린다. --yes가 없으면 순서를 검사해 보여 주고
-                      서보 상태만 읽는다. --yes가 있으면 서보가 움직인다. 움직이는 동안 Enter로 멈춘다
+                      서보 상태만 읽는다. --yes가 있으면 서보가 움직인다. 움직이는 동안 Enter로 멈춘다.
+                      리눅스에서 실물 서보로 돌리면 실행 루프를 실시간으로 돌린다 (코어 3, SCHED_FIFO 80)
+  selfcheck           판(커밋), 로봇 설정, 실행 환경(부팅 인자, 클럭 정책, 시각, 실시간 설정), 서보 어댑터
+                      경로를 보여 준다. 로봇 설정을 읽지 못하면 실패한다. 서보에 닿지 않는다
 
 옵션:
   --settings <파일>   로봇 설정 파일. 기본 data/robot.toml (레포 루트에서 돌릴 때)
@@ -69,6 +82,7 @@ const USAGE: &str = "\
   --direction <1|-1>  영점을 잴 때 방향을 재지 않고 이 값을 쓴다 (zero)
   --script <파일>     시험 순서 (run). 쓰는 법은 crates/controller/src/runner.rs
   --sim <주소>        서보 대신 시뮬레이션 서버에 붙는다 (run, 예: 127.0.0.1:5600)
+  --no-realtime       리눅스에서도 실행 루프를 보통 스레드로 돌린다 (run. 실시간 설정이 안 걸릴 때만)
 ";
 
 /// 서보 응답 하나를 더 기다리는 여유. 서보 준비는 박자가 없어 넉넉히 둔다.
@@ -87,6 +101,7 @@ enum Command {
     CheckState,
     Zero,
     Run,
+    SelfCheck,
 }
 
 #[derive(Debug)]
@@ -103,6 +118,7 @@ struct Options {
     direction: Option<Direction>,
     script: Option<PathBuf>,
     sim: Option<String>,
+    no_realtime: bool,
 }
 
 fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
@@ -120,6 +136,7 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Options, String>
         direction: None,
         script: None,
         sim: None,
+        no_realtime: false,
     };
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -177,6 +194,7 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Options, String>
                 ))
             }
             "--sim" => options.sim = Some(args.next().ok_or("--sim 뒤에 주소가 없다")?),
+            "--no-realtime" => options.no_realtime = true,
             "-h" | "--help" => return Err(String::new()),
             name if command.is_none() && !name.starts_with('-') => {
                 command = Some(match name {
@@ -187,6 +205,7 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Options, String>
                     "check-state" => Command::CheckState,
                     "zero" => Command::Zero,
                     "run" => Command::Run,
+                    "selfcheck" => Command::SelfCheck,
                     other => return Err(format!("모르는 명령이다: {other}")),
                 })
             }
@@ -240,6 +259,7 @@ fn main() -> ExitCode {
         Command::CheckState => check_state(&options),
         Command::Zero => measure_zero(&options),
         Command::Run => run_script(&options),
+        Command::SelfCheck => self_check(&options),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -265,7 +285,63 @@ fn show_ports() -> Result<(), String> {
     for name in names {
         println!("{name}");
     }
+    for path in system::serial_by_id() {
+        println!("{path} (고정 경로: 컨트롤러 파이에서는 이것을 --port로 준다)");
+    }
     Ok(())
+}
+
+/// 자가 점검: 판, 로봇 설정, 실행 환경, 실시간 설정, 서보 어댑터 경로 (0026의 2, 4). 배포 명령이 새 판을 켠 뒤
+/// 이것으로 판이 도는지 본다. 로봇 설정을 읽지 못할 때만 실패한다 (실행 환경은 판이 아니라 파이의 일이다).
+fn self_check(options: &Options) -> Result<(), String> {
+    println!("{}", system::version());
+    let settings = Settings::load(&options.settings)?;
+    println!(
+        "통과 로봇 설정: {} (관절 {}개{})",
+        options.settings.display(),
+        settings.joints.len(),
+        if settings.gripper.is_some() {
+            ", 그리퍼"
+        } else {
+            ""
+        }
+    );
+    let environment = Environment::read();
+    for finding in environment.findings() {
+        let mark = if finding.ok { "통과" } else { "확인" };
+        println!("{mark} {}: {}", finding.name, finding.detail);
+    }
+    if !cfg!(target_os = "linux") {
+        return Ok(());
+    }
+    match realtime_trial() {
+        Ok(thread) => println!(
+            "통과 실시간 설정: 메모리 잠금, {} {}, 코어 {:?}",
+            thread.policy, thread.priority, thread.affinity
+        ),
+        Err(error) => println!("확인 실시간 설정: {error}"),
+    }
+    let by_id = system::serial_by_id();
+    if by_id.is_empty() {
+        println!("확인 서보 어댑터: /dev/serial/by-id/에 없다 (USB를 꽂았는지 본다)");
+    }
+    for path in by_id {
+        println!("통과 서보 어댑터: {path}");
+    }
+    Ok(())
+}
+
+/// 실행 루프와 같은 실시간 설정을 시험 스레드에 걸어 본다 (메모리 잠금, 코어 3, SCHED_FIFO 80).
+fn realtime_trial() -> Result<LoopThread, String> {
+    rt::lock_memory()
+        .map_err(|e| format!("메모리를 잠그지 못했다: {e}. {}", system::LIMITS_HINT))?;
+    thread::Builder::new()
+        .name("realtime-trial".to_owned())
+        .stack_size(rt::PREFAULT_STACK + 1024 * 1024)
+        .spawn(system::make_loop_thread)
+        .map_err(|e| format!("시험 스레드를 띄우지 못했다: {e}"))?
+        .join()
+        .map_err(|_| "시험 스레드가 죽었다".to_owned())?
 }
 
 /// 고른 관절. 고르지 않았으면 로봇 설정의 모든 관절.
@@ -771,7 +847,7 @@ struct Source<'a> {
 }
 
 /// --yes가 없으면 서보 상태만 읽어 보이고, 있으면 실행 루프를 세워 순서를 돌린다.
-fn start_script<B: ServoBus>(
+fn start_script<B: ServoBus + Send + 'static>(
     options: &Options,
     source: &Source,
     script: Script,
@@ -792,11 +868,10 @@ fn start_script<B: ServoBus>(
         .steps
         .iter()
         .any(|step| matches!(step, Step::Pause(_)));
-    if pauses && !std::io::stdin().is_terminal() {
+    if pauses && !io::stdin().is_terminal() {
         return Err("멈춤 단계가 있는 순서는 Enter를 눌러야 해서 터미널 창에서 돌린다".to_owned());
     }
-    let run = RunLoop::start(joints, source.settings.run_loop, None)?;
-    drive_script(options, source, script, run, link)
+    drive_script(options, source, script, joints, link)
 }
 
 /// 실행 명령의 터미널: 같은 줄을 고쳐 쓰는 상태 줄 뒤에 알림을 낼 때 먼저 줄을 바꾼다.
@@ -908,14 +983,172 @@ fn run_status<B: ServoBus>(run: &RunLoop<B>, settings: &Settings, names: &[&str]
     parts.join(" | ")
 }
 
-fn drive_script<B: ServoBus>(
+/// 실행 루프 스레드에서 기록 스레드로 넘기는 것. 실행 루프는 파일에 쓰지 않는다 (0026의 5).
+enum Record {
+    Sample {
+        t: f64,
+        step: String,
+        values: Vec<i32>,
+    },
+    Event {
+        t: f64,
+        step: String,
+        text: String,
+    },
+}
+
+/// 실행 루프 스레드에서 터미널(이 프로그램의 첫 스레드)로 넘기는 줄.
+enum Line {
+    Say(String),
+    Status(String),
+}
+
+/// 기록 줄의 크기: 박자마다 하나라 10초 몫이다. 차면 실행 루프는 기다리지 않고 버리고 센다 (0026의 5)
+const RECORD_QUEUE: usize = 1000;
+/// 터미널 줄의 크기. 차면 버린다 (끝난 까닭은 기록과 마지막 줄에 남는다)
+const LINE_QUEUE: usize = 200;
+/// 기록 스레드가 디스크에 확정하는 간격 (0026의 7)
+const RECORD_SYNC: Duration = Duration::from_secs(1);
+/// 이만큼 넘게 밀리면 밀린 박자를 따라잡으려 서두르지 않고 지금부터 다시 센다 [ns]
+const CATCH_UP_LIMIT_NS: u64 = 200_000_000;
+/// 깨어나는 지연의 기준 (0026의 2의 통과 기준) [µs]. 넘은 박자를 센다
+const WAKE_LIMIT_US: u64 = 1_000;
+
+/// 실행 루프가 순서의 사람 쪽 일을 넘기는 곳: 말은 터미널 줄로 보내고(기다리지 않는다), Enter는 표준 입력을 읽는
+/// 스레드가 세운 표시로 본다.
+struct LoopConsole {
+    lines: SyncSender<Line>,
+    enter: Arc<AtomicBool>,
+}
+
+impl Console for LoopConsole {
+    fn say(&mut self, text: &str) {
+        let _ = self.lines.try_send(Line::Say(text.to_owned()));
+    }
+
+    /// 실행 루프는 묻지 않는다 (순서는 Enter만 받는다).
+    fn ask(&mut self, _question: &str) -> String {
+        String::new()
+    }
+
+    fn begin_wait(&mut self, prompt: &str) {
+        self.enter.store(false, Ordering::Relaxed); // 앞서 누른 Enter를 버린다
+        let _ = self.lines.try_send(Line::Say(prompt.to_owned()));
+    }
+
+    fn enter_pressed(&mut self) -> bool {
+        self.enter.swap(false, Ordering::Relaxed)
+    }
+
+    fn status(&mut self, text: &str) {
+        let _ = self.lines.try_send(Line::Status(text.to_owned()));
+    }
+}
+
+/// 표준 입력의 줄마다 Enter 표시를 세운다. 입력이 닫히면 끝난다 (Enter로 보지 않는다).
+fn watch_enter(enter: Arc<AtomicBool>) {
+    let _ = thread::Builder::new()
+        .name("stdin".to_owned())
+        .spawn(move || {
+            system::make_background_thread();
+            for line in io::stdin().lock().lines() {
+                if line.is_err() {
+                    break;
+                }
+                enter.store(true, Ordering::Relaxed);
+            }
+        });
+}
+
+/// 실행 루프의 박자 시간.
+#[derive(Debug, Default, Clone, Copy)]
+struct LoopStats {
+    ticks: u64,
+    wake_max_us: u64,
+    tick_max_us: u64,
+    /// 깨어나는 지연이 기준(1 ms)을 넘은 박자
+    wake_over: u64,
+    /// 한 주기보다 늦게 깬 박자
+    late: u64,
+}
+
+impl LoopStats {
+    fn add(&mut self, wake_us: u64, tick_us: u64, period_us: u64) {
+        self.ticks += 1;
+        self.wake_max_us = self.wake_max_us.max(wake_us);
+        self.tick_max_us = self.tick_max_us.max(tick_us);
+        self.wake_over += u64::from(wake_us > WAKE_LIMIT_US);
+        self.late += u64::from(wake_us > period_us);
+    }
+
+    fn to_json(self) -> Value {
+        json!({
+            "ticks": self.ticks,
+            "wake_max_us": self.wake_max_us,
+            "tick_max_us": self.tick_max_us,
+            "wake_limit_us": WAKE_LIMIT_US,
+            "wake_over_limit": self.wake_over,
+            "late_ticks": self.late,
+        })
+    }
+}
+
+/// 실행 루프 스레드에 넘기는 것.
+struct LoopJob {
+    script: Script,
+    settings: Settings,
+    /// 실행 루프를 실시간 스레드로 돌린다 (코어 3, SCHED_FIFO 80)
+    realtime: bool,
+}
+
+/// 실행 루프 스레드가 끝낸 모양.
+struct LoopEnd {
+    status: Status,
+    released: bool,
+    mode: String,
+    stats: LoopStats,
+}
+
+fn micros_i32(us: u64) -> i32 {
+    i32::try_from(us).unwrap_or(i32::MAX)
+}
+
+fn push_event(records: &SyncSender<Record>, dropped: &AtomicU64, t: f64, step: &str, text: String) {
+    let event = Record::Event {
+        t,
+        step: step.to_owned(),
+        text,
+    };
+    if records.try_send(event).is_err() {
+        dropped.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+/// 실행 루프를 실시간으로 돌리지 않는 까닭. 리눅스에서 실물 서보에 붙으면 실시간으로 돈다 (없다).
+fn realtime_off_reason(options: &Options) -> Option<&'static str> {
+    if options.no_realtime {
+        Some("--no-realtime")
+    } else if !cfg!(target_os = "linux") {
+        Some("리눅스가 아니다")
+    } else if options.sim.is_some() {
+        Some("시뮬레이션에 붙었다")
+    } else {
+        None
+    }
+}
+
+/// 시험 순서를 돌린다. 이 스레드는 터미널을 맡고, 실행 루프와 기록 쓰기는 따로 스레드를 둔다 (0026의 2, 5):
+/// 실행 루프 스레드는 실시간 설정을 건 뒤에 토크를 켠다 (못 걸면 서보에 손대지 않고 끝낸다).
+fn drive_script<B: ServoBus + Send + 'static>(
     options: &Options,
     source: &Source,
     script: Script,
-    mut run: RunLoop<B>,
+    joints: Joints<B>,
     link: Value,
 ) -> Result<(), String> {
     let names = script.joints.clone();
+    let off = realtime_off_reason(options);
+    let environment = Environment::read();
     let started = Local::now();
     let folder = record::new_record_dir(&options.records, "run", "run", &started)?;
     let meta_path = folder.join("meta.json");
@@ -928,62 +1161,255 @@ fn drive_script<B: ServoBus>(
         "robot_toml": source.robot_toml,
         "period_s": LOOP_PERIOD.as_secs_f64(),
         "joints": names,
+        "program": system::version(),
+        "environment": environment.to_json(),
+        "realtime": match off {
+            None => "실행 루프: 코어 3, SCHED_FIFO 80, 메모리 잠금".to_owned(),
+            Some(why) => format!("끔: {why}"),
+        },
     });
     record::write_json(&meta_path, &meta)?;
-    let mut columns = vec!["mode".to_owned()];
+    if off.is_none() {
+        for finding in environment.findings().iter().filter(|f| !f.ok) {
+            println!("알림: {}: {}", finding.name, finding.detail);
+        }
+        // 다른 스레드를 띄우기 전에 잠가서 모든 스레드의 스택이 잠긴다
+        if let Err(e) = rt::lock_memory() {
+            let error = format!(
+                "메모리를 잠그지 못했다: {e}. {}. 실시간 없이 돌리려면 --no-realtime을 붙인다",
+                system::LIMITS_HINT
+            );
+            return finish_failed(&meta_path, &mut meta, error);
+        }
+    }
+    let mut columns = vec![
+        "mode".to_owned(),
+        "wake_us".to_owned(),
+        "tick_us".to_owned(),
+    ];
     for name in &names {
         for field in RUN_FIELDS {
             columns.push(format!("{name}_{field}"));
         }
     }
     let column_refs: Vec<&str> = columns.iter().map(String::as_str).collect();
-    let mut log = Log::create(&folder, &column_refs)?;
+    let log = Log::create_batched(&folder, &column_refs)?;
+    let (record_tx, record_rx) = mpsc::sync_channel::<Record>(RECORD_QUEUE);
+    let writer = thread::Builder::new()
+        .name("records".to_owned())
+        .spawn(move || write_records(record_rx, log))
+        .map_err(|e| format!("기록 스레드를 띄우지 못했다: {e}"))?;
+
+    let (ready_tx, ready_rx) = mpsc::channel();
+    let (line_tx, line_rx) = mpsc::sync_channel::<Line>(LINE_QUEUE);
+    let enter = Arc::new(AtomicBool::new(false));
+    let dropped = Arc::new(AtomicU64::new(0));
+    let job = LoopJob {
+        script,
+        settings: source.settings.clone(),
+        realtime: off.is_none(),
+    };
+    let console = LoopConsole {
+        lines: line_tx,
+        enter: Arc::clone(&enter),
+    };
+    let loop_dropped = Arc::clone(&dropped);
+    let runner = thread::Builder::new()
+        .name("runloop".to_owned())
+        .stack_size(rt::PREFAULT_STACK + 1024 * 1024)
+        .spawn(move || drive_loop(job, joints, &ready_tx, &record_tx, console, &loop_dropped))
+        .map_err(|e| format!("실행 루프 스레드를 띄우지 못했다: {e}"))?;
+    let loop_thread = match ready_rx.recv() {
+        Ok(Ok(thread)) => thread,
+        Ok(Err(error)) => {
+            let _ = runner.join();
+            let _ = writer.join();
+            return finish_failed(&meta_path, &mut meta, error);
+        }
+        Err(_) => {
+            let error = match runner.join() {
+                Ok(Err(error)) => error,
+                _ => "실행 루프 스레드가 준비 전에 멈췄다".to_owned(),
+            };
+            let _ = writer.join();
+            return finish_failed(&meta_path, &mut meta, error);
+        }
+    };
+    meta["loop_thread"] = loop_thread
+        .as_ref()
+        .map_or(Value::Null, LoopThread::to_json);
+    record::write_json(&meta_path, &meta)?;
+    match (&loop_thread, off) {
+        (Some(t), _) => println!(
+            "실행 루프: {} {}, 코어 {:?}, 메모리 잠금",
+            t.policy, t.priority, t.affinity
+        ),
+        (None, Some(why)) => println!("실행 루프: 보통 스레드 ({why})"),
+        (None, None) => {}
+    }
+
+    watch_enter(enter);
     let mut console = RunConsole {
         terminal: Terminal::closed_is_silent(),
         status_shown: false,
     };
-    let mut clock = WallClock::default();
-    let mut runner = Runner::new(script, &source.settings.run_loop, LOOP_PERIOD.as_secs_f64());
-    let period = LOOP_PERIOD.as_secs_f64();
-    let mut seen = BTreeSet::new();
-    let mut last = clock.now();
-    let mut next = last;
-    let mut ticks: u64 = 0;
-    let mut tick = |run: &mut RunLoop<B>,
-                    clock: &mut WallClock,
-                    log: &mut Log,
-                    label: &str|
-     -> Result<f64, String> {
-        next += period;
-        let now = clock.now();
-        if next > now {
-            clock.sleep(next - now);
-        } else if now - next > 0.2 {
-            next = now; // 많이 밀렸으면 따라잡으려 서두르지 않는다
+    // 실행 루프가 끝나 줄을 닫을 때까지 받는다
+    for line in line_rx {
+        match line {
+            Line::Say(text) => console.say(&text),
+            Line::Status(text) => console.status(&text),
         }
-        let now = clock.now();
-        let dt = (now - last).max(1e-4);
-        last = now;
+    }
+    console.end_status();
+    let end = runner
+        .join()
+        .map_err(|_| "실행 루프 스레드가 죽었다".to_owned())??;
+    let written = writer
+        .join()
+        .map_err(|_| "기록 스레드가 죽었다".to_owned())?;
+    let dropped = dropped.load(Ordering::Relaxed);
+
+    meta["end"] = json!(match &end.status {
+        Status::Stopped(_) => "stopped",
+        _ => "done",
+    });
+    meta["result"] = json!(match &end.status {
+        Status::Stopped(reason) => reason.clone(),
+        _ => "순서를 마쳤다".to_owned(),
+    });
+    meta["released"] = json!(end.released);
+    meta["mode_at_end"] = json!(end.mode);
+    meta["loop"] = end.stats.to_json();
+    meta["dropped_records"] = json!(dropped);
+    if let Err(error) = &written {
+        meta["records_error"] = json!(error);
+    }
+    meta["ended"] = json!(record::time_text(&Local::now()));
+    record::write_json(&meta_path, &meta)?;
+    let stats = end.stats;
+    println!(
+        "실행 루프: {}박자, 깨어나는 지연 최악 {} µs (1 ms를 넘은 박자 {}), 한 박자 일 최악 {} µs, 버린 기록 {dropped}",
+        stats.ticks, stats.wake_max_us, stats.wake_over, stats.tick_max_us
+    );
+    if let Err(error) = written {
+        println!("알림: 기록을 끝까지 쓰지 못했다: {error}");
+    }
+    if !end.released {
+        println!(
+            "서보는 마지막 자리에서 버틴다 (토크 켜짐). 끝내려면 팔을 받친 뒤 + 플러그를 뺀다 (0016)"
+        );
+    }
+    println!("기록: {}", folder.display());
+    match end.status {
+        Status::Stopped(reason) => Err(reason),
+        _ => Ok(()),
+    }
+}
+
+/// 실행 루프를 세우지 못하고 끝낸다: 까닭을 기록에 남긴다.
+fn finish_failed(meta_path: &Path, meta: &mut Value, error: String) -> Result<(), String> {
+    meta["end"] = json!("error");
+    meta["result"] = json!(error);
+    meta["ended"] = json!(record::time_text(&Local::now()));
+    record::write_json(meta_path, meta)?;
+    Err(error)
+}
+
+/// 기록 스레드: 실행 루프가 넘긴 줄을 파일에 쓰고 1초쯤마다 디스크에 확정한다. 실행 루프가 끝나 줄이 닫히면
+/// 남은 것을 쓰고 돌아온다. 쓰지 못하면 멈추고, 실행 루프는 그 뒤의 기록을 버린 것으로 센다 (제어는 그대로 돈다).
+fn write_records(rx: Receiver<Record>, mut log: Log) -> Result<(), String> {
+    system::make_background_thread();
+    let mut synced = Instant::now();
+    loop {
+        match rx.recv_timeout(Duration::from_millis(200)) {
+            Ok(Record::Sample { t, step, values }) => log.sample(t, &step, &values)?,
+            Ok(Record::Event { t, step, text }) => log.event(t, &step, &text)?,
+            Err(RecvTimeoutError::Timeout) => {}
+            Err(RecvTimeoutError::Disconnected) => return log.sync(),
+        }
+        if synced.elapsed() >= RECORD_SYNC {
+            log.sync()?;
+            synced = Instant::now();
+        }
+    }
+}
+
+/// 실행 루프 스레드: 실시간 설정을 걸고, 토크를 켜고(실행 루프 시작), 준비됐다고 알린 뒤 박자마다 실행 루프와
+/// 시험 순서를 돌린다. 박자는 정한 시각까지 자는 방식이라 늦게 깬 만큼이 다음 박자로 쌓이지 않는다.
+fn drive_loop<B: ServoBus>(
+    job: LoopJob,
+    joints: Joints<B>,
+    ready: &Sender<Result<Option<LoopThread>, String>>,
+    records: &SyncSender<Record>,
+    mut console: LoopConsole,
+    dropped: &AtomicU64,
+) -> Result<LoopEnd, String> {
+    let fail = |error: String| {
+        let _ = ready.send(Err(error.clone()));
+        error
+    };
+    let thread = if job.realtime {
+        Some(system::make_loop_thread().map_err(fail)?)
+    } else {
+        None
+    };
+    let mut run = RunLoop::start(joints, job.settings.run_loop, None).map_err(fail)?;
+    let _ = ready.send(Ok(thread));
+
+    let names = job.script.joints.clone();
+    let mut runner = Runner::new(
+        job.script,
+        &job.settings.run_loop,
+        LOOP_PERIOD.as_secs_f64(),
+    );
+    let period_ns = u64::try_from(LOOP_PERIOD.as_nanos()).unwrap_or(u64::MAX);
+    let period_us = period_ns / 1_000;
+    let mut stats = LoopStats::default();
+    let mut seen = BTreeSet::new();
+    let start = rt::now_ns();
+    let mut next = start;
+    let mut last = start;
+    let mut tick = |run: &mut RunLoop<B>, label: &str, stats: &mut LoopStats| -> f64 {
+        next += period_ns;
+        if rt::now_ns() > next + CATCH_UP_LIMIT_NS {
+            next = rt::now_ns(); // 많이 밀렸으면 따라잡으려 서두르지 않는다
+        }
+        rt::sleep_until_ns(next);
+        let woke = rt::now_ns();
+        let dt = ((woke - last) as f64 / 1e9).max(1e-4);
+        last = woke;
         run.tick(dt);
-        log.sample(now, label, &run_row(run))?;
-        Ok(now)
+        let wake_us = woke.saturating_sub(next) / 1_000;
+        let tick_us = rt::now_ns().saturating_sub(woke) / 1_000;
+        stats.add(wake_us, tick_us, period_us);
+        let mut values = run_row(run);
+        values.splice(1..1, [micros_i32(wake_us), micros_i32(tick_us)]);
+        let t = (woke - start) as f64 / 1e9;
+        let sample = Record::Sample {
+            t,
+            step: label.to_owned(),
+            values,
+        };
+        if records.try_send(sample).is_err() {
+            dropped.fetch_add(1, Ordering::Relaxed);
+        }
+        t
     };
     let status = loop {
         let label = runner.label();
-        let now = tick(&mut run, &mut clock, &mut log, &label)?;
+        let now = tick(&mut run, &label, &mut stats);
         let status = runner.tick(&mut run, &mut console, now);
         for event in runner.take_events() {
-            log.event(now, &label, &event)?;
+            push_event(records, dropped, now, &label, event);
         }
         for warning in run.warnings() {
             if seen.insert(warning.clone()) {
                 console.say(&format!("알림: {warning}"));
-                log.event(now, &label, &warning)?;
+                push_event(records, dropped, now, &label, warning);
             }
         }
-        ticks += 1;
-        if ticks.is_multiple_of(50) {
-            console.status(&run_status(&run, source.settings, &names));
+        if stats.ticks.is_multiple_of(50) {
+            console.status(&run_status(&run, &job.settings, &names));
         }
         if status != Status::Running {
             break status;
@@ -995,32 +1421,15 @@ fn drive_script<B: ServoBus>(
             if matches!(run.mode(), Mode::Holding | Mode::Fault(_)) {
                 break;
             }
-            tick(&mut run, &mut clock, &mut log, "settle")?;
+            tick(&mut run, "settle", &mut stats);
         }
     }
-    console.end_status();
-    meta["end"] = json!(match &status {
-        Status::Stopped(_) => "stopped",
-        _ => "done",
-    });
-    meta["result"] = json!(match &status {
-        Status::Stopped(reason) => reason.clone(),
-        _ => "순서를 마쳤다".to_owned(),
-    });
-    meta["released"] = json!(runner.released());
-    meta["mode_at_end"] = json!(format!("{:?}", run.mode()));
-    meta["ended"] = json!(record::time_text(&Local::now()));
-    record::write_json(&meta_path, &meta)?;
-    if !runner.released() {
-        println!(
-            "서보는 마지막 자리에서 버틴다 (토크 켜짐). 끝내려면 팔을 받친 뒤 + 플러그를 뺀다 (0016)"
-        );
-    }
-    println!("기록: {}", folder.display());
-    match status {
-        Status::Stopped(reason) => Err(reason),
-        _ => Ok(()),
-    }
+    Ok(LoopEnd {
+        status,
+        released: runner.released(),
+        mode: format!("{:?}", run.mode()),
+        stats,
+    })
 }
 
 #[cfg(test)]

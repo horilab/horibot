@@ -43,10 +43,17 @@ RCLONE_VERSION = "v1.76.0"
 # https://downloads.rclone.org/<버전>/SHA256SUMS 의 값. 버전을 올리면 같이 바꾼다.
 RCLONE_SHA256 = {
     "windows-amd64": "8b4fd2737ade4e70c057ef4a49deb7cffe94b0fb9d7587c189d149823f21a1dc",
+    "linux-arm64": "ee169016675e23a69d77240565133ff7dbc9b33d16fa8f7053d4af39f1eaeb78",  # 컨트롤러 파이
 }
 
 # rclone 종료 코드 3, 4: 폴더나 파일이 없다
 NOT_FOUND_CODES = (3, 4)
+
+# 컨트롤러 파이의 기록 올리기 (0026의 5). 파이의 업로드 유닛은 이 인자로 만든다 (tools/deploy.py)
+PI_RECORDS = "/var/lib/horilab/records"  # 파이의 기록 폴더 (레포의 records/와 같은 상대 경로)
+PI_PLATFORM = "linux-arm64"
+PI_UPLOAD_MIN_AGE = "2m"  # 2분 넘게 안 바뀐 파일만: 쓰는 중인 세션은 다음 번에 올린다
+PI_UPLOAD_BWLIMIT = "2M"  # 초당 바이트 상한. 집 업로드 대역을 다 쓰지 않게 둔 어림 값이다
 
 
 @dataclass(frozen=True)
@@ -73,9 +80,13 @@ class Rclone:
         )
 
 
-def rclone_path() -> Path:
-    name = "rclone.exe" if sys.platform == "win32" else "rclone"
-    return LOCAL / f"rclone-{RCLONE_VERSION}" / name
+def rclone_path(platform_name_: str | None = None) -> Path:
+    """레포 안의 rclone 실행 파일. 플랫폼(예: linux-arm64)을 주면 그 플랫폼 것이다 (파이에 올릴 때)."""
+    if platform_name_ is None or platform_name_ == platform_name():
+        name = "rclone.exe" if sys.platform == "win32" else "rclone"
+        return LOCAL / f"rclone-{RCLONE_VERSION}" / name
+    name = "rclone.exe" if platform_name_.startswith("windows") else "rclone"
+    return LOCAL / f"rclone-{RCLONE_VERSION}-{platform_name_}" / name
 
 
 def platform_name() -> str:
@@ -86,12 +97,14 @@ def platform_name() -> str:
     return f"{system}-{arch}"
 
 
-def ensure_rclone() -> Path:
-    """rclone이 없으면 공식 배포 파일을 받아 해시를 확인하고 실행 파일만 꺼낸다."""
-    path = rclone_path()
+def ensure_rclone(platform_name_: str | None = None) -> Path:
+    """rclone이 없으면 공식 배포 파일을 받아 해시를 확인하고 실행 파일만 꺼낸다.
+
+    플랫폼을 주면 그 플랫폼 것을 받는다 (파이에 올릴 linux-arm64)."""
+    path = rclone_path(platform_name_)
     if path.exists():
         return path
-    name = platform_name()
+    name = platform_name_ or platform_name()
     expected = RCLONE_SHA256.get(name)
     if expected is None:
         raise SystemExit(f"{name}용 rclone 해시가 없다. tools/sync.py의 RCLONE_SHA256에 더한다")
@@ -187,6 +200,13 @@ def copy_args(
     if dry_run:
         args.append("--dry-run")
     return args
+
+
+def pi_upload_args(remote_root: str = REMOTE_ROOT) -> list[str]:
+    """컨트롤러 파이의 업로드 타이머가 쓰는 rclone 인자 (0026의 5). PC의 push와 같은 copy 인자(지우지 않고,
+    드라이브 쪽이 더 새것이면 건너뛴다)에, 2분 넘게 안 바뀐 파일만 올리고 속도 상한을 둔다."""
+    args = copy_args(PI_RECORDS, f"{remote_root}/records", ())
+    return [*args, "--min-age", PI_UPLOAD_MIN_AGE, "--bwlimit", PI_UPLOAD_BWLIMIT]
 
 
 def exists(rclone: Rclone, path: str) -> bool:

@@ -328,6 +328,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "evdev",
+ "horibot-controller",
  "horibot-servo",
  "libc",
  "rcgen",
@@ -341,6 +342,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "horibot-servo",
+ "libc",
  "rsruckig",
  "serde",
  "serde_json",

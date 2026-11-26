@@ -6,5 +6,7 @@
 //! - `runloop`: 가짜 서보 버스로 100 Hz 실행 루프를 흉내 내어, 부하를 건 채 깨어나는 지연과 놓친 박자를
 //!   잰다 (미리 재기 2).
 
-pub mod rt;
 pub mod runloop;
+
+/// 운영체제 실시간 기능은 컨트롤러의 것을 같이 쓴다 (실행 명령과 같은 코드로 잰다).
+pub use horibot_controller::rt;

@@ -473,7 +473,7 @@ pub fn run_loop(
         rt::set_fifo(priority)
             .map_err(|e| format!("SCHED_FIFO {priority}를 걸지 못했다 (root로 돌린다): {e}"))?;
     }
-    prefault_stack();
+    rt::prefault_stack();
 
     let ids = ARM_SERVOS.map(|(id, _)| id);
     let mut bus = open_fake_bus(
@@ -571,18 +571,6 @@ fn compute(until_ns: u64, mut x: f64) -> f64 {
             return x;
         }
     }
-}
-
-/// 실행 루프 스레드의 스택을 미리 한 번 써서, 박자 도중에 처음 쓰는 페이지 때문에 늦지 않게 한다.
-/// 스레드 스택은 이보다 커야 한다.
-pub const PREFAULT_STACK: usize = 256 * 1024;
-
-fn prefault_stack() {
-    let mut pages = [0u8; PREFAULT_STACK];
-    for i in (0..pages.len()).step_by(4096) {
-        pages[i] = 1;
-    }
-    std::hint::black_box(&pages);
 }
 
 #[cfg(test)]

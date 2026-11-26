@@ -36,3 +36,15 @@ ALL: tuple[Guide | PrintGuide, ...] = (
     prints.ARM,
     j1_base.GUIDE,
 )
+
+# 끝낸 안내에 남은, 알고 있는 검사 결과: (안내 id, 단계 id) → 까닭. guide check가 알리기만 하고 막지 않는다. 안내를 실제로
+# 한 대로 고치면 지운다 (status.md의 조립).
+KNOWN: dict[tuple[str, str], str] = {
+    ("j1-base", "servo-in"): (
+        "실제로는 누름 틀을 끼운 서보에 허브를 다시 달아 한 덩어리로 넣었다 (2026-11-24)"
+    ),
+    ("j1-base", "shelf"): "렌치를 넣는 방향을 그리지 않았다. 조립은 끝났다 (2026-11-24)",
+    ("base-pi", "trays-on"): (
+        "실제로는 hori2는 판 나사를 먼저 조이고 젠더를 꽂았고, hori1은 이 나사를 빼고 셋만 조였다 (2026-11-25)"
+    ),
+}

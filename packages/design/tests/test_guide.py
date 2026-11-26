@@ -9,7 +9,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from build123d import Box, Pos
+from build123d import Box, Compound, Plane, Pos, Solid, Vector
 
 from horibot_design.guide import cables, selftest
 from horibot_design.guide.build import (
@@ -185,6 +185,68 @@ def test_sweep_poses_the_joints_of_the_step() -> None:
     # 말뚝이 관절과 같이 돈다: 90°면 움직임 방향(위에서)이 +x 쪽에서로 돌아 서 있는 판(x 10)을 지난다
     assert sweep.check(resolve(_posed_guide(0.0, peg_turns=True))) == []
     assert len(sweep.check(resolve(_posed_guide(90.0, peg_turns=True)))) == 1
+
+
+HEAD_TOP = 1.65  # 시험 나사의 머리 윗면 높이 (y)
+
+
+def _reach_guide(roof: float | None = None, wall: bool = False, hint: float | None = None) -> Guide:
+    """밑판(윗면 y 0)에 M3 × 10을 위에서(by (0, 14, 0)) 조이는 안내.
+
+    roof를 주면 머리 위 그 높이에 지붕(축을 덮는다)이, wall이면 렌치 긴 팔 높이(머리 위 8 ~ 16 mm)의 +x 쪽(x 4 ~ 24)에
+    벽이 있다. hint를 주면 그 방향(reach.l_key의 각, 0°가 +x)으로 L자 렌치를 그려 넣는다."""
+    from horibot_design.guide import reach
+
+    def scene() -> list[ScenePart]:
+        up = Vector(0, 1, 0)
+        shank = Solid.make_cylinder(1.5, 10.0, Plane(origin=(0, -10, 0), z_dir=(0, 1, 0)))
+        head = Solid.make_cylinder(2.85, HEAD_TOP, Plane(origin=(0, 0, 0), z_dir=(0, 1, 0)))
+        parts = [
+            ScenePart("밑판", solid(Pos(0, -5, 0) * Box(40.0, 10.0, 40.0)), "wrist_body", "body"),
+            ScenePart("나사", Compound([head.fuse(shank)]), "m3x10", "metal"),
+        ]
+        if roof is not None:
+            box = Pos(0, HEAD_TOP + roof + 1.0, 0) * Box(20.0, 2.0, 20.0)
+            parts.append(ScenePart("지붕", solid(box), "out_disc", "cap"))
+        if wall:
+            box = Pos(14, HEAD_TOP + 12.0, 0) * Box(20.0, 8.0, 20.0)
+            parts.append(ScenePart("벽", solid(box), "carrier", "cap"))
+        if hint is not None:
+            key = reach.l_key(Vector(0, HEAD_TOP, 0), up, hint)
+            parts.append(ScenePart("렌치", Compound([key]), "hexkey", "metal", count=False))
+        return parts
+
+    base = ("밑판", *(("지붕",) if roof is not None else ()), *(("벽",) if wall else ()))
+    steps = (
+        _work("base", adds=base),
+        _work(
+            "screw",
+            adds=("나사", *(("렌치",) if hint is not None else ())),
+            moves=(Move(("나사",), (0.0, 14.0, 0.0)),),
+        ),
+    )
+    return Guide("reach", "assembly", "렌치", "시험", scene, steps, items=first_joint.GUIDE.items)
+
+
+def test_reach_finds_screws_a_straight_key_cannot_reach() -> None:
+    from horibot_design.guide import reach
+
+    assert reach.check(resolve(_reach_guide())) == []  # 머리 위가 비었다
+    # 머리 위 9 mm에 지붕: 곧은 렌치도, L자 렌치의 짧은 팔(12 mm)도 막힌다
+    shut = resolve(_reach_guide(roof=9.0))
+    [x] = reach.reaches(shut)
+    assert x.blocked_mm == pytest.approx(9.0, abs=0.3) and x.turns == ()
+    assert "들어가지 않는다" in reach.check(shut, [x])[0].text
+    # 지붕이 높으면(16 mm) 짧은 팔이 들어가고, 벽이 없으면 긴 팔이 어느 쪽으로나 돈다: 그림이 없어도 된다
+    assert reach.check(resolve(_reach_guide(roof=16.0))) == []
+    # 한쪽에 벽이 있으면 일부 방향으로만 돈다: 렌치를 넣는 방향을 그려야 한다
+    side = resolve(_reach_guide(roof=16.0, wall=True))
+    [y] = reach.reaches(side)
+    assert 0 < len(y.turns) < 360 // reach.TURN_STEP and 0 not in y.turns and 180 in y.turns
+    assert "그려 보인다" in reach.check(side, [y])[0].text
+    assert reach.check(resolve(_reach_guide(roof=16.0, wall=True, hint=180.0))) == []
+    [p] = reach.check(resolve(_reach_guide(roof=16.0, wall=True, hint=0.0)))
+    assert "겹친다" in p.text
 
 
 def test_servo_without_id_is_rejected() -> None:

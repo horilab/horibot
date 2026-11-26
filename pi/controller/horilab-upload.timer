@@ -1,0 +1,11 @@
+# horilab: 기록을 드라이브로 올리는 타이머 (docs/decisions/0026의 5). pi/controller/setup.sh가 넣는다.
+# 켜고 2분 뒤에 못 올린 기록부터 올리고, 그 뒤로는 끝난 지 5분마다 다시 돈다.
+[Unit]
+Description=horilab: 기록을 드라이브로 올린다 (몇 분마다)
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=5min
+
+[Install]
+WantedBy=timers.target

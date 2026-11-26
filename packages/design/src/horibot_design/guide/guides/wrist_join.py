@@ -9,6 +9,9 @@
 - J4 영점은 J2와 J3 영점 핀으로 팔을 곧게 세운 채, J4가 90°(범위 가운데 180°에서 90° 돌린 자리: 손목 몸통은 범위
   가운데에서 90° 돌린 자리에서 핀이 맞는다, 0029)일 때 손목 1의 핀 귀와 아래팔 끝 집의 살에 핀을 꽂는다. + 쪽은 손목이
   앞으로 숙는 쪽이다. 설계로 본 방향은 -1이다. 핀 셋이 든다.
+- 발 나사 넷은 머리 위 13 ~ 17 mm에서 손목 1 몸통(누름 틀, 서보 받침, 벽 나사)에 막혀 곧은 렌치가 들어가지 않는다
+  (guide/reach.py). L자 렌치의 짧은 쪽을 머리에 넣고 긴 쪽을 손목 몸통 바깥으로 눕히면 나사마다 반 바퀴쯤 돌릴 수 있어서,
+  그 방향을 그려 보인다 (같은 구멍의 가짜 아래팔 나사를 손목 끝 조립 때 육각렌치로 풀었다).
 - 다 하면 쉬는 자세(J1 -55°, J2 52°, J3 154°, J4 325°)로 둔다 (0037). D405 선은 아직 묶지 않는다.
 
 장면 좌표는 J1의 서보 좌표다 (arm_common). 둘째 관절은 J4다.
@@ -18,6 +21,9 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+from build123d import Compound, Vector
+
+from horibot_design.guide import reach
 from horibot_design.guide.guides import arm_common as ac
 from horibot_design.guide.guides import forearm as fa
 from horibot_design.guide.guides import upper_arm as ua
@@ -71,6 +77,13 @@ OTHER: dict[str, Item] = {
 
 J4_AXIS = ac.axis_of("j4")
 _FA_REDRAW = ("J5 선 (창 밖)", "J5 선 끝 플러그", "영점 핀 (J2)", "영점 핀 (J3)")
+
+# 발 나사를 조이는 L자 렌치 (그림): 발 나사 1(뒤쪽 아래)에 짧은 쪽을 넣고 긴 쪽을 뒤(손목 몸통 바깥)로 눕힌 자리.
+# 방향은 reach.l_key의 각이다 (0° 위, 90° 앞, 180° 아래, 270° 뒤). 발 나사 1, 2는 180 ~ 345°, 3, 4는 15 ~ 180°로 돈다.
+KEY = "육각렌치 (발 나사)"
+KEY_ON = "1"
+KEY_OUT = Vector(0, 0, -1)
+KEY_TURN = 270.0
 
 
 def _have_pieces() -> list[ac.Piece]:
@@ -127,11 +140,16 @@ def pieces() -> list[ac.Piece]:
             False,
         )
     )
-    # 손목 1의 발 나사 M3 × 10 넷 (J4 출력 원판 밑면의 너트에 물린다)
+    # 손목 1의 발 나사 M3 × 10 넷 (J4 출력 원판 밑면의 너트에 물린다). 머리는 장면의 -z 쪽이다
     for p in wrist.foot_mount("STS3215", flip=True):
         if p.name.startswith("발 나사"):
             k = p.name.rsplit(" ", 1)[1]
-            out.append(ac.Piece(f"손목 발 나사 {k}", ac.put(p.shape, "j5"), "m3x10", "metal", "j5"))
+            screw = ac.put(p.shape, "j5")
+            out.append(ac.Piece(f"손목 발 나사 {k}", screw, "m3x10", "metal", "j5"))
+            if k == KEY_ON:
+                top = reach.head_top(screw, KEY_OUT)
+                shape = Compound([reach.l_key(top, KEY_OUT, KEY_TURN)])
+                out.append(ac.Piece(KEY, shape, "hexkey", "metal", "j5", False))
     # 영점 핀 셋: J2, J3(팔을 곧게 잡는다)과 J4 (손목 1의 귀, J4 90°에 꽂은 자리)
     for p in fa.pieces():
         if p.name in ("영점 핀 (J2)", "영점 핀 (J3)"):
@@ -347,26 +365,35 @@ WRIST_STEPS: tuple[Step, ...] = (
             "쪽)을 보게 돌려 얹습니다. 다른 관절과 반 바퀴 다르게 다는 것입니다.",
             "얹을 때 손목 1 발 밑의 두 선이 원판의 혼 볼트 머리 양옆으로 가는지 봅니다.",
             "발 양옆 귀의 구멍 넷에 M3 × 10을 넣어 원판의 너트에 대각선 차례로 조입니다.",
+            "렌치는 L자로 씁니다: 짧은 쪽을 나사 머리에 끝까지 넣고, 긴 쪽은 손목 몸통 바깥으로 눕힙니다 (그림). 돌릴 수 "
+            "있는 만큼 돌린 뒤 렌치를 빼서 다시 끼워 돌립니다. 반대쪽 귀의 두 나사는 긴 쪽을 그쪽 바깥으로 눕힙니다.",
         ),
-        warn=("손목 끝이 무겁습니다. 다 조일 때까지 한 손으로 받칩니다.",),
+        warn=(
+            "손목 끝이 무겁습니다. 다 조일 때까지 한 손으로 받칩니다.",
+            "곧은 드라이버나 렌치의 긴 쪽은 나사 머리 위의 손목 1 몸통에 막혀 들어가지 않습니다.",
+        ),
         check=(
             "발이 원판에 들뜨지 않고 앉았다.",
             "나사 넷의 머리가 다 닿았다.",
             "선 둘이 발과 원판 사이에 끼지 않았다.",
         ),
         stuck=ac.PHOTO,
-        adds=(FEET,),
-        focus=(*FOREARM_END, *WRIST_SET, ACROSS, INSIDE, PLUG, FEET),
-        mount=(FEET,),
-        uses=(Use("hexkey"),),
+        adds=(FEET, KEY),
+        focus=(*FOREARM_END, *WRIST_SET, ACROSS, INSIDE, PLUG, FEET, KEY),
+        mount=(FEET, KEY),
+        uses=(Use("hexkey", note="L자로 (그림)"),),
         moves=(
             Move((*WRIST_SET, INSIDE, PLUG), (0.0, 0.0, -45.0)),
             Move((FEET,), (0.0, 0.0, -14.0), 1.4),
+            Move((KEY,), (0.0, 0.0, -4.0), 2.8),
         ),
         view=FROM_LEFT,
         zoom=1.4,
         center=_J4,
-        labels=(Label(f"{FEET} 1", "M3 × 10 × 4"),),
+        labels=(
+            Label(f"{FEET} 3", "M3 × 10 × 4"),
+            Label(KEY, "육각렌치: 짧은 쪽을 머리에, 긴 쪽은 바깥으로"),
+        ),
     ),
 )
 
@@ -543,20 +570,26 @@ def _rest(sid: str, kind: str) -> Step:
     )
 
 
-def _no_fake(steps: tuple[Step, ...], start: str) -> tuple[Step, ...]:
-    """가짜 아래팔 끝을 뗀 뒤의 단계에서 그것을 숨긴다 (본체에 붙여 둔 채로 남아 있어서)."""
+def _hide_after(steps: tuple[Step, ...], start: str, names: tuple[str, ...]) -> tuple[Step, ...]:
+    """start 단계 뒤의 단계에서 names를 숨긴다 (뗀 가짜 아래팔 끝, 다 쓴 렌치: 본체에 붙은 채로 남아 있어서)."""
     out, after = [], False
     for s in steps:
         if after:
-            s = replace(s, hide=(*s.hide, *FAKE))
+            s = replace(s, hide=(*s.hide, *names))
         if s.id == start:
             after = True
         out.append(s)
     return tuple(out)
 
 
-STEPS: tuple[Step, ...] = _no_fake(
-    (PREP, *WRIST_STEPS, *ZERO_STEPS, _rest("rest", "work"), _rest("done", "end")), "ff-off"
+STEPS: tuple[Step, ...] = _hide_after(
+    _hide_after(
+        (PREP, *WRIST_STEPS, *ZERO_STEPS, _rest("rest", "work"), _rest("done", "end")),
+        "ff-off",
+        FAKE,
+    ),
+    "attach",
+    (KEY,),
 )
 
 GUIDE = Guide(

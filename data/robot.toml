@@ -3,8 +3,9 @@
 # 각도는 도이고 키 이름에 단위를 붙인다. 컨트롤러 안에서는 rad다. 모르는 키가 있으면 읽을 때 실패한다.
 # 읽는 코드: crates/controller/src/settings.rs. 설계와 맞는지(서보 모델, 소프트 한계가 설계 범위 안인지)는
 # tests/test_robot_settings.py가 본다. 고친 뒤 확인: cargo run -p horibot-controller -- settings
-# 관절은 조립하는 대로 더한다. 지금은 J1 ~ J4가 있다. J5, J6, 그리퍼는 손목 끝 영점(2026-11-19)의 설정
-# (records/servo/2026-11-19_wrist-end-bench/robot-wrist.toml)에 있고, 처음 전원 전에 옮긴다.
+# 관절은 J1 ~ J6과 그리퍼가 다 있다. J2 ~ J4의 영점은 그 관절의 핀 구멍이 있는 다음 몸통을 단 날 재서 적는다 (0034).
+# J5, J6, 그리퍼는 손목 끝 영점(2026-11-19)의 설정(records/servo/2026-11-19_wrist-end-bench/robot-wrist.toml)에서
+# 옮겼다 (2026-11-26).
 
 # 서보 값의 0/4095 경계를 소프트 한계에서 떨어뜨릴 각도 [°] (0024의 영점). 위치 모드는 경계를 넘지 않아서,
 # 관절이 갈 수 있는 자리에 경계가 있으면 서보가 먼 길로 돌아 기계 멈춤을 민다. 기계 멈춤이 소프트 한계에서
@@ -104,10 +105,6 @@ speed_p_gain = 10 # 37: 일정 속도 모드에서만 쓴다
 speed_i_gain = 200 # 39: 일정 속도 모드에서만 쓴다
 protection_current = 310 # 28: 메모리 표의 초기값(511)과 다른 칸
 
-# 그리퍼는 달 때 [gripper]로 더한다 (0030, 0032): id(11부터), model, pinion_radius_mm(설계 12.5),
-# max_width_mm(설계 60), force_percent(쥐는 힘, 과부하 기준보다 낮게), speed_mm_s, grasp_tolerance_mm, 그리고
-# 닫은 자리(손가락이 맞닿은 자리)를 영점처럼 재서 적는 position_offset, zero_raw, direction.
-
 # 관절마다: id(서보 ID는 관절 번호다, 0024), model, soft_limits_deg(컨트롤러가 움직이는 범위, 설계 범위 안),
 # pin_deg(영점 핀을 꽂는 자리의 관절 각, 0029). 관절 각은 운동학의 뜻이다 (conventions.md). 영점은 팔에 달고 영점 핀을
 # 꽂은 채 잰다 (0024의 영점, 0034: 관절마다 그 관절의 핀 구멍이 있는 다음 몸통을 단 날). 잰 뒤 아래 셋을 같이 적고,
@@ -125,7 +122,7 @@ protection_current = 310 # 28: 메모리 표의 초기값(511)과 다른 칸
 [joints.j1]
 id = 1
 model = "STS3215"
-soft_limits_deg = [-160, 160] # 프로그램 한계 (멈춤 ±163°, 0029). 설계 범위(params/arm.toml의 ±175°) 안이다
+soft_limits_deg = [-160, 160] # 프로그램 한계 (멈춤 ±163°, 0029)
 pin_deg = 0
 # 영점 (2026-11-25, records/servo/2026-11-25_234710_zero-crazyhappy): 손으로 잰 방향이 설계와 같다
 position_offset = 1121
@@ -158,3 +155,49 @@ id = 4
 model = "STS3215"
 soft_limits_deg = [20, 340] # 범위 가운데 180° ± 160°
 pin_deg = 90
+
+# J5 (STS 관절, 손목 1): 축이 손목 2 쪽을 보는 +z라 출력 쪽(손목 2)에서 볼 때 반시계가 +다. 설계 코드(parts/joint.py의
+# turned)와 작업 안내는 그 반대로 그려서, 설계의 핀 자리 -90°가 여기서는 +90°다.
+[joints.j5]
+id = 5
+model = "STS3215"
+soft_limits_deg = [-160, 160] # 프로그램 한계 (멈춤 ±163°)
+pin_deg = 90
+torque_limit_percent = 20 # 손목 시험대의 값: 선이 걸리면 세게 누르기 전에 서보가 막히게 낮게 뒀다. 팔 전체 모델로 다시 잡는다
+# 영점 (2026-11-19, records/servo/2026-11-19_214943_zero): 손목 2를 J5 원판에서 떼었다 다시 달고 다시 쟀다. 서보 값이
+# 늘면 출력 쪽에서 볼 때 시계 방향으로 돈다 (서보로 20° 돌린 전후 사진). 틈은 운동학의 - 쪽으로 붙였다 (0034는 + 쪽).
+# 여러 번 돌린 뒤에도 그대로였다 (2026-11-22, 핀을 꽂은 서보 값 1022).
+position_offset = 170
+zero_raw = 1023
+direction = -1
+
+# J6 (STS 관절, 손목 2 → 플랜지): 축이 도구 쪽을 보는 +y라 앞(도구 쪽)에서 볼 때 반시계가 +다. 플랜지 원판의 영점 핀
+# 귀는 0°에서 손목 2 목의 살 구멍 위에 온다 (parts/flange.py).
+[joints.j6]
+id = 6
+model = "STS3215"
+soft_limits_deg = [-160, 160]
+pin_deg = 0
+torque_limit_percent = 20 # 손목 시험대의 값. 팔 전체 모델로 다시 잡는다
+# 영점 (2026-11-19, records/servo/2026-11-19_221836_zero): 그리퍼를 떼고 쟀다. 서보 값이 늘면 앞에서 볼 때 시계 방향으로
+# 돈다 (서보로 20° 돌린 전후 사진). 틈은 운동학의 - 쪽으로 붙였다.
+position_offset = 1122
+zero_raw = 2049
+direction = -1
+
+# 그리퍼 (0030, 0032): id(11부터), model, pinion_radius_mm, max_width_mm, force_percent(쥐는 힘, 과부하 기준보다 낮게),
+# speed_mm_s, grasp_tolerance_mm, 그리고 닫은 자리(손가락이 맞닿은 자리)를 영점처럼 재서 적는 position_offset, zero_raw,
+# direction. 힘과 빠르기는 시험값이고, 쥐는 힘은 박스를 쥐어 보고 정한다.
+[gripper]
+id = 11
+model = "STS3215"
+pinion_radius_mm = 12.5 # 설계 값
+max_width_mm = 60 # 설계 값
+force_percent = 15
+speed_mm_s = 20
+grasp_tolerance_mm = 1.0
+# 영점 (2026-11-19, records/servo/2026-11-19_222630_zero): 서보로 손가락을 닫아 맞닿은 자리(힘 15 %, 짐 4 %에서 멈춤)에서
+# 쟀다. 서보 값이 늘면 닫히다 막히고, 줄이면 막힘 없이 벌어진다.
+position_offset = -588
+zero_raw = 2831
+direction = -1

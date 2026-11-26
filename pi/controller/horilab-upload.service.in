@@ -1,0 +1,22 @@
+# horilab: 기록을 드라이브로 올린다 (docs/decisions/0026의 5). pi/controller/setup.sh가 넣는다.
+# 배포 명령(tools/deploy.py)이 @RCLONE_ARGS@를 tools/sync.py의 인자로 채워 만든다 (두 곳에 따로 적지 않는다).
+# 업로드 사용자는 서보 장치와 판 폴더를 쓰지 못한다. 가장 낮은 CPU·디스크 우선순위로, 코어 3을 피해 돈다.
+[Unit]
+Description=horilab: 기록을 드라이브로 올린다
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/var/lib/horilab-upload/rclone.conf
+
+[Service]
+Type=oneshot
+User=horilab-upload
+Group=horilab-upload
+Nice=19
+IOSchedulingClass=idle
+CPUAffinity=0-2
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/horilab-upload
+ExecStart=/usr/local/bin/rclone @RCLONE_ARGS@ --config /var/lib/horilab-upload/rclone.conf --cache-dir /var/lib/horilab-upload/cache

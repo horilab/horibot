@@ -1,0 +1,12 @@
+# horilab: 클럭 정책을 performance로 (docs/decisions/0026의 2). pi/controller/setup.sh가 넣는다
+[Unit]
+Description=horilab: CPU 클럭 정책을 performance로
+After=ondemand.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c 'for f in /sys/devices/system/cpu/cpufreq/policy*/scaling_governor; do echo performance > "$f"; done'
+
+[Install]
+WantedBy=multi-user.target

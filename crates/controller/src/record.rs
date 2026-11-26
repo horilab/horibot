@@ -95,15 +95,29 @@ pub fn dump_json(memory: &[u8]) -> Value {
 }
 
 /// 실행 중에 이어 쓰는 기록 둘: `samples.csv`(시각, 단계, 서보 값)와 `events.csv`(시각, 단계, 알림).
-/// 줄마다 바로 내보내서, 중간에 끊겨도 앞부분이 남는다 (0024의 기록 형식).
+/// [`Log::create`]는 줄마다 바로 내보내서, 중간에 끊겨도 앞부분이 남는다 (0024의 기록 형식). 실행 루프의
+/// 기록은 [`Log::create_batched`]로 열어 기록 스레드가 1초쯤마다 [`Log::sync`]로 디스크에 확정한다 (0026의 5, 7).
 pub struct Log {
     samples: BufWriter<File>,
     events: BufWriter<File>,
+    /// 줄마다 내보내나
+    flush_each: bool,
 }
 
 impl Log {
     /// 기록 폴더에 두 파일을 만들고 머리줄을 쓴다. `columns`는 samples.csv의 값 칸 이름이다.
     pub fn create(folder: &Path, columns: &[&str]) -> Result<Self, String> {
+        Self::open(folder, columns, true)
+    }
+
+    /// 줄마다 내보내지 않는 기록: [`Log::sync`]를 부를 때 내보내고 디스크에 확정한다.
+    pub fn create_batched(folder: &Path, columns: &[&str]) -> Result<Self, String> {
+        let mut log = Self::open(folder, columns, false)?;
+        log.sync()?;
+        Ok(log)
+    }
+
+    fn open(folder: &Path, columns: &[&str], flush_each: bool) -> Result<Self, String> {
         let open = |name: &str| {
             let path = folder.join(name);
             File::create(&path)
@@ -113,10 +127,11 @@ impl Log {
         let mut log = Self {
             samples: open("samples.csv")?,
             events: open("events.csv")?,
+            flush_each,
         };
         let header = format!("t_s,step,{}", columns.join(","));
-        write_line(&mut log.samples, &header)?;
-        write_line(&mut log.events, "t_s,step,text")?;
+        write_line(&mut log.samples, &header, flush_each)?;
+        write_line(&mut log.events, "t_s,step,text", flush_each)?;
         Ok(log)
     }
 
@@ -125,6 +140,7 @@ impl Log {
         write_line(
             &mut self.samples,
             &format!("{t:.3},{},{}", csv_text(step), values.join(",")),
+            self.flush_each,
         )
     }
 
@@ -132,13 +148,25 @@ impl Log {
         write_line(
             &mut self.events,
             &format!("{t:.3},{},{}", csv_text(step), csv_text(text)),
+            self.flush_each,
         )
+    }
+
+    /// 쌓인 줄을 내보내고 디스크에 확정한다 (전원이 끊겨도 여기까지는 남는다).
+    pub fn sync(&mut self) -> Result<(), String> {
+        for writer in [&mut self.samples, &mut self.events] {
+            writer
+                .flush()
+                .and_then(|()| writer.get_ref().sync_data())
+                .map_err(|e| format!("기록을 디스크에 확정하지 못했다: {e}"))?;
+        }
+        Ok(())
     }
 }
 
-fn write_line(writer: &mut BufWriter<File>, line: &str) -> Result<(), String> {
+fn write_line(writer: &mut BufWriter<File>, line: &str, flush: bool) -> Result<(), String> {
     writeln!(writer, "{line}")
-        .and_then(|()| writer.flush())
+        .and_then(|()| if flush { writer.flush() } else { Ok(()) })
         .map_err(|e| format!("기록을 쓰지 못했다: {e}"))
 }
 
@@ -216,6 +244,25 @@ mod tests {
             events,
             "t_s,step,text\n1.500,boundary,\"경계를 넘었다, \"\"한 바퀴\"\"\"\n"
         );
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_batched_log_writes_when_synced() {
+        let root =
+            std::env::temp_dir().join(format!("horibot-batched-test-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        let mut log = Log::create_batched(&root, &["position"]).unwrap();
+        log.sample(0.5, "hold", &[2048]).unwrap();
+        log.event(0.5, "hold", "버틴다").unwrap();
+        // 확정하기 전에는 머리줄만 있다
+        let samples = || fs::read_to_string(root.join("samples.csv")).unwrap();
+        assert_eq!(samples(), "t_s,step,position\n");
+        log.sync().unwrap();
+        assert_eq!(samples(), "t_s,step,position\n0.500,hold,2048\n");
+        let events = fs::read_to_string(root.join("events.csv")).unwrap();
+        assert_eq!(events, "t_s,step,text\n0.500,hold,버틴다\n");
+        drop(log);
         fs::remove_dir_all(&root).unwrap();
     }
 }

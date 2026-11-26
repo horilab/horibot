@@ -20,10 +20,10 @@ use std::thread;
 use std::time::Duration;
 
 use chrono::{Local, SecondsFormat};
-use horibot_bench::rt;
+use horibot_bench::rt::{self, PREFAULT_STACK};
 use horibot_bench::runloop::{
-    ARM_SERVOS, Beat, BusModel, DEFAULT_BUS_US, LoopSettings, LoopThread, PREFAULT_STACK, Second,
-    Totals, WAKE_LIMIT_US, Worst, parse_duration, run_loop,
+    ARM_SERVOS, Beat, BusModel, DEFAULT_BUS_US, LoopSettings, LoopThread, Second, Totals,
+    WAKE_LIMIT_US, Worst, parse_duration, run_loop,
 };
 use serde_json::{Value, json};
 

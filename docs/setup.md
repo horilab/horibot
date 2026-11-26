@@ -131,3 +131,23 @@ code --install-extension rust-lang.rust-analyzer
 - 도구 모음 판은 레포의 `rust-toolchain.toml`이 정한다. 레포에서 cargo를 처음 쓰면 rustup이 그 판과 파이용 대상(aarch64 리눅스)을 받는다. 받지 않으면 레포 폴더에서 `rustup toolchain install`을 한다.
 - 파이용 빌드 도구(cargo-zigbuild, zig)는 `uv sync`가 레포 환경에 깐다 ([0026](decisions/0026-pi-runtime-deploy-records.md)).
 - WSL 안의 Rust는 쓰지 않는다. 파이용 실행 파일도 Windows에서 교차 컴파일한다 ([0026](decisions/0026-pi-runtime-deploy-records.md)).
+
+## 9. 컨트롤러 파이
+
+컨트롤러 파이(hori1)는 PC의 배포 명령으로 처음 설정하고, 판을 올린다 ([0026](decisions/0026-pi-runtime-deploy-records.md)의 4, 5). 파이에는 Ubuntu와 SSH 키, 비밀번호 없는 sudo가 들어 있어야 한다 (OS를 깔 때 넣었다). 서보 전원은 없어도 된다. 아래 `hori1`은 ssh에 주는 이름이다 (`사용자@192.168.0.101`도 된다).
+
+1. 처음 설정: `uv run tools/deploy.py setup hori1`로 지금 상태를 보고("할 것"), `--yes`를 붙여 넣는다. 여러 번 돌려도 같다.
+2. 파이를 다시 켠다 (`ssh hori1 sudo reboot`). 부팅 인자와 그룹이 이때 걸린다.
+3. 드라이브 로그인: `uv run tools/deploy.py login hori1`. PC의 브라우저가 열리면 데이터를 둘 구글 계정으로 로그인한다 (이 PC가 먼저 `tools/sync.py login`을 해 둬야 한다, 7). 파이마다 한 번이다.
+4. `uv run tools/deploy.py setup hori1`을 다시 돌려 "할 것"이 없는지 본다.
+5. 판 올리기: `uv run tools/deploy.py deploy hori1 --yes`. 컨트롤러를 파이용으로 빌드해 실행 파일, `data/robot.toml`, `data/scripts/`를 올리고, 새 판의 자가 점검을 보인다. 되돌리기는 `rollback hori1 --yes`, 상태는 `status hori1`이다.
+
+파이에서 컨트롤러를 돌릴 때는 판 폴더에서, 어댑터는 고정 경로로, 기록은 기록 폴더로 준다. Enter로 멈추는 명령은 `ssh -t`로 사용자가 보는 창에서 띄운다:
+
+```sh
+ssh -t hori1 'cd /opt/horilab/current && ./horibot-controller run --script data/scripts/<순서>.toml --port /dev/serial/by-id/<어댑터> --records /var/lib/horilab/records'
+```
+
+- 어댑터 경로는 `./horibot-controller ports`나 `selfcheck`가 보인다.
+- 기록은 파이의 타이머가 드라이브로 올린다 (몇 분마다, 2분 넘게 안 바뀐 파일). 바로 올리려면 `ssh hori1 sudo systemctl start horilab-upload.service`, PC에서 받을 때는 `uv run tools/sync.py pull`이다.
+- 커널을 올린 뒤에는 `setup hori1`을 다시 돌려 부팅 인자가 남았는지 본다. 실행 명령도 빠진 것을 "알림"으로 보인다.
