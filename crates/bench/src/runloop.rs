@@ -638,6 +638,18 @@ mod tests {
     }
 
     #[test]
+    fn bus_model_reads_the_rust_timing_record_too() {
+        use horibot_controller::bus_timing::{self, RtClock};
+
+        let servos = [FakeServo::with(1, 777, 2048), FakeServo::with(2, 777, 2048)];
+        let mut bus = open_fake_bus(servos);
+        let mut clock = RtClock::default();
+        let run = bus_timing::measure(&mut bus, &[1, 2], 3, 0.001, 1_000_000, &mut clock).unwrap();
+        let model = BusModel::from_timing_csv(&run.samples_csv(), "rust").unwrap();
+        assert_eq!(model.describe()["count"], 3, "한 박자 줄 셋");
+    }
+
+    #[test]
     fn random_order_repeats_with_the_same_seed() {
         let (mut a, mut b) = (XorShift::new(42), XorShift::new(42));
         let first: Vec<u64> = (0..5).map(|_| a.next_u64()).collect();

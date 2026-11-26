@@ -29,6 +29,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use chrono::Local;
+use horibot_controller::bus_timing;
 use horibot_controller::check::{
     self, BENCH_RANGE, Check, Console, SPARE_IDS, STEPS, Terminal, WallClock,
 };
@@ -66,6 +67,11 @@ const USAGE: &str = "\
   run                시험 순서(--script)를 실행 루프로 돌린다. --yes가 없으면 순서를 검사해 보여 주고
                       서보 상태만 읽는다. --yes가 있으면 서보가 움직인다. 움직이는 동안 Enter로 멈춘다.
                       리눅스에서 실물 서보로 돌리면 실행 루프를 실시간으로 돌린다 (코어 3, SCHED_FIFO 80)
+  timing              서보 통신 시간 재기: 로봇 설정의 서보(그리퍼 포함)를 다 이은 채 짧은 읽기, 상태 읽기,
+                      동기 읽기, 한 박자(동기 쓰기 + 동기 읽기)를 실행 루프처럼 10 ms마다 잰다.
+                      --yes가 없으면 서보의 토크와 응답 지연만 읽어 보인다. 토크가 꺼져 있어야 하고
+                      서보는 움직이지 않는다 (토크 한도에 읽은 값을 다시 쓰고, 응답 지연이 0이 아니면
+                      잠근 채 0으로 바꿔 한 번 더 잰다). 리눅스에서는 실행 루프처럼 실시간으로 잰다
   selfcheck           판(커밋), 로봇 설정, 실행 환경(부팅 인자, 클럭 정책, 시각, 실시간 설정), 서보 어댑터
                       경로를 보여 준다. 로봇 설정을 읽지 못하면 실패한다. 서보에 닿지 않는다
 
@@ -82,7 +88,8 @@ const USAGE: &str = "\
   --direction <1|-1>  영점을 잴 때 방향을 재지 않고 이 값을 쓴다 (zero)
   --script <파일>     시험 순서 (run). 쓰는 법은 crates/controller/src/runner.rs
   --sim <주소>        서보 대신 시뮬레이션 서버에 붙는다 (run, 예: 127.0.0.1:5600)
-  --no-realtime       리눅스에서도 실행 루프를 보통 스레드로 돌린다 (run. 실시간 설정이 안 걸릴 때만)
+  --no-realtime       리눅스에서도 실행 루프를 보통 스레드로 돌린다 (run, timing. 실시간 설정이 안 걸릴 때만)
+  --count <n>         동작마다 되풀이할 횟수 (timing, 기본 300)
 ";
 
 /// 서보 응답 하나를 더 기다리는 여유. 서보 준비는 박자가 없어 넉넉히 둔다.
@@ -101,6 +108,7 @@ enum Command {
     CheckState,
     Zero,
     Run,
+    Timing,
     SelfCheck,
 }
 
@@ -119,6 +127,7 @@ struct Options {
     script: Option<PathBuf>,
     sim: Option<String>,
     no_realtime: bool,
+    count: Option<usize>,
 }
 
 fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
@@ -137,6 +146,7 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Options, String>
         script: None,
         sim: None,
         no_realtime: false,
+        count: None,
     };
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -195,6 +205,15 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Options, String>
             }
             "--sim" => options.sim = Some(args.next().ok_or("--sim 뒤에 주소가 없다")?),
             "--no-realtime" => options.no_realtime = true,
+            "--count" => {
+                let text = args.next().ok_or("--count 뒤에 횟수가 없다")?;
+                options.count = Some(
+                    text.parse()
+                        .ok()
+                        .filter(|&n: &usize| n > 0)
+                        .ok_or_else(|| format!("횟수는 1 이상의 수다: {text}"))?,
+                );
+            }
             "-h" | "--help" => return Err(String::new()),
             name if command.is_none() && !name.starts_with('-') => {
                 command = Some(match name {
@@ -205,6 +224,7 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Options, String>
                     "check-state" => Command::CheckState,
                     "zero" => Command::Zero,
                     "run" => Command::Run,
+                    "timing" => Command::Timing,
                     "selfcheck" => Command::SelfCheck,
                     other => return Err(format!("모르는 명령이다: {other}")),
                 })
@@ -215,7 +235,7 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Options, String>
     options.command = command.ok_or("명령이 없다")?;
     let needs_port = matches!(
         options.command,
-        Command::Apply | Command::Check | Command::CheckState | Command::Zero
+        Command::Apply | Command::Check | Command::CheckState | Command::Zero | Command::Timing
     );
     if needs_port && options.port.is_none() {
         return Err(
@@ -259,6 +279,7 @@ fn main() -> ExitCode {
         Command::CheckState => check_state(&options),
         Command::Zero => measure_zero(&options),
         Command::Run => run_script(&options),
+        Command::Timing => measure_bus_timing(&options),
         Command::SelfCheck => self_check(&options),
     };
     match result {
@@ -329,6 +350,141 @@ fn self_check(options: &Options) -> Result<(), String> {
         println!("통과 서보 어댑터: {path}");
     }
     Ok(())
+}
+
+/// 서보 통신 시간 재기 ([`bus_timing`], 0024의 만드는 순서 6). --yes가 없으면 서보의 토크와 응답 지연만 읽어
+/// 보인다. 리눅스에서는 실행 루프처럼 실시간 스레드(코어 3, SCHED_FIFO 80, 메모리 잠금)에서 잰다.
+fn measure_bus_timing(options: &Options) -> Result<(), String> {
+    let settings = Settings::load(&options.settings)?;
+    let servos: Vec<&Joint> = if options.joints.is_empty() {
+        let gripper = settings.gripper.as_ref().map(|g| &g.joint);
+        settings.joints.iter().chain(gripper).collect()
+    } else {
+        selected(&settings, &options.joints)?
+    };
+    let port = options.port.as_deref().unwrap_or_default();
+    let baud = BAUD_RATES[0].1;
+    let bus = Bus::open(port, baud, LOOP_LATENCY).map_err(|e| e.to_string())?;
+    time_servos(options, bus, &servos, record::run_info(port, baud), baud).map(|_| ())
+}
+
+/// 열린 버스로 통신 시간을 잰다 ([`measure_bus_timing`]). 잰 기록 폴더를 돌려준다 (--yes가 없으면 없다).
+fn time_servos<B: ServoBus + Send + 'static>(
+    options: &Options,
+    mut bus: B,
+    servos: &[&Joint],
+    link: Value,
+    baud: u32,
+) -> Result<Option<PathBuf>, String> {
+    let ids: Vec<u8> = servos.iter().map(|joint| joint.id).collect();
+    let count = options.count.unwrap_or(bus_timing::DEFAULT_COUNT);
+    let period_s = LOOP_PERIOD.as_secs_f64();
+    let states = bus_timing::read_servos(&mut bus, &ids)?;
+    for (joint, state) in servos.iter().zip(&states) {
+        println!(
+            "서보 {} ({}): 토크 {}, 응답 지연 7번 = {} ({} µs)",
+            state.id,
+            joint.name,
+            if state.torque_enable == 0 {
+                "꺼짐"
+            } else {
+                "켜짐"
+            },
+            state.response_delay,
+            f64::from(state.response_delay) * bus_timing::RESPONSE_DELAY_STEP_S * 1e6
+        );
+    }
+    let seconds = 2.0 * bus_timing::OPS.len() as f64 * count as f64 * period_s;
+    if !options.yes {
+        println!(
+            "짧은 읽기, 상태 읽기, 동기 읽기, 한 박자(동기 쓰기 + 동기 읽기)를 {} ms마다 {count}번씩 잰다 (길면 {seconds:.0}초). 서보를 움직이지 않는다:",
+            period_s * 1000.0
+        );
+        println!("- 토크가 켜진 서보가 있으면 재지 않는다");
+        println!("- 동기 쓰기는 토크 한도에 읽은 값을 그대로 쓴다");
+        println!(
+            "- 응답 지연(7번)이 0이 아닌 서보가 있으면 잠근 채 0으로 바꿔 한 번 더 잰다 (서보 전원을 껐다 켜면 돌아간다)"
+        );
+        println!("재려면 --yes를 붙인다");
+        return Ok(None);
+    }
+    if let Some(on) = states.iter().find(|s| s.torque_enable != 0) {
+        return Err(format!("서보 {}의 토크가 켜져 있어서 재지 않는다", on.id));
+    }
+    let off = realtime_off_reason(options);
+    let environment = Environment::read();
+    if off.is_none() {
+        for finding in environment.findings().iter().filter(|f| !f.ok) {
+            println!("알림: {}: {}", finding.name, finding.detail);
+        }
+        rt::lock_memory().map_err(|e| {
+            format!(
+                "메모리를 잠그지 못했다: {e}. {}. 실시간 없이 재려면 --no-realtime을 붙인다",
+                system::LIMITS_HINT
+            )
+        })?;
+    }
+    println!(
+        "통신 시간을 잰다: 서보 {}개, 동작마다 {count}번 (길면 {seconds:.0}초)",
+        ids.len()
+    );
+    let started = Local::now();
+    let realtime = off.is_none();
+    let measured = thread::Builder::new()
+        .name("timing".to_owned())
+        .stack_size(rt::PREFAULT_STACK + 1024 * 1024)
+        .spawn(move || {
+            let thread = if realtime {
+                Some(system::make_loop_thread()?)
+            } else {
+                None
+            };
+            let mut clock = bus_timing::RtClock::default();
+            let run = bus_timing::measure(&mut bus, &ids, count, period_s, baud, &mut clock)?;
+            Ok::<_, String>((thread, run, bus))
+        })
+        .map_err(|e| format!("재는 스레드를 띄우지 못했다: {e}"))?
+        .join()
+        .map_err(|_| "재는 스레드가 죽었다".to_owned())?;
+    let (thread, run, bus) = measured?;
+    let folder = record::new_record_dir(&options.records, "servo", "timing", &started)?;
+    let samples = folder.join("samples.csv");
+    fs::write(&samples, run.samples_csv())
+        .map_err(|e| format!("{}를 쓰지 못했다: {e}", samples.display()))?;
+    let stats: serde_json::Map<String, Value> = bus
+        .stats()
+        .iter()
+        .map(|(id, s)| {
+            let stat = json!({
+                "ok": s.ok,
+                "no_reply": s.no_reply,
+                "bad_reply": s.bad_reply,
+                "consecutive_failures": s.consecutive_failures,
+            });
+            (id.to_string(), stat)
+        })
+        .collect();
+    let mut meta = json!({
+        "kind": "servo-timing",
+        "started": record::time_text(&started),
+        "ended": record::time_text(&Local::now()),
+        "run": link,
+        "program": system::version(),
+        "environment": environment.to_json(),
+        "realtime": match off {
+            None => "재는 스레드: 코어 3, SCHED_FIFO 80, 메모리 잠금".to_owned(),
+            Some(why) => format!("끔: {why}"),
+        },
+        "loop_thread": thread.as_ref().map_or(Value::Null, LoopThread::to_json),
+        "link_stats": stats,
+    });
+    if let (Some(meta), Value::Object(result)) = (meta.as_object_mut(), run.to_json()) {
+        meta.extend(result);
+    }
+    record::write_json(&folder.join("meta.json"), &meta)?;
+    print!("{}", run.report());
+    println!("기록: {}", folder.display());
+    Ok(Some(folder))
 }
 
 /// 실행 루프와 같은 실시간 설정을 시험 스레드에 걸어 본다 (메모리 잠금, 코어 3, SCHED_FIFO 80).
@@ -1568,5 +1724,58 @@ mod tests {
             "j3"
         );
         assert!(selected(&settings, &["j7".to_owned()]).is_err());
+    }
+
+    #[test]
+    fn timing_takes_its_options() {
+        let options = parse_args(args("timing --port COM5 --count 50 --no-realtime")).unwrap();
+        assert_eq!(options.command, Command::Timing);
+        assert_eq!(options.count, Some(50));
+        assert!(options.no_realtime && !options.yes);
+        assert!(parse_args(args("timing")).is_err(), "포트가 있어야 한다");
+        assert!(parse_args(args("timing --port COM5 --count 0")).is_err());
+    }
+
+    /// 통신 시간 명령을 가짜 서보로 끝까지 돌린다: 재고, Python 기록과 같은 꼴로 남기고, 서보는 그대로다.
+    #[test]
+    fn timing_measures_fake_servos_and_records_like_the_python_command() {
+        use horibot_servo::feetech::fake::{FakeServo, open_fake_bus};
+
+        let settings = Settings::load(&PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../data/robot.toml"
+        )))
+        .unwrap();
+        let servos = selected(&settings, &["j1".to_owned(), "j5".to_owned()]).unwrap();
+        let fakes = servos
+            .iter()
+            .map(|joint| FakeServo::with(joint.id, joint.model_number, 2048));
+        let root = std::env::temp_dir().join(format!("horibot-timing-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let text = format!(
+            "timing --port fake --count 3 --yes --no-realtime --records {}",
+            root.display()
+        );
+        let options = parse_args(args(&text)).unwrap();
+        let folder = time_servos(
+            &options,
+            open_fake_bus(fakes),
+            &servos,
+            json!({}),
+            1_000_000,
+        )
+        .unwrap()
+        .expect("기록 폴더");
+        let meta: Value =
+            serde_json::from_str(&fs::read_to_string(folder.join("meta.json")).unwrap()).unwrap();
+        assert_eq!(meta["kind"], "servo-timing");
+        assert_eq!(meta["ids"], json!([1, 5]));
+        assert_eq!(meta["summaries"].as_array().unwrap().len(), 4);
+        assert_eq!(meta["tick_write"], "torque_limit");
+        assert!(meta["realtime"].as_str().unwrap().starts_with("끔"));
+        let samples = fs::read_to_string(folder.join("samples.csv")).unwrap();
+        assert_eq!(samples.lines().count(), 1 + 4 * 3);
+        assert!(folder.starts_with(root.join("servo")));
+        fs::remove_dir_all(&root).unwrap();
     }
 }
