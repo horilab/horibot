@@ -43,8 +43,20 @@ const HELLO_TIMEOUT: Duration = Duration::from_secs(10);
 const REPLY_TIMEOUT: Duration = Duration::from_secs(1);
 
 impl SimBus {
-    /// 서버에 붙고 세계를 새로 만든다. `period`는 동기 읽기 한 번에 진행할 시간이다.
+    /// 서버에 붙고 세계를 새로 만든다. `period`는 동기 읽기 한 번에 진행할 시간이다. 관절은 범위 가운데에서
+    /// 시작한다.
     pub fn connect(address: &str, period: Duration, servos: &[SimServo]) -> Result<Self, Error> {
+        Self::connect_at(address, period, servos, &[])
+    }
+
+    /// [`SimBus::connect`]와 같되, `start`의 관절(이름, 관절 각 [rad])은 그 각에서 시작한다. 시험 순서의 시작
+    /// 자세(예: 쉬는 자세)에서 시작해 실물과 같은 길로 움직여 본다 (0034).
+    pub fn connect_at(
+        address: &str,
+        period: Duration,
+        servos: &[SimServo],
+        start: &[(String, f64)],
+    ) -> Result<Self, Error> {
         let writer =
             TcpStream::connect(address).map_err(|e| port("시뮬레이션 서버에 붙지 못했다", e))?;
         writer
@@ -70,10 +82,15 @@ impl SimBus {
             .iter()
             .map(|s| json!({"id": s.id, "joint": s.joint, "model": s.model, "direction": s.direction}))
             .collect();
+        let start: serde_json::Map<String, Value> = start
+            .iter()
+            .map(|(joint, angle)| (joint.clone(), json!(angle)))
+            .collect();
         let answer = bus.request(&json!({
             "op": "hello",
             "period": period.as_secs_f64(),
             "servos": servos,
+            "start": start,
         }))?;
         check(0, &answer)?;
         bus.writer

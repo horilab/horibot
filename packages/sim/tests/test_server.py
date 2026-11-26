@@ -161,3 +161,17 @@ def test_servo_reads_2048_at_the_range_middle_and_turns_its_own_way(ask: Ask) ->
     # 방향은 1이나 -1이다
     wrong = ask(op="hello", period=0.01, servos=[{**servo, "direction": 0}])
     assert not wrong["ok"]
+
+
+def test_world_starts_at_the_given_pose(ask: Ask) -> None:
+    # 시험 순서의 시작 자세(예: 쉬는 자세)에서 시작한다. 적지 않은 관절은 범위 가운데다 (0034)
+    servos = [{"id": 4, "joint": "j4", "model": 2825, "direction": -1}]
+    assert ask(op="hello", period=0.01, servos=servos, start={"j4": 5.6, "j2": 0.3})["ok"]
+    angles = ask(op="state")["angles"]
+    assert angles["j4"] == pytest.approx(5.6)
+    middle = (0.349066 + 5.934119) / 2
+    position = ask(op="read", id=4, registers=["present_position"])["values"]["present_position"]
+    assert position == 2048 - round((5.6 - middle) / RAD_PER_STEP)  # 방향 -1
+    # 범위 밖이거나 모르는 관절이면 세계를 만들지 않는다
+    assert not ask(op="hello", period=0.01, servos=servos, start={"j4": 6.1})["ok"]
+    assert not ask(op="hello", period=0.01, servos=servos, start={"j9": 0.0})["ok"]

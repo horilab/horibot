@@ -11,6 +11,8 @@ from typing import Any
 import numpy as np
 import pytest
 
+from horibot_design.parts.rest_shelf import REST_DEG
+from horibot_design.studies.home_view import HOME_DEG
 from horibot_design.values import load_arm, load_robot
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -43,3 +45,10 @@ def test_kinematics_match_design() -> None:
     flange = robot.T_last_flange
     assert np.allclose(np.array(kinematics["flange_position_mm"]) * 1e-3, flange[:3, 3])
     assert np.allclose(kinematics["flange_rotation"], flange[:3, :3])
+
+
+def test_poses_match_design() -> None:
+    """이름 붙은 자세(robot.toml의 [poses])가 설계의 쉬는 자세(0037)와 홈 자세(0019)와 같다."""
+    poses = tomllib.loads((ROOT / "data" / "robot.toml").read_text(encoding="utf-8"))["poses"]
+    assert poses["rest_deg"] == pytest.approx(list(REST_DEG))
+    assert poses["home_deg"] == pytest.approx(list(HOME_DEG))

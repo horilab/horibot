@@ -3,7 +3,8 @@
 - 서보는 실물처럼 달려 있다고 본다: 로봇 설정의 방향(hello의 direction, 관절 각이 늘 때 서보 값이 느는 쪽이 1)으로
   돌고, 영점을 재서 범위 가운데(MJCF 관절 범위의 가운데)가 서보 값 2048로 읽힌다 (0024의 영점). 읽는 위치 = 엔코더
   값 - 위치 오프셋. 속도와 부하도 서보 쪽 부호다.
-- 관절은 범위 가운데에서 시작한다 (J4는 180°). 범위가 0°를 품지 않는 관절도 있어서다.
+- 관절은 범위 가운데에서 시작한다 (J4는 180°). 범위가 0°를 품지 않는 관절도 있어서다. hello의 start에 적은 관절은
+  그 각에서 시작한다: 시험 순서의 시작 자세(예: 쉬는 자세)에서 실물과 같은 길로 움직여 본다 (0034).
 - 토크가 켜진 서보는 목표(각도 한계 안으로 자른 값)로 가는 위치 액추에이터이고, 힘은 토크 한도만큼이다.
   토크가 꺼지면 힘이 없고 기어의 감쇠와 마찰만 남는다.
 - 강성, 감쇠, 기어 마찰은 어림이다. 강성은 STS3250이 20 kg·cm에 1.23° 처진다는 다른 사람의 값(0012)에서 잡아
@@ -88,10 +89,14 @@ class World:
         servo_specs: Path,
         period: float,
         servos: list[tuple[int, str, int, int]],
+        start: dict[str, float] | None = None,
     ) -> None:
-        """servos는 (ID, 관절 이름, 모델 번호, 방향)이다."""
+        """servos는 (ID, 관절 이름, 모델 번호, 방향)이고, start는 관절 이름 → 시작 각 [rad]이다."""
         spec = mujoco.MjSpec.from_file(str(model_file))
         joints = {joint.name for joint in spec.joints}
+        for joint in start or {}:
+            if joint not in joints:
+                raise ValueError(f"시작 자세의 모르는 관절이다: {joint}")
         stalls = _stall_torques(servo_specs)
         planned: list[tuple[int, str, int, int, float]] = []
         for servo_id, joint, model, direction in servos:
@@ -127,9 +132,15 @@ class World:
         # 서보의 감쇠와 기어 감쇠를 안정하게 푼다
         self.model.opt.integrator = mujoco.mjtIntegrator.mjINT_IMPLICITFAST
         self.data = mujoco.MjData(self.model)
-        # 관절은 범위 가운데에서 시작한다
+        # 관절은 범위 가운데에서 시작한다. 시작 자세에 적은 관절은 그 각에서 (범위 안이어야 한다)
         for joint_id in range(self.model.njnt):
             self.data.qpos[self.model.jnt_qposadr[joint_id]] = self._middle(joint_id)
+        for joint, angle in (start or {}).items():
+            joint_id = self.model.joint(joint).id
+            low, high = self.model.jnt_range[joint_id]
+            if self.model.jnt_limited[joint_id] and not low - 1e-9 <= angle <= high + 1e-9:
+                raise ValueError(f"{joint}의 시작 각 {angle} rad가 범위 {low} ~ {high} 밖이다")
+            self.data.qpos[self.model.jnt_qposadr[joint_id]] = angle
         self.period = period
         self.substeps = max(1, round(period / self.model.opt.timestep))
         self.time = 0.0

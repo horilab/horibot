@@ -5,11 +5,15 @@
 //! name = "어깨 버티기"
 //! joints = ["j1", "j2"]     # 켤 관절 (로봇 설정에 영점이 있어야 한다)
 //! speed_percent = 50        # 실행 루프의 속도·가속·저크 한계에 곱한다 (기본 100)
+//! start = "rest"            # 시작 자세: 로봇 설정의 이름 붙은 자세나 { j1 = -55.0, j2 = 52.0 }처럼 모든 관절의 각 [°]
+//! start_tolerance_deg = 12  # 토크를 켠 자리가 시작 자세에서 이만큼 넘게 다르면 움직이지 않는다 (기본 5)
 //!
 //! [[steps]]
 //! pause = "위팔 끝에 추를 걸었으면"   # Enter를 기다리며 버틴다
 //! [[steps]]
-//! move = { j2 = 90.0 }      # 관절 각 [°]. 적지 않은 관절은 그 자리
+//! move = { j2 = 90.0 }      # 관절 각 [°]. 적지 않은 관절은 그 자리. "home"처럼 이름 붙은 자세도 된다
+//! [[steps]]
+//! grip = 0.0                # 그리퍼를 이 열림 폭 [mm]으로. 가다 막혀 서면 잡은 것이다 (그리퍼를 같이 켠다)
 //! [[steps]]
 //! hold_s = 600              # 버틴다. 온도가 알림 기준에 닿으면 일찍 끝낸다
 //! [[steps]]
@@ -23,6 +27,9 @@
 //! 움직이거나 버티는 동안 Enter를 누르면 감속해 서고 순서를 끝낸다. 고장이 나면 순서를 끝낸다 (서보는 마지막
 //! 목표를 잡고 있다). 움직이기는 목표에 닿아야 끝난다: 서보가 뜨거워 쉬느라 목표 전에 서면 순서를 끝낸다.
 //! 목표는 읽을 때 실행 루프와 같은 검사로 거른다 (소프트 한계와 같은 각은 받는다).
+//!
+//! 움직이기는 관절 공간의 곧은 길이다([`move_joints`]). 시작 자세를 적으면 토크를 켠 자리가 그 자세인지 먼저 본다:
+//! 순서가 지나는 길은 그 자세에서 시작한 길이라, 다른 자리에서 시작하면 미리 따져 본 길과 달라진다 (0034).
 
 use std::collections::BTreeMap;
 
@@ -32,8 +39,13 @@ use serde::Deserialize;
 use crate::check::Console;
 use crate::joints::Servo;
 use crate::plan::{MotionLimits, move_joints};
-use crate::runloop::{Mode, RunLoop};
-use crate::settings::{LoopSettings, Settings};
+use crate::runloop::{Grip, Mode, RunLoop};
+use crate::settings::{JOINT_NAMES, Joint, LoopSettings, Settings};
+
+/// 시작 자세에서 받는 차이의 기본값 [°]
+const START_TOLERANCE_DEG: f64 = 5.0;
+/// 그리퍼가 이 시간 안에 서지 않으면 순서를 끝낸다 [s] (다 벌린 폭 60 mm를 20 mm/s로 3초)
+const GRIP_TIMEOUT: f64 = 10.0;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -41,8 +53,18 @@ struct ScriptFile {
     name: String,
     joints: Vec<String>,
     speed_percent: Option<f64>,
+    start: Option<PoseFile>,
+    start_tolerance_deg: Option<f64>,
     #[serde(default)]
     steps: Vec<StepFile>,
+}
+
+/// 자세: 로봇 설정의 이름 붙은 자세, 또는 관절마다의 각 [°].
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum PoseFile {
+    Name(String),
+    Angles(BTreeMap<String, f64>),
 }
 
 #[derive(Debug, Deserialize)]
@@ -50,8 +72,9 @@ struct ScriptFile {
 struct StepFile {
     pause: Option<String>,
     #[serde(rename = "move")]
-    move_to: Option<BTreeMap<String, f64>>,
+    move_to: Option<PoseFile>,
     hold_s: Option<f64>,
+    grip: Option<f64>,
     release: Option<bool>,
 }
 
@@ -64,8 +87,19 @@ pub enum Step {
     Move(Vec<(usize, f64)>),
     /// 버틴다 [s]
     Hold(f64),
+    /// 그리퍼를 열림 폭 [mm]으로 움직이고 설 때까지 기다린다
+    Grip(f64),
     /// 모든 관절의 토크를 끈다
     Release,
+}
+
+/// 시작 자세: 토크를 켠 자리가 이 자세에서 받는 차이 안이어야 움직인다.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Start {
+    /// 관절마다 (순서의 관절 순서) 각 [rad]
+    pub angles: Vec<f64>,
+    /// 받는 차이 [rad]
+    pub tolerance: f64,
 }
 
 /// 읽고 검사한 시험 순서.
@@ -76,10 +110,71 @@ pub struct Script {
     pub joints: Vec<&'static str>,
     /// 실행 루프의 이동 한계에 곱하는 몫 (0~1)
     pub speed: f64,
+    pub start: Option<Start>,
     pub steps: Vec<Step>,
 }
 
+/// 자세를 순서의 관절마다 (관절 번호, 각 [rad])로 푼다. 이름 붙은 자세는 순서의 모든 관절을 정한다. 소프트
+/// 한계 밖이면 문제로 모은다.
+fn resolve(
+    pose: &PoseFile,
+    joints: &[&Joint],
+    settings: &Settings,
+    at: &str,
+    problems: &mut Vec<String>,
+) -> Vec<(usize, f64)> {
+    let named: Vec<(&str, f64)> = match pose {
+        PoseFile::Name(name) => match settings.pose(name) {
+            None => {
+                problems.push(format!("{at}: 로봇 설정에 없는 자세다: {name}"));
+                return Vec::new();
+            }
+            Some(angles) => joints
+                .iter()
+                .filter_map(|joint| {
+                    let index = JOINT_NAMES.iter().position(|known| *known == joint.name)?;
+                    Some((joint.name, angles[index].to_degrees()))
+                })
+                .collect(),
+        },
+        PoseFile::Angles(map) => {
+            if map.is_empty() {
+                problems.push(format!("{at}: 관절이 없다"));
+            }
+            map.iter()
+                .map(|(name, &degrees)| (name.as_str(), degrees))
+                .collect()
+        }
+    };
+    let mut found = Vec::new();
+    for (name, degrees) in named {
+        match joints.iter().position(|joint| joint.name == name) {
+            None => problems.push(format!("{at}: {name}은 joints에 없다")),
+            Some(index) => {
+                let joint = joints[index];
+                let angle = degrees.to_radians();
+                let reaches = Servo::from_joint(joint).is_ok_and(|servo| servo.reaches(angle));
+                if reaches {
+                    found.push((index, angle));
+                } else {
+                    problems.push(format!(
+                        "{at}: {name} {degrees}°는 소프트 한계({:.1}°~{:.1}°) 밖이다",
+                        joint.lower.to_degrees(),
+                        joint.upper.to_degrees()
+                    ));
+                }
+            }
+        }
+    }
+    found
+}
+
 impl Script {
+    /// 그리퍼 단계가 있다 (실행 루프에 그리퍼 서보를 같이 켠다).
+    pub fn uses_gripper(&self) -> bool {
+        self.steps.iter().any(|step| matches!(step, Step::Grip(_)))
+    }
+
     /// 시험 순서를 읽고 로봇 설정과 맞춰 본다. 관절은 영점이 있어야 하고, 목표는 소프트 한계 안이어야 하고(실행
     /// 루프와 같은 검사: [`Servo::reaches`]), 토크 끄기는 마지막 단계여야 한다. 잘못된 곳은 모두 모아 알린다.
     pub fn parse(text: &str, settings: &Settings) -> Result<Self, String> {
@@ -107,6 +202,34 @@ impl Script {
         if !(speed.is_finite() && speed > 0.0 && speed <= 100.0) {
             problems.push(format!("speed_percent는 0보다 크고 100 이하다: {speed}"));
         }
+        let tolerance = file.start_tolerance_deg.unwrap_or(START_TOLERANCE_DEG);
+        if file.start_tolerance_deg.is_some() && file.start.is_none() {
+            problems.push("start_tolerance_deg는 start가 있을 때만 적는다".to_owned());
+        }
+        if !(tolerance.is_finite() && tolerance > 0.0 && tolerance <= 30.0) {
+            problems.push(format!(
+                "start_tolerance_deg는 0보다 크고 30 이하다: {tolerance}"
+            ));
+        }
+        let start = file.start.as_ref().map(|pose| {
+            let found = resolve(pose, &joints, settings, "start", &mut problems);
+            let mut angles = vec![f64::NAN; joints.len()];
+            for (index, angle) in found {
+                angles[index] = angle;
+            }
+            if let Some(missing) = angles.iter().position(|angle| angle.is_nan())
+                && !joints.is_empty()
+            {
+                problems.push(format!(
+                    "start: 켜는 관절의 각을 모두 적는다 ({}이 없다)",
+                    joints[missing].name
+                ));
+            }
+            Start {
+                angles,
+                tolerance: tolerance.to_radians(),
+            }
+        });
         let mut steps = Vec::new();
         let last = file.steps.len().saturating_sub(1);
         for (n, step) in file.steps.iter().enumerate() {
@@ -114,48 +237,41 @@ impl Script {
             let kinds = usize::from(step.pause.is_some())
                 + usize::from(step.move_to.is_some())
                 + usize::from(step.hold_s.is_some())
+                + usize::from(step.grip.is_some())
                 + usize::from(step.release.is_some());
             if kinds != 1 {
                 problems.push(format!(
-                    "{at}: pause, move, hold_s, release 가운데 하나만 적는다"
+                    "{at}: pause, move, hold_s, grip, release 가운데 하나만 적는다"
                 ));
                 continue;
             }
             if let Some(text) = &step.pause {
                 steps.push(Step::Pause(text.clone()));
-            } else if let Some(targets) = &step.move_to {
-                let mut found = Vec::new();
-                for (name, &degrees) in targets {
-                    match joints.iter().position(|joint| joint.name == name) {
-                        None => {
-                            problems.push(format!("{at}: {name}은 joints에 없어 움직일 수 없다"))
-                        }
-                        Some(index) => {
-                            let joint = joints[index];
-                            let angle = degrees.to_radians();
-                            let reaches =
-                                Servo::from_joint(joint).is_ok_and(|servo| servo.reaches(angle));
-                            if !reaches {
-                                problems.push(format!(
-                                    "{at}: {name} {degrees}°는 소프트 한계({:.1}°~{:.1}°) 밖이다",
-                                    joint.lower.to_degrees(),
-                                    joint.upper.to_degrees()
-                                ));
-                            } else {
-                                found.push((index, angle));
-                            }
-                        }
-                    }
-                }
-                if targets.is_empty() {
-                    problems.push(format!("{at}: move에 관절이 없다"));
-                }
+            } else if let Some(pose) = &step.move_to {
+                let found = resolve(pose, &joints, settings, &at, &mut problems);
                 steps.push(Step::Move(found));
             } else if let Some(seconds) = step.hold_s {
                 if !(seconds.is_finite() && seconds > 0.0) {
                     problems.push(format!("{at}: hold_s는 0보다 크다: {seconds}"));
                 }
                 steps.push(Step::Hold(seconds));
+            } else if let Some(width) = step.grip {
+                match &settings.gripper {
+                    None => problems.push(format!("{at}: 로봇 설정에 그리퍼가 없다")),
+                    Some(gripper) if gripper.joint.calibration.is_none() => problems.push(format!(
+                        "{at}: 그리퍼의 닫은 자리를 재지 않아 움직이지 않는다 (zero로 잰다)"
+                    )),
+                    Some(gripper)
+                        if !(width.is_finite() && (0.0..=gripper.max_width).contains(&width)) =>
+                    {
+                        problems.push(format!(
+                            "{at}: grip은 열림 폭 0~{} mm다: {width}",
+                            gripper.max_width
+                        ))
+                    }
+                    Some(_) => {}
+                }
+                steps.push(Step::Grip(width));
             } else if step.release == Some(true) {
                 if n != last {
                     problems.push(format!(
@@ -174,6 +290,7 @@ impl Script {
             name: file.name,
             joints: joints.iter().map(|joint| joint.name).collect(),
             speed: speed / 100.0,
+            start,
             steps,
         })
     }
@@ -186,6 +303,19 @@ impl Script {
             self.joints.join(", "),
             self.speed * 100.0
         )];
+        if let Some(start) = &self.start {
+            let parts: Vec<String> = self
+                .joints
+                .iter()
+                .zip(&start.angles)
+                .map(|(name, angle)| format!("{name} {:.1}°", angle.to_degrees()))
+                .collect();
+            lines.push(format!(
+                "  시작 자세: {} (±{:.0}°)",
+                parts.join(", "),
+                start.tolerance.to_degrees()
+            ));
+        }
         for (n, step) in self.steps.iter().enumerate() {
             let text = match step {
                 Step::Pause(text) => format!("멈춤: {text} (Enter)"),
@@ -200,6 +330,9 @@ impl Script {
                 }
                 Step::Hold(seconds) => {
                     format!("버티기: {seconds} s (온도가 알림 기준에 닿으면 일찍 끝낸다)")
+                }
+                Step::Grip(width) => {
+                    format!("그리퍼: 열림 폭 {width} mm로 (가다 막혀 서면 잡은 것)")
                 }
                 Step::Release => "토크 끄기: 모든 관절".to_owned(),
             };
@@ -225,6 +358,7 @@ enum Phase {
     Waiting,
     Moving,
     Holding { until: f64 },
+    Gripping { until: f64 },
 }
 
 /// 시험 순서를 실행 루프에 건다. 박자마다 [`RunLoop::tick`] 뒤에 [`Runner::tick`]을 부른다.
@@ -239,6 +373,8 @@ pub struct Runner {
     goal: Vec<f64>,
     events: Vec<String>,
     released: bool,
+    /// 시작 자세를 봤다 (첫 박자에 한 번)
+    checked_start: bool,
 }
 
 impl Runner {
@@ -260,6 +396,7 @@ impl Runner {
             goal: Vec::new(),
             events: Vec::new(),
             released: false,
+            checked_start: false,
         }
     }
 
@@ -277,6 +414,7 @@ impl Runner {
                     Step::Pause(_) => "pause",
                     Step::Move(_) => "move",
                     Step::Hold(_) => "hold",
+                    Step::Grip(_) => "grip",
                     Step::Release => "release",
                 };
                 format!("{}-{kind}", self.index + 1)
@@ -310,6 +448,37 @@ impl Runner {
             let text = format!("고장으로 순서를 끝낸다: {reason}");
             self.note(console, text.clone());
             return Status::Stopped(text);
+        }
+        if !self.checked_start {
+            self.checked_start = true;
+            if let Some(start) = self.script.start.clone() {
+                // 실행 루프는 토크를 켠 자리(읽은 위치)를 목표로 붙잡고 시작한다
+                let off: Vec<String> = run
+                    .targets()
+                    .iter()
+                    .zip(&start.angles)
+                    .zip(&self.script.joints)
+                    .filter(|((now, want), _)| (*now - *want).abs() > start.tolerance)
+                    .map(|((now, want), name)| {
+                        format!(
+                            "{name} {:.1}° (시작 자세 {:.1}°)",
+                            now.to_degrees(),
+                            want.to_degrees()
+                        )
+                    })
+                    .collect();
+                if !off.is_empty() {
+                    let text = format!(
+                        "팔이 시작 자세(±{:.0}°)에 있지 않아 움직이지 않는다: {}. 순서는 시작 자세에서 \
+                         시작하는 길로 짰다",
+                        start.tolerance.to_degrees(),
+                        off.join(", ")
+                    );
+                    self.note(console, text.clone());
+                    return Status::Stopped(text);
+                }
+                self.note(console, "시작 자세를 확인했다".to_owned());
+            }
         }
         loop {
             let Some(step) = self.script.steps.get(self.index).cloned() else {
@@ -412,6 +581,48 @@ impl Runner {
                     }
                     self.next();
                 }
+                (Phase::Begin, Step::Grip(width)) => match run.grip(width) {
+                    Ok(()) => {
+                        let text = format!("[{}] 그리퍼를 열림 폭 {width} mm로", self.label());
+                        self.note(console, text);
+                        self.phase = Phase::Gripping {
+                            until: now + GRIP_TIMEOUT,
+                        };
+                        return Status::Running;
+                    }
+                    Err(e) => {
+                        let text = format!("[{}] 그리퍼를 움직이지 못했다: {e}", self.label());
+                        self.note(console, text.clone());
+                        return Status::Stopped(text);
+                    }
+                },
+                (Phase::Gripping { until }, Step::Grip(_)) => {
+                    if console.enter_pressed() {
+                        run.stop();
+                        let text = format!("[{}] 사람이 멈췄다", self.label());
+                        self.note(console, text.clone());
+                        return Status::Stopped(text);
+                    }
+                    let text = match run.gripper() {
+                        Some((_, Grip::Reached(width))) => {
+                            format!("[{}] 닿았다 (열림 폭 {width:.1} mm)", self.label())
+                        }
+                        Some((_, Grip::Grasped(width))) => {
+                            format!("[{}] 잡았다 (열림 폭 {width:.1} mm)", self.label())
+                        }
+                        _ if now < until => return Status::Running,
+                        _ => {
+                            let text = format!(
+                                "[{}] 그리퍼가 {GRIP_TIMEOUT} s 안에 서지 않아 순서를 끝낸다",
+                                self.label()
+                            );
+                            self.note(console, text.clone());
+                            return Status::Stopped(text);
+                        }
+                    };
+                    self.note(console, text);
+                    self.next();
+                }
                 (Phase::Begin, Step::Release) => {
                     return match run.release_all() {
                         Ok(()) => {
@@ -445,15 +656,44 @@ mod tests {
 
     use super::*;
     use crate::joints::{Caps, Joints, Servo, programmed};
-    use crate::settings::TEST_J3;
+    use crate::settings::{TEST_GRIPPER, TEST_J3};
 
     /// 시험용 로봇 설정: TEST_J3에 영점을 준다.
     fn settings() -> Settings {
-        let text = TEST_J3.replace(
+        Settings::parse(&calibrated_j3()).unwrap()
+    }
+
+    fn calibrated_j3() -> String {
+        TEST_J3.replace(
             "[joints.j3]",
             "[joints.j3]\nzero_raw = 2048\ndirection = 1\nposition_offset = 0",
+        )
+    }
+
+    /// 그리퍼와 이름 붙은 자세가 있는 시험용 로봇 설정 (rest의 j3는 20°)
+    fn full_settings() -> Settings {
+        let text = format!(
+            "{}{TEST_GRIPPER}\n[poses]\nrest_deg = [0, 0, 20, 180, 0, 0]\n",
+            calibrated_j3()
         );
         Settings::parse(&text).unwrap()
+    }
+
+    /// j3와 그리퍼 서보 (가짜 서보는 둘 다 서보 값 2048: j3 0°, 그리퍼는 닫힘)
+    fn run_loop_with_gripper(settings: &Settings) -> RunLoop<Bus<FakePort>> {
+        let gripper = settings.gripper.as_ref().unwrap();
+        let servos = vec![
+            Servo::from_joint(settings.joint("j3").unwrap()).unwrap(),
+            Servo::from_joint(&gripper.joint).unwrap(),
+        ];
+        let bus = open_fake_bus(servos.iter().map(|servo| {
+            programmed(
+                FakeServo::with(servo.id, gripper.joint.model_number, 2048),
+                servo,
+            )
+        }));
+        let joints = Joints::open(bus, servos, Caps::for_loop(&settings.run_loop)).unwrap();
+        RunLoop::start(joints, settings.run_loop, Some(gripper)).unwrap()
     }
 
     /// 누를 줄을 미리 정해 두는 콘솔: 박자마다 Enter를 눌렀는지를 순서대로 준다.
@@ -686,6 +926,128 @@ mod tests {
                 .any(|line| line.contains("알림 기준") && line.contains("버티기를 끝낸다"))
         );
         // 버티기를 끝내고 다음 단계(움직이기)를 했다
+        assert!((run.targets()[0] - 10f64.to_radians()).abs() < 1e-9);
+    }
+
+    #[test]
+    fn named_poses_and_the_start_pose_are_read() {
+        let settings = full_settings();
+        let text = "name = \"t\"\njoints = [\"j3\"]\nstart = \"rest\"\nstart_tolerance_deg = 8\n\
+                    [[steps]]\nmove = { j3 = 40.0 }\n[[steps]]\nmove = \"rest\"\n[[steps]]\ngrip = 30\n";
+        let script = Script::parse(text, &settings).unwrap();
+        let start = script.start.as_ref().unwrap();
+        assert!((start.angles[0] - 20f64.to_radians()).abs() < 1e-12);
+        assert!((start.tolerance - 8f64.to_radians()).abs() < 1e-12);
+        assert_eq!(script.steps[1], Step::Move(vec![(0, 20f64.to_radians())]));
+        assert_eq!(script.steps[2], Step::Grip(30.0));
+        assert!(script.uses_gripper());
+        let description = script.describe();
+        assert!(
+            description.contains("시작 자세: j3 20.0° (±8°)"),
+            "{description}"
+        );
+        assert!(
+            description.contains("그리퍼: 열림 폭 30 mm"),
+            "{description}"
+        );
+        // 없는 자세, 표의 빠진 관절, 그리퍼 범위, start 없는 받는 차이
+        let bad = "name = \"t\"\njoints = [\"j3\"]\nstart = \"nowhere\"\n\
+                   [[steps]]\nmove = \"home\"\n[[steps]]\ngrip = 70\n";
+        let error = Script::parse(bad, &settings).unwrap_err();
+        for expected in [
+            "start: 로봇 설정에 없는 자세다: nowhere",
+            "1번째 단계: 로봇 설정에 없는 자세다: home",
+            "grip은 열림 폭 0~60 mm다: 70",
+        ] {
+            assert!(error.contains(expected), "{expected}: {error}");
+        }
+        let error = Script::parse(
+            "name = \"t\"\njoints = [\"j3\"]\nstart_tolerance_deg = 3\n",
+            &settings,
+        )
+        .unwrap_err();
+        assert!(error.contains("start가 있을 때만"), "{error}");
+        // 그리퍼가 없는 로봇 설정
+        let without = Settings::parse(&calibrated_j3()).unwrap();
+        let error = Script::parse(
+            "name = \"t\"\njoints = [\"j3\"]\n[[steps]]\ngrip = 10\n",
+            &without,
+        )
+        .unwrap_err();
+        assert!(error.contains("로봇 설정에 그리퍼가 없다"), "{error}");
+    }
+
+    #[test]
+    fn a_script_does_not_move_away_from_another_pose_than_its_start() {
+        let settings = full_settings();
+        // 가짜 서보는 0°에 있다. 시작 자세 rest의 j3는 20°라 받는 차이 5°를 넘는다
+        let text =
+            "name = \"t\"\njoints = [\"j3\"]\nstart = \"rest\"\n[[steps]]\nmove = { j3 = 40.0 }\n";
+        let script = Script::parse(text, &settings).unwrap();
+        let mut run = run_loop(&settings);
+        let mut runner = Runner::new(script, &settings.run_loop, DT);
+        let mut keys = Keys::default();
+        let status = drive(&mut run, &mut runner, &mut keys, 100, |_, _| {});
+        assert!(
+            matches!(&status, Status::Stopped(text) if text.contains("시작 자세") && text.contains("j3 0.0°")),
+            "{status:?}"
+        );
+        assert!(run.targets()[0].abs() < 1e-9, "움직이지 않았다");
+        // 받는 차이 안이면 움직인다
+        let text = "name = \"t\"\njoints = [\"j3\"]\nstart = { j3 = 3.0 }\n[[steps]]\nmove = { j3 = 10.0 }\n";
+        let script = Script::parse(text, &settings).unwrap();
+        let mut run = run_loop(&settings);
+        let mut runner = Runner::new(script, &settings.run_loop, DT);
+        let mut keys = Keys::default();
+        let status = drive(&mut run, &mut runner, &mut keys, 5000, |_, _| {});
+        assert_eq!(status, Status::Done, "{:?}", keys.said);
+        assert!(
+            keys.said
+                .iter()
+                .any(|line| line.contains("시작 자세를 확인했다"))
+        );
+    }
+
+    #[test]
+    fn grip_steps_wait_until_the_gripper_reaches_or_grasps() {
+        let settings = full_settings();
+        let text = "name = \"t\"\njoints = [\"j3\"]\n[[steps]]\ngrip = 30\n[[steps]]\ngrip = 0\n\
+                    [[steps]]\nmove = { j3 = 10.0 }\n";
+        let script = Script::parse(text, &settings).unwrap();
+        let mut run = run_loop_with_gripper(&settings);
+        let mut runner = Runner::new(script, &settings.run_loop, DT);
+        let mut keys = Keys::default();
+        // 30 mm까지 벌린 뒤(20 mm/s로 1.5 s) 닫는 길에 0.5 s쯤 가서 손가락이 짐에 닿는다
+        let mut closing_since = None;
+        let mut last_width = 0.0;
+        let status = drive(&mut run, &mut runner, &mut keys, 2000, |run, now| {
+            if let Some((width, _)) = run.gripper() {
+                if width < last_width - 1e-6 && closing_since.is_none() {
+                    closing_since = Some(now);
+                }
+                last_width = width;
+            }
+            if closing_since.is_some_and(|since| now > since + 0.5) {
+                run.joints_for_test().wire().servos[1].held = true;
+            }
+        });
+        assert_eq!(status, Status::Done, "{:?}", keys.said);
+        let reached = keys
+            .said
+            .iter()
+            .find(|line| line.contains("닿았다"))
+            .unwrap();
+        assert!(reached.contains("30."), "{reached}");
+        let grasped = keys
+            .said
+            .iter()
+            .find(|line| line.contains("잡았다"))
+            .unwrap();
+        assert!(
+            grasped.contains("열림 폭 1") || grasped.contains("열림 폭 2"),
+            "{grasped}"
+        );
+        // 잡은 뒤 팔이 움직였다
         assert!((run.targets()[0] - 10f64.to_radians()).abs() < 1e-9);
     }
 

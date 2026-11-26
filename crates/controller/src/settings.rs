@@ -54,6 +54,9 @@ pub struct Settings {
     pub joints: Vec<Joint>,
     /// 달린 그리퍼 (서보가 있는 도구)
     pub gripper: Option<GripperSettings>,
+    /// 이름 붙은 자세: 이름 → J1 ~ J6의 관절 각 [rad] (쉬는 자세 rest는 0037, 홈 자세 home은 0019). 시험 순서가
+    /// 이름으로 부른다 (0034)
+    pub poses: BTreeMap<String, [f64; 6]>,
 }
 
 /// 그리퍼 (0030, 0032). 서보는 관절처럼 다룬다: 관절 각은 손가락이 맞닿은 자리(영점)에서 돈 각이고, 소프트
@@ -376,6 +379,10 @@ impl Settings {
                 }
             },
         };
+        let poses = check_poses(&file.poses, &joints).unwrap_or_else(|found| {
+            problems.extend(found);
+            BTreeMap::new()
+        });
         if !problems.is_empty() {
             return Err(format!(
                 "고칠 것 {}가지\n- {}",
@@ -390,7 +397,13 @@ impl Settings {
             kinematics: kinematics.expect("문제가 없으면 읽었다"),
             joints,
             gripper,
+            poses,
         })
+    }
+
+    /// 이름 붙은 자세 [rad] (J1 ~ J6).
+    pub fn pose(&self, name: &str) -> Option<&[f64; 6]> {
+        self.poses.get(name)
     }
 
     pub fn joint(&self, name: &str) -> Option<&Joint> {
@@ -495,6 +508,44 @@ struct SettingsFile {
     joints: BTreeMap<String, JointFile>,
     gripper: Option<GripperFile>,
     kinematics: KinematicsFile,
+    /// `<이름>_deg = [J1, …, J6]`
+    #[serde(default)]
+    poses: BTreeMap<String, [f64; 6]>,
+}
+
+/// 이름 붙은 자세를 검사한다: 키는 `<이름>_deg`이고, 로봇 설정에 있는 관절의 각은 그 관절의 소프트 한계 안이다.
+fn check_poses(
+    file: &BTreeMap<String, [f64; 6]>,
+    joints: &[Joint],
+) -> Result<BTreeMap<String, [f64; 6]>, Vec<String>> {
+    let mut problems = Vec::new();
+    let mut poses = BTreeMap::new();
+    for (key, degrees) in file {
+        let Some(name) = key.strip_suffix("_deg").filter(|name| !name.is_empty()) else {
+            problems.push(format!("poses.{key}: 자세의 키는 <이름>_deg다"));
+            continue;
+        };
+        for (joint_name, &angle) in JOINT_NAMES.iter().zip(degrees) {
+            if !angle.is_finite() {
+                problems.push(format!("poses.{key}: {joint_name}가 수가 아니다"));
+            } else if let Some(joint) = joints.iter().find(|joint| joint.name == *joint_name) {
+                let radians = angle.to_radians();
+                if radians < joint.lower - 1e-9 || radians > joint.upper + 1e-9 {
+                    problems.push(format!(
+                        "poses.{key}: {joint_name} {angle}°가 소프트 한계 {}~{} 밖이다",
+                        deg(joint.lower),
+                        deg(joint.upper)
+                    ));
+                }
+            }
+        }
+        poses.insert(name.to_owned(), degrees.map(f64::to_radians));
+    }
+    if problems.is_empty() {
+        Ok(poses)
+    } else {
+        Err(problems)
+    }
 }
 
 /// 기구학: 영점 자세에서 관절마다 부모 좌표계의 원점 [mm]과 축, 플랜지의 위치 [mm]와 회전.
@@ -1270,6 +1321,25 @@ mod tests {
         let message = error(&J3.replace("max_jerk_deg_s3 = 300", "max_jerk_deg_s3 = 0"));
         assert!(
             message.contains("max_jerk_deg_s3는 0보다 크다"),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn poses_are_named_and_inside_the_soft_limits() {
+        // 시험용 j3의 소프트 한계는 -30° ~ 118°다. 로봇 설정에 없는 관절(j1 등)의 각은 보지 않는다
+        let settings =
+            Settings::parse(&j3_with("[poses]\nrest_deg = [-55, 52, 100, 325, 0, 0]")).unwrap();
+        let rest = settings.pose("rest").unwrap();
+        assert!(close(rest[2], 100f64.to_radians()) && close(rest[3], 325f64.to_radians()));
+        assert!(settings.pose("home").is_none());
+        assert!(Settings::parse(J3).unwrap().poses.is_empty());
+        let message = error(&j3_with(
+            "[poses]\nrest = [0, 0, 0, 180, 0, 0]\nhome_deg = [0, 0, 150, 180, 0, 0]",
+        ));
+        assert!(message.contains("poses.rest: 자세의 키는"), "{message}");
+        assert!(
+            message.contains("poses.home_deg: j3 150°가 소프트 한계 -30°~118° 밖"),
             "{message}"
         );
     }

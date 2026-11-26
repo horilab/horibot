@@ -935,7 +935,7 @@ fn run_script(options: &Options) -> Result<(), String> {
         fs::read_to_string(path).map_err(|e| format!("{}을 읽지 못했다: {e}", path.display()))?;
     let script = Script::parse(&text, &settings)?;
     print!("{}", script.describe());
-    let joints: Vec<&Joint> = script
+    let mut joints: Vec<&Joint> = script
         .joints
         .iter()
         .map(|name| {
@@ -944,6 +944,12 @@ fn run_script(options: &Options) -> Result<(), String> {
                 .ok_or_else(|| format!("로봇 설정에 없는 관절이다: {name}"))
         })
         .collect::<Result<_, _>>()?;
+    // 그리퍼 단계가 있으면 그리퍼 서보도 켠다 (순서를 읽을 때 그리퍼와 영점이 있는지 봤다)
+    if script.uses_gripper()
+        && let Some(gripper) = &settings.gripper
+    {
+        joints.push(&gripper.joint);
+    }
     let servos: Vec<Servo> = joints
         .iter()
         .map(|joint| Servo::from_joint(joint))
@@ -967,7 +973,20 @@ fn run_script(options: &Options) -> Result<(), String> {
                 direction: joint.calibration.map_or(1, |c| c.direction.number()),
             })
             .collect();
-        let bus = SimBus::connect(address, LOOP_PERIOD, &sim).map_err(|e| e.to_string())?;
+        // 시뮬레이션은 순서의 시작 자세에서 시작한다 (없으면 범위 가운데)
+        let start: Vec<(String, f64)> = script
+            .start
+            .iter()
+            .flat_map(|start| {
+                script
+                    .joints
+                    .iter()
+                    .zip(&start.angles)
+                    .map(|(name, angle)| ((*name).to_owned(), *angle))
+            })
+            .collect();
+        let bus =
+            SimBus::connect_at(address, LOOP_PERIOD, &sim, &start).map_err(|e| e.to_string())?;
         let link = json!({ "sim": address });
         // 시뮬레이션은 메모리 표(EEPROM)를 흉내 내지 않아서, 토크를 켤 때 값 적용의 목표와 견주지 않는다
         let servos = servos
@@ -1121,21 +1140,23 @@ fn run_status<B: ServoBus>(run: &RunLoop<B>, settings: &Settings, names: &[&str]
         .iter()
         .zip(names)
         .map(|((id, state), name)| {
+            let temperature = run
+                .temperatures()
+                .iter()
+                .find(|(known, _)| known == id)
+                .map_or(state.temperature, |&(_, temperature)| temperature);
+            let load = f64::from(state.load) / 10.0;
+            if *name == GRIPPER_NAME {
+                let width = run.gripper().map_or(f64::NAN, |(width, _)| width);
+                return format!("그리퍼 {width:.1} mm 부하 {load:.1}% {temperature}°C");
+            }
             let angle = settings
                 .joint(name)
                 .and_then(|joint| joint.calibration)
                 .map_or(f64::NAN, |c| {
                     c.angle_at(f64::from(state.position)).to_degrees()
                 });
-            let temperature = run
-                .temperatures()
-                .iter()
-                .find(|(known, _)| known == id)
-                .map_or(state.temperature, |&(_, temperature)| temperature);
-            format!(
-                "{name} {angle:.1}° 부하 {:.1}% {temperature}°C",
-                f64::from(state.load) / 10.0
-            )
+            format!("{name} {angle:.1}° 부하 {load:.1}% {temperature}°C")
         })
         .collect();
     parts.join(" | ")
@@ -1304,7 +1325,11 @@ fn drive_script<B: ServoBus + Send + 'static>(
     joints: Joints<B>,
     link: Value,
 ) -> Result<(), String> {
-    let names = script.joints.clone();
+    // 기록 칸과 상태 줄의 서보 이름 (관절 층의 순서: 관절 번호 순, 그리퍼는 마지막)
+    let mut names = script.joints.clone();
+    if script.uses_gripper() {
+        names.push(GRIPPER_NAME);
+    }
     let off = realtime_off_reason(options);
     let environment = Environment::read();
     let started = Local::now();
@@ -1511,10 +1536,18 @@ fn drive_loop<B: ServoBus>(
     } else {
         None
     };
-    let mut run = RunLoop::start(joints, job.settings.run_loop, None).map_err(fail)?;
+    let gripper = job
+        .settings
+        .gripper
+        .as_ref()
+        .filter(|_| job.script.uses_gripper());
+    let mut run = RunLoop::start(joints, job.settings.run_loop, gripper).map_err(fail)?;
     let _ = ready.send(Ok(thread));
 
-    let names = job.script.joints.clone();
+    let mut names = job.script.joints.clone();
+    if gripper.is_some() {
+        names.push(GRIPPER_NAME);
+    }
     let mut runner = Runner::new(
         job.script,
         &job.settings.run_loop,

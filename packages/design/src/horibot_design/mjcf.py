@@ -7,6 +7,9 @@ MuJoCo의 MjSpec으로 코드에서 모델을 만든다 (docs/decisions/0006-dat
 팔 검토 모델(studies/ur_arm.py)의 무게, 무게 중심, 관성을 단다 (0033): 뽑아서 잰 부품에 맞춘 무게 어림이고, 서보,
 베어링, 나사, 선, D405와 평행 그리퍼(짐 없이)가 들었다. 막대의 부피로 셈하면 링크마다 실물보다 2 ~ 7배 가볍다.
 
+시뮬레이션 모델에는 평행 그리퍼의 피니언 관절(이름 gripper)도 있다 (0030): 0이 닫힘이고, 각 × 2 × 피치 반지름이
+열림 폭이다. 손가락과 짐은 없어서 쥐는 힘은 흉내 내지 않는다 (닫으면 0까지 닿는다).
+
 시뮬레이션 서버(packages/sim)는 설계를 불러오지 않고 이 모듈이 쓴 MJCF 파일만 읽는다 (0007, 0033):
 uv run python -m horibot_design.mjcf [--out build/sim/horibot.xml]
 """
@@ -27,6 +30,10 @@ from horibot_design.values import REPO_ROOT, load_robot
 
 SIM_MODEL = REPO_ROOT / "build" / "sim" / "horibot.xml"  # 시뮬레이션 서버가 읽는 모델
 STICK_RADIUS = 0.012  # [m] 막대 모델의 링크 굵기. 모양을 보려는 값이라 정밀할 필요는 없다
+GRIPPER_JOINT = "gripper"  # 로봇 설정의 그리퍼 서보 이름과 같다
+GRIPPER_MASS = 0.005  # [kg] 피니언 (어림. 그리퍼 몸체의 무게는 링크 6에 들었다)
+# [kg·m²] 서보 기어 너머 회전자의 관성 (어림). 너무 작으면 서보 강성에 비해 한 걸음에 흔들린다
+GRIPPER_ARMATURE = 0.002
 
 
 @dataclass(frozen=True)
@@ -75,6 +82,25 @@ def build_spec(
     mujoco.mju_mat2Quat(quat, robot.T_last_flange[:3, :3].flatten())
     body.add_site(name="flange", pos=list(robot.T_last_flange[:3, 3]), quat=list(quat))
     return spec
+
+
+def add_gripper(spec: mujoco.MjSpec, robot: Robot, pitch_radius: float, max_width: float) -> None:
+    """평행 그리퍼의 피니언 관절(GRIPPER_JOINT)을 플랜지 자리에 단다. 범위는 0(닫힘) ~ 다 벌림이다 [m]."""
+    last = spec.body(f"link{len(robot.joints)}")
+    flange = robot.T_last_flange
+    pinion = last.add_body(name=GRIPPER_JOINT, pos=list(flange[:3, 3]))
+    pinion.add_joint(
+        name=GRIPPER_JOINT,
+        type=mujoco.mjtJoint.mjJNT_HINGE,
+        axis=list(flange[:3, 2]),
+        range=[0.0, max_width / (2 * pitch_radius)],
+        limited=mujoco.mjtLimited.mjLIMITED_TRUE,
+        armature=GRIPPER_ARMATURE,
+    )
+    pinion.explicitinertial = True
+    pinion.mass = GRIPPER_MASS
+    pinion.ipos = [0.0, 0.0, 0.0]
+    pinion.inertia = [1e-7, 1e-7, 1e-7]
 
 
 def _set_inertial(body: mujoco.MjsBody, inertial: Inertial) -> None:
@@ -135,8 +161,12 @@ def arm_inertials() -> list[Inertial]:
 
 
 def write(path: Path = SIM_MODEL) -> Path:
-    """설계 값(params/arm.toml)의 막대 모델에 팔 검토 모델의 링크 무게를 달아 MJCF 파일로 쓴다."""
-    spec = build_spec(load_robot(), inertials=arm_inertials())
+    """설계 값(params/arm.toml)의 막대 모델에 팔 검토 모델의 링크 무게와 그리퍼 피니언 관절을 달아 MJCF 파일로 쓴다."""
+    from horibot_design.parts import gripper  # 부품 형상을 불러와 느려서 쓸 때만 읽는다
+
+    robot = load_robot()
+    spec = build_spec(robot, inertials=arm_inertials())
+    add_gripper(spec, robot, gripper.RP * 1e-3, gripper.OPEN_MAX * 1e-3)
     spec.compile()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(spec.to_xml(), encoding="utf-8")

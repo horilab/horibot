@@ -53,6 +53,9 @@ impl MotionLimits {
 
 /// 관절 이동: `start`에서 `goal`까지 멈춘 채 시작해 멈춘 채 끝나고, 모든 관절이 같이 끝난다. 점은 `period`마다
 /// 하나이고 마지막 점은 `goal` 그대로다.
+///
+/// 관절 공간의 곧은 길로 간다 (모든 관절이 같은 모양의 속도 곡선을 따른다, rsruckig의 위상 맞춤). 관절마다 따로
+/// 빠르게 가면 길이 휘어서, 시작과 목표만으로는 지나는 길을 알 수 없다 (0033).
 pub fn move_joints(
     start: &[f64],
     goal: &[f64],
@@ -84,6 +87,7 @@ pub fn move_joints(
     }
     let mut otg = Ruckig::<0, ThrowErrorHandler>::new(Some(n), period);
     let mut input = InputParameter::new(Some(n));
+    input.synchronization = Synchronization::Phase;
     let mut output = OutputParameter::new(Some(n));
     for i in 0..n {
         input.current_position[i] = start[i];
@@ -419,6 +423,25 @@ mod tests {
         let points = &trajectory.points;
         let before_end = &points[points.len() - 5].1;
         assert!(before_end[1] < 0.1 - 1e-6, "{before_end:?}");
+    }
+
+    #[test]
+    fn a_joint_move_follows_the_straight_line_in_joint_space() {
+        // 처음 전원 날의 순서 파일은 곧은 길을 설계 형상으로 미리 본다 (0034). 관절마다 거리와 부호가 달라도
+        // 모든 점이 시작과 목표를 잇는 선분 위에 있어야 한다
+        let limits = MotionLimits::same(3, 0.5, 1.0, 5.0);
+        let start = [0.9, -0.2, 2.7];
+        let goal = [0.1, 0.3, 2.6];
+        let trajectory = move_joints(&start, &goal, &limits, PERIOD).unwrap();
+        let mut worst = 0.0_f64;
+        for (_, q) in &trajectory.points {
+            let s = (q[0] - start[0]) / (goal[0] - start[0]);
+            for i in 0..3 {
+                let on_line = start[i] + s * (goal[i] - start[i]);
+                worst = worst.max((q[i] - on_line).abs());
+            }
+        }
+        assert!(worst < 1e-6, "곧은 길에서 벗어난 양 {worst} rad");
     }
 
     /// 설계의 지금 관절 범위 (params/arm.toml)

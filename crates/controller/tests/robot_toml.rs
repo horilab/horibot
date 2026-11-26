@@ -12,4 +12,8 @@ fn repo_settings_load() {
     // 옛 관절 시험의 J3부터 있다. UR식 관절(0028)로 다시 설계하며 바꾼다
     let j3 = settings.joint("j3").expect("j3");
     assert_eq!((j3.id, j3.model), (3, "STS3250"));
+    // 시험 순서가 부르는 자세 (0034): 쉬는 자세와 홈 자세
+    for name in ["rest", "home"] {
+        assert!(settings.pose(name).is_some(), "자세 {name}이 없다");
+    }
 }
