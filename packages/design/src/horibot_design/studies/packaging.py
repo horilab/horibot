@@ -465,7 +465,8 @@ class Layout:
     shoulder: float = 0.16  # 설치면 → J2 축
     upper: float = 0.22
     fore: float = 0.18
-    d45: float = 0.063  # J4 → J5 (y). UR식 원통이 들어가는 값 (0019, covers.py)
+    # 손목 오프셋은 처음 관절 구조의 값이다 (0019, covers.py). 지금 설계는 params/arm.toml (0029의 쌓임)
+    d45: float = 0.063  # J4 → J5 (y)
     d56: float = 0.063  # J5 → J6 (z)
     d6f: float = 0.05  # J6 → 플랜지 (y)
     camera_tilt: float = 20 * DEG  # D405 광축을 도구 축 쪽으로 기울이는 각

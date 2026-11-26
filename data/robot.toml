@@ -38,9 +38,9 @@ torque_cap_percent = 40 # 실행 루프에서 서보 토크 한도의 상한. �
 # 플랜지(J6 좌표계에서 본 위치 [mm]와 회전). 영점 자세에서는 모든 링크 좌표계가 베이스와 같은 방향이다.
 # 설계(params/arm.toml, horibot_design.values.arm_robot)와 같아야 한다 (tests/test_robot_settings.py가 본다).
 [kinematics]
-origins_mm = [[0, 0, 0], [0, 0, 160], [0, 0, 220], [0, 0, 180], [0, 63, 0], [0, 0, 63]]
+origins_mm = [[0, 0, 0], [0, 0, 160], [0, 0, 220], [0, 0, 180], [0, 79.21, 0], [0, 0, 70.31]]
 axes = [[0, 0, 1], [0, 1, 0], [0, 1, 0], [0, 1, 0], [0, 0, 1], [0, 1, 0]]
-flange_position_mm = [0, 50, 0]
+flange_position_mm = [0, 32.6, 0]
 flange_rotation = [[0, 1, 0], [0, 0, 1], [1, 0, 0]]
 
 # 서보 모델마다 구울 EEPROM 값 (값 적용, 0024). 키는 메모리 표의 레지스터 이름이고 값은 레지스터 값

@@ -73,13 +73,16 @@ fn start_server() -> (Server, String) {
     (Server(child), format!("127.0.0.1:{port}"))
 }
 
-/// 시뮬레이션의 서보는 관절 각 0이 2048로 읽히게 달려 있다 (방향 +1, 오프셋 0).
-fn joint(name: &'static str, id: u8) -> Joint {
+/// 서보를 단 관절: 이름, ID, 모델, 모델 번호. 실물과 같은 서보다 (팔의 무게가 실물이라 J2는 ST-3120이 든다)
+const SERVOS: [(&str, u8, &str, u16); 2] = [("j2", 2, "ST-3120", 3337), ("j3", 3, "STS3250", 2825)];
+
+/// 시뮬레이션의 서보는 범위 가운데(j2, j3은 0)가 2048로 읽히게 달려 있다 (방향 +1, 오프셋 0).
+fn joint(&(name, id, model, model_number): &(&'static str, u8, &'static str, u16)) -> Joint {
     Joint {
         name,
         id,
-        model: "STS3250",
-        model_number: 2825,
+        model,
+        model_number,
         lower: -1.0,
         upper: 1.5,
         pin: 0.0,
@@ -111,25 +114,27 @@ fn settings(sag_gain: f64) -> LoopSettings {
         following_time: 0.3,
         load_limit: 0.95,
         load_time: 2.0,
-        torque_cap: 200,
+        // 로봇 설정과 같은 40 %. J2가 0.6 rad로 버티는 데 14 %가 들어서, 20 %면 처짐 보정이 넘친 힘이 한도에
+        // 걸려 출렁인다
+        torque_cap: 400,
     }
 }
 
 /// J2를 0.6 rad 기울이고 3초 버틴 뒤, J2가 읽은 관절 각과 부하.
 fn tilt_and_hold(address: &str, sag_gain: f64) -> (f64, i32) {
-    let servos = [("j2", 2), ("j3", 3)];
-    let sim: Vec<SimServo> = servos
+    let sim: Vec<SimServo> = SERVOS
         .iter()
-        .map(|&(joint, id)| SimServo {
+        .map(|&(joint, id, _, model)| SimServo {
             id,
             joint: joint.to_owned(),
-            model: 2825,
+            model,
+            direction: 1,
         })
         .collect();
     let bus = SimBus::connect(address, PERIOD, &sim).unwrap();
-    let robot: Vec<Servo> = servos
+    let robot: Vec<Servo> = SERVOS
         .iter()
-        .map(|&(name, id)| Servo::from_joint(&joint(name, id)).unwrap())
+        .map(|servo| Servo::from_joint(&joint(servo)).unwrap())
         .collect();
     let joints = Joints::open(bus, robot, Caps::for_loop(&settings(0.0))).unwrap();
     let mut run = RunLoop::start(joints, settings(sag_gain), None).unwrap();
@@ -162,19 +167,19 @@ fn run_loop_moves_the_simulated_arm_and_sag_correction_closes_the_gap() {
 #[test]
 fn planned_joint_move_runs_on_the_simulated_arm() {
     let (_server, address) = start_server();
-    let servos = [("j2", 2), ("j3", 3)];
-    let sim: Vec<SimServo> = servos
+    let sim: Vec<SimServo> = SERVOS
         .iter()
-        .map(|&(joint, id)| SimServo {
+        .map(|&(joint, id, _, model)| SimServo {
             id,
             joint: joint.to_owned(),
-            model: 2825,
+            model,
+            direction: 1,
         })
         .collect();
     let bus = SimBus::connect(&address, PERIOD, &sim).unwrap();
-    let robot: Vec<Servo> = servos
+    let robot: Vec<Servo> = SERVOS
         .iter()
-        .map(|&(name, id)| Servo::from_joint(&joint(name, id)).unwrap())
+        .map(|servo| Servo::from_joint(&joint(servo)).unwrap())
         .collect();
     let joints = Joints::open(bus, robot, Caps::for_loop(&settings(0.0))).unwrap();
     let mut run = RunLoop::start(joints, settings(0.0), None).unwrap();
@@ -204,7 +209,7 @@ fn planned_joint_move_runs_on_the_simulated_arm() {
     }
 }
 
-/// 실행 명령 시험의 로봇 설정: 관절 하나(j3), 시뮬레이션처럼 관절 각 0이 2048로 읽힌다.
+/// 실행 명령 시험의 로봇 설정: 관절 하나(j3), 시뮬레이션처럼 범위 가운데(0)가 2048로 읽힌다.
 const RUN_ROBOT: &str = r#"
 boundary_clearance_deg = 15
 
@@ -227,9 +232,9 @@ load_time_s = 2.0
 torque_cap_percent = 40
 
 [kinematics]
-origins_mm = [[0, 0, 0], [0, 0, 160], [0, 0, 220], [0, 0, 180], [0, 63, 0], [0, 0, 63]]
+origins_mm = [[0, 0, 0], [0, 0, 160], [0, 0, 220], [0, 0, 180], [0, 79.21, 0], [0, 0, 70.31]]
 axes = [[0, 0, 1], [0, 1, 0], [0, 1, 0], [0, 1, 0], [0, 0, 1], [0, 1, 0]]
-flange_position_mm = [0, 50, 0]
+flange_position_mm = [0, 32.6, 0]
 flange_rotation = [[0, 1, 0], [0, 0, 1], [1, 0, 0]]
 
 [models.STS3250.registers]

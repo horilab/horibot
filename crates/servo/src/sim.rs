@@ -21,6 +21,9 @@ pub struct SimServo {
     pub joint: String,
     /// 서보가 알려 줄 모델 번호
     pub model: u16,
+    /// 관절 각이 늘 때 서보 값이 느는 쪽이면 1, 주는 쪽이면 -1 (로봇 설정의 방향). 시뮬레이션 서보는 실물처럼 이
+    /// 방향으로 달려 있고, 영점을 재서 범위 가운데가 서보 값 2048로 읽힌다고 본다 (0024의 영점, 0033)
+    pub direction: i8,
 }
 
 /// 시뮬레이션 서버에 붙은 서보 버스.
@@ -65,7 +68,7 @@ impl SimBus {
         };
         let servos: Vec<Value> = servos
             .iter()
-            .map(|s| json!({"id": s.id, "joint": s.joint, "model": s.model}))
+            .map(|s| json!({"id": s.id, "joint": s.joint, "model": s.model, "direction": s.direction}))
             .collect();
         let answer = bus.request(&json!({
             "op": "hello",

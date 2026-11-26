@@ -19,7 +19,8 @@ Ask = Callable[..., dict[str, Any]]
 STATE = ["torque_enable", "goal_position", "torque_limit", "present_position", "present_load"]
 TILT = 2048 + round(0.6 / RAD_PER_STEP)  # J2를 0.6 rad 기울인 자리
 
-# 시험용 팔: 위로 선 막대 셋, 관절 j2·j3·j4가 모두 y축으로 돈다 (j4에는 서보를 달지 않는다)
+# 시험용 팔: 위로 선 막대 셋, 관절 j2·j3·j4가 모두 y축으로 돈다. j4는 호리봇의 J4처럼 범위(20° ~ 340°)가 0°를 품지
+# 않는다 (j4에는 처음 세계에서 서보를 달지 않는다)
 MODEL = """<mujoco model="test">
   <compiler angle="radian"/>
   <worldbody>
@@ -30,7 +31,7 @@ MODEL = """<mujoco model="test">
         <joint name="j3" type="hinge" axis="0 1 0" range="-2 2" limited="true"/>
         <geom type="capsule" fromto="0 0 0 0 0 0.18" size="0.012"/>
         <body name="link3" pos="0 0 0.18">
-          <joint name="j4" type="hinge" axis="0 1 0" range="-3 3" limited="true"/>
+          <joint name="j4" type="hinge" axis="0 1 0" range="0.349066 5.934119" limited="true"/>
           <geom type="capsule" fromto="0 0 0 0 0 0.1" size="0.012"/>
         </body>
       </body>
@@ -60,7 +61,10 @@ def ask(tmp_path: Path) -> Iterator[Ask]:
     hello = request(
         op="hello",
         period=0.01,
-        servos=[{"id": 2, "joint": "j2", "model": 2825}, {"id": 3, "joint": "j3", "model": 2825}],
+        servos=[
+            {"id": 2, "joint": "j2", "model": 2825, "direction": 1},
+            {"id": 3, "joint": "j3", "model": 2825, "direction": 1},
+        ],
     )
     assert hello["ok"], hello
     yield request
@@ -135,3 +139,25 @@ def test_power_cycle_resets_ram(ask: Ask) -> None:
     ask(op="power_cycle", id=2)
     values = ask(op="read", id=2, registers=["torque_enable", "goal_position", "position_offset"])
     assert values["values"] == {"torque_enable": 0, "goal_position": 0, "position_offset": 0}
+
+
+def test_servo_reads_2048_at_the_range_middle_and_turns_its_own_way(ask: Ask) -> None:
+    # 실물처럼 영점을 재서 범위 가운데가 2048로 읽히고, 로봇 설정의 방향으로 달려 있다
+    servo = {"id": 4, "joint": "j4", "model": 2825, "direction": -1}
+    assert ask(op="hello", period=0.01, servos=[servo])["ok"]
+    middle = (0.349066 + 5.934119) / 2
+    assert ask(op="state")["angles"]["j4"] == pytest.approx(middle)  # 범위 가운데에서 시작한다
+    assert (
+        ask(op="read", id=4, registers=["present_position"])["values"]["present_position"] == 2048
+    )
+    # 힘 한도에 걸리지 않을 만큼만 옮긴다 (시험 팔의 j4 막대는 50 g이라, 힘이 한도에 걸리면 물리 계산이 떤다)
+    enable(ask, 4, 2048 + 20)
+    for _ in range(100):
+        ask(op="sync_read", ids=[4], registers=STATE)
+    # 방향이 -1이라 서보 값이 늘면 관절 각이 준다
+    assert ask(op="state")["angles"]["j4"] == pytest.approx(middle - 20 * RAD_PER_STEP, abs=0.003)
+    position = ask(op="read", id=4, registers=["present_position"])["values"]["present_position"]
+    assert abs(position - (2048 + 20)) <= 2
+    # 방향은 1이나 -1이다
+    wrong = ask(op="hello", period=0.01, servos=[{**servo, "direction": 0}])
+    assert not wrong["ok"]

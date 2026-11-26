@@ -69,7 +69,7 @@ def test_far_target_is_not_reached_by_flipping_the_wrist() -> None:
 
 
 def test_packaging_layout_stacks_boxes_without_collisions() -> None:
-    # 지금 손목 오프셋(63 · 63 · 50 mm)에서 평행 그리퍼로 박스를 쌓는 자세가 부딪히지 않는다
+    # 처음 관절 구조의 손목 오프셋(63 · 63 · 50 mm)에서 평행 그리퍼로 박스를 쌓는 자세가 부딪히지 않는다
     tool = packaging.TOOLS["gripper"]
     robot, prims, _ = packaging.build_arm(packaging.Layout(), tool)
     scene = packaging.build_scene(robot, prims)
@@ -119,15 +119,13 @@ def test_rect_overlaps_uses_separating_axes() -> None:
 
 
 def test_packaging_layout_matches_the_value_file() -> None:
-    # 배치 검토의 기본 골격은 params/arm.toml(0017)과 같아야 한다
+    # 배치 검토(처음 관절 구조)의 링크 길이는 params/arm.toml(0017)과 같아야 한다. 손목 오프셋은 그 구조의 값이라
+    # 지금 설계(UR식 관절 부품의 쌓임, 0029)와 다르다
     arm = load_arm().arm
     layout = packaging.Layout()
     assert layout.shoulder * 1000 == pytest.approx(arm.shoulder_height_mm)
     assert layout.upper * 1000 == pytest.approx(arm.upper_arm_mm)
     assert layout.fore * 1000 == pytest.approx(arm.forearm_mm)
-    assert layout.d45 * 1000 == pytest.approx(arm.j4_to_j5_mm)
-    assert layout.d56 * 1000 == pytest.approx(arm.j5_to_j6_mm)
-    assert layout.d6f * 1000 == pytest.approx(arm.j6_to_flange_mm)
 
 
 def test_skeleton_reaches_the_corners_of_the_main_work_zone() -> None:

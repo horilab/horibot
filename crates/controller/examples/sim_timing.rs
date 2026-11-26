@@ -4,8 +4,8 @@
 //! 동기 쓰기)을 잰다. 서버의 실시간 모드(`--realtime`)는 한 박자가 주기(10 ms) 안에 끝나야 벽시계를 따라간다.
 //! 서버는 빠른 모드로 띄운다 (실시간 모드는 기다리는 시간이 섞인다).
 //!
-//! 서보는 다섯이다 (실물은 그리퍼까지 일곱). 시뮬레이션에는 그리퍼가 없고, 시뮬레이션은 모든 관절을 0°에서
-//! 시작하는데 지금 MJCF(옛 골격)의 J4 범위는 80°~235°라 0°를 품지 않아서 J4에는 서보를 달지 않는다.
+//! 서보는 여섯이다 (실물은 그리퍼까지 일곱). 시뮬레이션에는 그리퍼가 없다. 시뮬레이션은 관절마다 범위
+//! 가운데(J4는 180°)에서 시작하고, 그 자리가 서보 값 2048로 읽힌다.
 //!
 //! ```text
 //! uv run python -m horibot_design.mjcf
@@ -28,15 +28,19 @@ use horibot_servo::sim::{SimBus, SimServo};
 const PERIOD: Duration = Duration::from_millis(10);
 /// 관절의 소프트 한계 [rad]: 팔 설계 범위인 양쪽 160°
 const LIMIT: f64 = 160.0 * std::f64::consts::PI / 180.0;
-/// 서보를 단 관절의 굽힌 작업 자세 [rad] (옛 골격 MJCF의 관절 범위 안)
-const WORKING: [f64; 5] = [0.3, 0.4, 0.9, 0.7, -0.5];
-/// 관절, 서보 ID, 모델. 시뮬레이션이 아는 모델만 쓴다 (J2의 ST-3120 자리에 STS3250)
-const SERVOS: [(&str, u8, &str, u16); 5] = [
-    ("j1", 1, "STS3215", 777),
-    ("j2", 2, "STS3250", 2825),
-    ("j3", 3, "STS3250", 2825),
-    ("j5", 5, "STS3215", 777),
-    ("j6", 6, "STS3215", 777),
+const PI: f64 = std::f64::consts::PI;
+/// 관절마다 범위 가운데 [rad] (J4는 손목 1을 반 바퀴 돌려 달아 180°다)
+const HOME: [f64; 6] = [0.0, 0.0, 0.0, PI, 0.0, 0.0];
+/// 서보를 단 관절의 굽힌 작업 자세 [rad]
+const WORKING: [f64; 6] = [0.3, 0.4, 0.9, PI - 0.6, 0.7, -0.5];
+/// 관절, 서보 ID, 모델, 방향 (로봇 설정과 같은 값. J2, J3, J4는 설계로 본 방향이다)
+const SERVOS: [(&str, u8, &str, u16, Direction); 6] = [
+    ("j1", 1, "STS3215", 777, Direction::Reversed),
+    ("j2", 2, "ST-3120", 3337, Direction::Reversed),
+    ("j3", 3, "STS3250", 2825, Direction::Same),
+    ("j4", 4, "STS3215", 777, Direction::Reversed),
+    ("j5", 5, "STS3215", 777, Direction::Reversed),
+    ("j6", 6, "STS3215", 777, Direction::Reversed),
 ];
 
 /// 거래마다 걸린 시간 [µs]
@@ -129,20 +133,27 @@ fn summary(samples: &mut [f64]) -> String {
     )
 }
 
-/// 시뮬레이션의 서보는 관절 각 0이 2048로 읽히게 달려 있다 (방향 +1, 오프셋 0).
-fn joint(name: &'static str, id: u8, model: &'static str, model_number: u16) -> Joint {
+/// 시뮬레이션의 서보는 범위 가운데가 2048로 읽히게 달려 있다 (오프셋 0). 영점 핀은 범위 가운데에 둔다.
+fn joint(
+    name: &'static str,
+    id: u8,
+    model: &'static str,
+    model_number: u16,
+    direction: Direction,
+    middle: f64,
+) -> Joint {
     Joint {
         name,
         id,
         model,
         model_number,
-        lower: -LIMIT,
-        upper: LIMIT,
-        pin: 0.0,
+        lower: middle - LIMIT,
+        upper: middle + LIMIT,
+        pin: middle,
         calibration: Some(Calibration {
-            pin: 0.0,
+            pin: middle,
             zero_raw: 2048,
-            direction: Direction::Same,
+            direction,
             position_offset: 0,
         }),
         torque_limit: None,
@@ -161,10 +172,11 @@ fn main() {
 
     let sim: Vec<SimServo> = SERVOS
         .iter()
-        .map(|&(joint, id, _, model)| SimServo {
+        .map(|&(joint, id, _, model, direction)| SimServo {
             id,
             joint: joint.to_owned(),
             model,
+            direction: direction.number(),
         })
         .collect();
     let clock = Instant::now();
@@ -178,8 +190,10 @@ fn main() {
     };
     let robot: Vec<Servo> = SERVOS
         .iter()
-        .map(|&(name, id, model, number)| {
-            Servo::from_joint(&joint(name, id, model, number)).expect("영점을 줬다")
+        .zip(HOME)
+        .map(|(&(name, id, model, number, direction), middle)| {
+            Servo::from_joint(&joint(name, id, model, number, direction, middle))
+                .expect("영점을 줬다")
         })
         .collect();
     let joints = Joints::open(bus, robot, Caps::for_loop(&settings.run_loop))
@@ -195,12 +209,12 @@ fn main() {
         ticks.push(start.elapsed().as_secs_f64() * 1e6);
         mode
     };
-    // 붙잡기 → 작업 자세로 관절 이동 → 관절 조그(3초마다 방향을 바꾼다) → 영점으로 관절 이동
+    // 붙잡기 → 작업 자세로 관절 이동 → 관절 조그(3초마다 방향을 바꾼다) → 범위 가운데로 관절 이동
     for _ in 0..500 {
         tick(&mut run);
     }
     let mut refused = 0;
-    for goal in [WORKING, [0.0; 5]] {
+    for goal in [WORKING, HOME] {
         let trajectory = move_joints(run.targets(), &goal, &motion, dt).expect("관절 이동");
         if run.submit(trajectory).is_err() {
             refused += 1;
@@ -213,7 +227,7 @@ fn main() {
         if goal == WORKING {
             for n in 0..1500 {
                 let way = if (n / 300) % 2 == 0 { 0.1 } else { -0.1 };
-                if run.jog(&[way; 5]).is_err() {
+                if run.jog(&[way; 6]).is_err() {
                     refused += 1;
                 }
                 tick(&mut run);
@@ -230,7 +244,7 @@ fn main() {
         .count();
     let mut timings = timings.borrow_mut();
     println!(
-        "## 시뮬레이션 버스 ({address}): 서보 다섯, 세계 만들기 {:.0} ms",
+        "## 시뮬레이션 버스 ({address}): 서보 여섯, 세계 만들기 {:.0} ms",
         hello.as_secs_f64() * 1e3
     );
     println!("- 한 박자 (실행 루프 전체): {}", summary(&mut ticks));

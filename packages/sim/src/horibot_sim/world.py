@@ -1,13 +1,15 @@
 """시뮬레이션 세계: 설계의 로봇 모델에 위치 서보를 달고, 서보 레지스터를 실물과 같은 단위로 흉내 낸다 (0033).
 
-- 서보는 관절 각 0이 서보 값 2048로 읽히게 달려 있다고 본다 (방향 +1). 읽는 위치 = 엔코더 값 - 위치 오프셋.
+- 서보는 실물처럼 달려 있다고 본다: 로봇 설정의 방향(hello의 direction, 관절 각이 늘 때 서보 값이 느는 쪽이 1)으로
+  돌고, 영점을 재서 범위 가운데(MJCF 관절 범위의 가운데)가 서보 값 2048로 읽힌다 (0024의 영점). 읽는 위치 = 엔코더
+  값 - 위치 오프셋. 속도와 부하도 서보 쪽 부호다.
+- 관절은 범위 가운데에서 시작한다 (J4는 180°). 범위가 0°를 품지 않는 관절도 있어서다.
 - 토크가 켜진 서보는 목표(각도 한계 안으로 자른 값)로 가는 위치 액추에이터이고, 힘은 토크 한도만큼이다.
   토크가 꺼지면 힘이 없고 기어의 감쇠와 마찰만 남는다.
 - 강성, 감쇠, 기어 마찰은 어림이다. 강성은 STS3250이 20 kg·cm에 1.23° 처진다는 다른 사람의 값(0012)에서 잡아
   멈춤 토크에 비례시킨다. 다 만든 팔에서 잰 처짐으로 맞춘다.
-- 로봇 모델은 설계가 쓴 MJCF 파일이다 (`uv run python -m horibot_design.mjcf`, 막대 모델). 시뮬레이션은 설계를
-  불러오지 않고 그 파일과 서보 사양(params/servos.toml)만 읽는다 (0007). 무게는 막대의 부피에서 나온 값이라
-  실물보다 가볍다.
+- 로봇 모델은 설계가 쓴 MJCF 파일이다 (`uv run python -m horibot_design.mjcf`: 막대 모양에 팔 검토 모델의 링크
+  무게). 시뮬레이션은 설계를 불러오지 않고 그 파일과 서보 사양(params/servos.toml)만 읽는다 (0007).
 """
 
 from __future__ import annotations
@@ -21,7 +23,7 @@ import mujoco
 
 STEPS_PER_TURN = 4096
 RAD_PER_STEP = 2 * math.pi / STEPS_PER_TURN
-CENTER = 2048  # 관절 각 0의 엔코더 값
+CENTER = 2048  # 범위 가운데의 엔코더 값
 KGCM = 0.0980665  # [N·m / (kg·cm)]
 
 # 모델 번호 → 서보 모델 (horibot_servo의 MODELS와 같다)
@@ -68,6 +70,8 @@ class Servo:
     model: int
     stall: float  # 멈춤 토크 [N·m]
     stiffness: float  # [N·m/rad]
+    direction: int  # 관절 각이 늘 때 엔코더 값이 느는 쪽이면 1, 주는 쪽이면 -1
+    middle: float  # 범위 가운데의 관절 각 [rad]: 엔코더 값 CENTER로 읽히는 자리
     actuator: int
     qpos: int
     dof: int
@@ -79,17 +83,24 @@ class World:
     """설계의 로봇에 서보를 단 MuJoCo 세계. `step`이 한 주기만큼 진행한다."""
 
     def __init__(
-        self, model_file: Path, servo_specs: Path, period: float, servos: list[tuple[int, str, int]]
+        self,
+        model_file: Path,
+        servo_specs: Path,
+        period: float,
+        servos: list[tuple[int, str, int, int]],
     ) -> None:
+        """servos는 (ID, 관절 이름, 모델 번호, 방향)이다."""
         spec = mujoco.MjSpec.from_file(str(model_file))
         joints = {joint.name for joint in spec.joints}
         stalls = _stall_torques(servo_specs)
-        planned: list[tuple[int, str, int, float]] = []
-        for servo_id, joint, model in servos:
+        planned: list[tuple[int, str, int, int, float]] = []
+        for servo_id, joint, model, direction in servos:
             if joint not in joints:
                 raise ValueError(f"모르는 관절이다: {joint}")
             if model not in MODEL_NAMES:
                 raise ValueError(f"모르는 모델 번호다: {model}")
+            if direction not in (1, -1):
+                raise ValueError(f"방향은 1이나 -1이다: {direction}")
             stall = stalls[MODEL_NAMES[model]]
             actuator = spec.add_actuator()
             actuator.name = f"servo{servo_id}"
@@ -99,7 +110,7 @@ class World:
             actuator.biastype = mujoco.mjtBias.mjBIAS_AFFINE
             actuator.forcelimited = mujoco.mjtLimited.mjLIMITED_TRUE
             actuator.forcerange = [-stall, stall]
-            planned.append((servo_id, joint, model, stall))
+            planned.append((servo_id, joint, model, direction, stall))
         self.model = spec.compile()
         # 막대 모델은 관절 둘레에서 막대끼리 겹친다. 그대로 두면 부딪힘 힘이 서보를 밀어서 끈다.
         # 그래서 시뮬레이션에서도 자기 충돌을 막는 것이 아직 없다 (실행 전 궤적 검사로 만들 일, 0032)
@@ -108,7 +119,7 @@ class World:
         self.model.dof_damping[:] = JOINT_DAMPING
         self.model.dof_frictionloss[:] = JOINT_FRICTION
         # 서보를 달지 않은 관절은 거의 잠근다. 힘없이 흔들리면 서보를 단 관절까지 흔든다
-        driven = {self.model.jnt_dofadr[self.model.joint(joint).id] for _, joint, _, _ in planned}
+        driven = {self.model.jnt_dofadr[self.model.joint(joint).id] for _, joint, *_ in planned}
         for dof in range(self.model.nv):
             if dof not in driven:
                 self.model.dof_damping[dof] = UNDRIVEN_DAMPING
@@ -116,12 +127,15 @@ class World:
         # 서보의 감쇠와 기어 감쇠를 안정하게 푼다
         self.model.opt.integrator = mujoco.mjtIntegrator.mjINT_IMPLICITFAST
         self.data = mujoco.MjData(self.model)
+        # 관절은 범위 가운데에서 시작한다
+        for joint_id in range(self.model.njnt):
+            self.data.qpos[self.model.jnt_qposadr[joint_id]] = self._middle(joint_id)
         self.period = period
         self.substeps = max(1, round(period / self.model.opt.timestep))
         self.time = 0.0
         stall_sts3250 = stalls["STS3250"]
         self.servos: dict[int, Servo] = {}
-        for servo_id, joint, model, stall in planned:
+        for servo_id, joint, model, direction, stall in planned:
             joint_id = self.model.joint(joint).id
             servo = Servo(
                 id=servo_id,
@@ -129,6 +143,8 @@ class World:
                 model=model,
                 stall=stall,
                 stiffness=STIFFNESS_STS3250 * stall / stall_sts3250,
+                direction=direction,
+                middle=self._middle(joint_id),
                 actuator=self.model.actuator(f"servo{servo_id}").id,
                 qpos=int(self.model.jnt_qposadr[joint_id]),
                 dof=int(self.model.jnt_dofadr[joint_id]),
@@ -160,6 +176,15 @@ class World:
     def angle(self, servo_id: int) -> float:
         return float(self.data.qpos[self.servos[servo_id].qpos])
 
+    def _middle(self, joint_id: int) -> float:
+        """한 자유도로 도는 관절의 범위 가운데 [rad]. 범위가 없으면 0이다."""
+        model = self.model
+        hinge = model.jnt_type[joint_id] == mujoco.mjtJoint.mjJNT_HINGE
+        if not hinge or not model.jnt_limited[joint_id]:
+            return 0.0
+        low, high = model.jnt_range[joint_id]
+        return float(low + high) / 2
+
     def _drive(self, servo: Servo) -> None:
         model, index = self.model, servo.actuator
         on = servo.regs["torque_enable"] == 1
@@ -178,16 +203,18 @@ class World:
         low, high = regs["min_angle_limit"], regs["max_angle_limit"]
         if not (low == 0 and high == 0):
             goal = min(max(goal, low), high)
-        return (goal + regs["position_offset"] - CENTER) * RAD_PER_STEP
+        steps = goal + regs["position_offset"] - CENTER
+        return servo.middle + servo.direction * steps * RAD_PER_STEP
 
     def _read_back(self) -> None:
         for servo in self.servos.values():
             angle = float(self.data.qpos[servo.qpos])
             speed = float(self.data.qvel[servo.dof])
-            encoder = round(CENTER + angle / RAD_PER_STEP)
+            way = servo.direction
+            encoder = round(CENTER + way * (angle - servo.middle) / RAD_PER_STEP)
             regs = servo.regs
             regs["present_position"] = (encoder - regs["position_offset"]) % STEPS_PER_TURN
-            regs["present_speed"] = round(speed / RAD_PER_STEP)
+            regs["present_speed"] = round(way * speed / RAD_PER_STEP)
             force = float(self.data.actuator_force[servo.actuator])
-            regs["present_load"] = round(1000 * force / servo.stall)
+            regs["present_load"] = round(way * 1000 * force / servo.stall)
             regs["moving"] = int(abs(speed) > MOVING_SPEED)

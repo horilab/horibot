@@ -917,9 +917,9 @@ load_time_s = 2.0
 torque_cap_percent = 40
 
 [kinematics]
-origins_mm = [[0, 0, 0], [0, 0, 160], [0, 0, 220], [0, 0, 180], [0, 63, 0], [0, 0, 63]]
+origins_mm = [[0, 0, 0], [0, 0, 160], [0, 0, 220], [0, 0, 180], [0, 79.21, 0], [0, 0, 70.31]]
 axes = [[0, 0, 1], [0, 1, 0], [0, 1, 0], [0, 1, 0], [0, 0, 1], [0, 1, 0]]
-flange_position_mm = [0, 50, 0]
+flange_position_mm = [0, 32.6, 0]
 flange_rotation = [[0, 1, 0], [0, 0, 1], [1, 0, 0]]
 
 [models.STS3250.registers]
@@ -1262,7 +1262,8 @@ mod tests {
     fn kinematics_are_read_and_checked() {
         let settings = Settings::parse(J3).unwrap();
         let pose = settings.kinematics.forward(&[0.0; 6]);
-        assert!(close(pose.position[1], 0.113) && close(pose.position[2], 0.623));
+        // 영점 자세(팔이 곧게 섬)의 플랜지: 옆으로 79.21 + 32.6, 위로 160 + 220 + 180 + 70.31 mm
+        assert!(close(pose.position[1], 0.11181) && close(pose.position[2], 0.63031));
         assert!(close(settings.run_loop.max_jerk, 300f64.to_radians()));
         let message = error(&J3.replace("axes = [[0, 0, 1],", "axes = [[1, 0, 0],"));
         assert!(message.contains("kinematics: J1의 축"), "{message}");

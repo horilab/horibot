@@ -429,7 +429,7 @@ def check(c: Concept) -> None:
         )
     print(
         f"- 옆 자리 [mm]: 위팔 관 {c.s2 / MM:.1f}, 아래팔 관 {c.s3 / MM:.1f}, J5 축 d4 {c.d4 / MM:.1f}. "
-        f"d5 {c.d5 / MM:.1f}, d6 {c.d6 / MM:.1f} (지금 골격 63 · 63 · 50)"
+        f"d5 {c.d5 / MM:.1f}, d6 {c.d6 / MM:.1f} (처음 관절 구조의 골격 63 · 63 · 50)"
     )
     robot, prims = build(c, uc.TOOL)
     scene = pk.build_scene(robot, prims)

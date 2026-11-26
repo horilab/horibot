@@ -963,6 +963,8 @@ fn run_script(options: &Options) -> Result<(), String> {
                 id: joint.id,
                 joint: joint.name.to_owned(),
                 model: joint.model_number,
+                // 영점이 없는 관절은 위 Servo::from_joint에서 이미 걸렀다
+                direction: joint.calibration.map_or(1, |c| c.direction.number()),
             })
             .collect();
         let bus = SimBus::connect(address, LOOP_PERIOD, &sim).map_err(|e| e.to_string())?;

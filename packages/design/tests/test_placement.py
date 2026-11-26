@@ -13,6 +13,7 @@ from horibot_design.parts.shapes import box, solid
 from horibot_design.robot import Robot, flange_pose, link_poses
 from horibot_design.studies import ur_arm
 from horibot_design.studies.packaging import MM
+from horibot_design.values import load_robot
 
 # 영점, 범위의 가운데, 관절마다 부호가 다르게 섞인 자세들 [°]. J4는 범위가 180° 둘레다
 POSES_DEG = (
@@ -69,6 +70,22 @@ def test_flange_matches_the_rod_model(robot: Robot, pose_deg: tuple[float, ...])
     expected = flange_pose(robot, q)
     assert T[:3, :3] == pytest.approx(expected[:3, :3], abs=1e-9)
     assert T[:3, 3] * MM == pytest.approx(expected[:3, 3], abs=1e-9)
+
+
+@pytest.mark.parametrize("pose_deg", POSES_DEG)
+def test_value_file_matches_the_stacking_of_the_parts(pose_deg: tuple[float, ...]) -> None:
+    # params/arm.toml의 골격(컨트롤러의 로봇 설정, 시뮬레이션 모델, IK가 쓴다)이 부품 코드의 쌓임과 같다.
+    # 값 파일은 0.01 mm까지 적는다
+    q = np.radians(pose_deg)
+    frames = pl.frames_mm(q)
+    robot = load_robot()
+    expected = flange_pose(robot, q)
+    assert frames["flange"][:3, :3] == pytest.approx(expected[:3, :3], abs=1e-9)
+    assert frames["flange"][:3, 3] * MM == pytest.approx(expected[:3, 3], abs=1e-5)
+    for k, T in enumerate(link_poses(robot, q), start=1):
+        axis = T[:3, :3] @ np.asarray(robot.joints[k - 1].axis)
+        off = frames[f"j{k}"][:3, 3] * MM - T[:3, 3]
+        assert np.linalg.norm(off - (off @ axis) * axis) < 1e-5, k  # 서보 축이 관절 축 위에 있다
 
 
 def test_range_middle_is_the_design_zero_of_every_disc() -> None:
