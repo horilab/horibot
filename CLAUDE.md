@@ -62,7 +62,7 @@ horibot: GitHub 조직 horilab의 로봇 레포. 3D 프린터로 출력한 부�
   - `uv run ruff format --check .`
   - `uv run ruff check .`
   - `uv run pyright`
-  - `uv run pytest` (CPU 수만큼의 프로세스로 나눠 돌린다, 1분 40초쯤. 파일 하나만 볼 때는 `-n 0`을 붙인다)
+  - `uv run pytest` (CPU 수만큼의 프로세스로 나눠 돌린다, 8분 가까이 걸린다(2026-11-28). 줄일 일은 status.md의 미룬 일에 있다. 파일 하나만 볼 때는 `-n 0`을 붙인다)
   - `cargo fmt --all --check`
   - `cargo clippy --workspace --all-targets -- -D warnings`
   - `cargo test --workspace`
@@ -88,7 +88,7 @@ horibot: GitHub 조직 horilab의 로봇 레포. 3D 프린터로 출력한 부�
 - 서보 통신 시간 ([0024](docs/decisions/0024-servo-bus.md)의 만드는 순서 6): `cargo run -p horibot-controller -- timing --port <포트> [--count 300] [--yes]` (컨트롤러 파이에서는 `./horibot-controller timing ...`). `--yes`는 토크가 꺼진 서보의 토크 한도에 읽은 값을 다시 쓰고, 응답 지연이 0이 아니면 잠근 채 0으로 바꾼다 (움직이지 않는다). 확인을 받은 뒤 돌린다.
 - 영점 재기와 시험 순서 실행 ([0034](docs/decisions/0034-first-power-tools.md)):
   - 영점 재기: `cargo run -p horibot-controller -- zero --port <포트> --joint <관절> [--yes]`. `--yes`는 위치 오프셋을 굽는다(움직이지는 않는다). 사람이 핀을 꽂으며 Enter를 누르는 일이라 확인을 받은 뒤, 사용자가 보는 창으로 띄운다.
-  - 시험 순서 실행: `cargo run -p horibot-controller -- run --script <파일> (--port <포트> | --sim 127.0.0.1:5600) [--yes]`. 실물에서 `--yes`는 서보를 움직이므로 확인을 받은 뒤 돌린다. 시뮬레이션에서 먼저 돌려 본다. 움직이기 전에 지금 팔 자세에서 순서의 이동을 모두 부딪힘 검사로 거른다 (여섯 관절의 영점이 다 있어야 한다. 시험대처럼 형상이 실물과 다를 때만 `--no-collision`). 컨트롤러 파이(리눅스)에서는 실행 루프를 실시간으로 돌리고, 걸지 못하면 토크를 켜기 전에 멈춘다 (`--no-realtime`으로 끈다). 컨트롤러 파이에서 `--yes`로 돌리면 게임패드가 있어야 한다: 사용자가 팔 옆에서 A(시작, 다음)와 B(멈춤)를 누른다 (없이 하려면 `--no-gamepad`). PC에서는 멈춤 단계가 있는 순서를 사용자가 Enter를 누르는 창에서 돌린다. 시뮬레이션에서 볼 때는 `--hold-max 5`로 버티기를 줄인다 (실물에서는 받지 않는다).
+  - 시험 순서 실행: `cargo run -p horibot-controller -- run --script <파일> (--port <포트> | --sim 127.0.0.1:5600) [--yes]`. 실물에서 `--yes`는 서보를 움직이므로 확인을 받은 뒤 돌린다. 시뮬레이션에서 먼저 돌려 본다. 움직이기 전에 지금 팔 자세에서 순서의 이동을 모두 부딪힘 검사로 거른다 (여섯 관절의 영점이 다 있어야 한다. 시험대처럼 형상이 실물과 다를 때만 `--no-collision`). 컨트롤러 파이(리눅스)에서는 실행 루프를 실시간으로 돌리고, 걸지 못하면 토크를 켜기 전에 멈춘다 (`--no-realtime`으로 끈다). 컨트롤러 파이에서 `--yes`로 돌리면 게임패드가 있어야 한다: 사용자가 팔 옆에서 A(시작, 다음)와 B(멈춤)를 누른다 (없이 하려면 `--no-gamepad`). 컨트롤러 파이에서 돌릴 때는 `script -q -f -c '<실행 명령>' /tmp/<이름>.log`를 사용자가 보는 PC 창(`ssh -t hori1 ...`)으로 띄워, 같은 화면을 Claude가 그 파일에서 읽는다 (처음 전원 날 그렇게 했다). PC에서는 멈춤 단계가 있는 순서를 사용자가 Enter를 누르는 창에서 돌린다. 시뮬레이션에서 볼 때는 `--hold-max 5`로 버티기를 줄인다 (실물에서는 받지 않는다).
   - 처음 전원 순서는 `data/scripts/first-power/`(순서 셋)와 `data/scripts/to-rest.toml`(세운 자리에서 쉬는 자세로)이다 ([0034](docs/decisions/0034-first-power-tools.md)의 처음 전원 순서). 순서를 고치면 `cargo test -p horibot-controller --test first_power_scripts`(부딪힘 검사와 시뮬레이션에서 끝까지)와 `uv run pytest tests/test_first_power_scripts.py`(어깨 버티기 자세가 설계의 IK 해인지)로 본다.
 - 맨 서보 확인: `cargo run -p horibot-controller -- check|check-state --port <포트> --id 20` ([docs/servo-setup.md](docs/servo-setup.md#맨-서보-확인)). `check --yes`는 서보를 움직이므로 확인을 받은 뒤, 사용자가 보는 창으로 띄운다 (손으로 하는 단계에서 사용자가 Enter를 누른다). `check-state`는 `--situation <번호>`로 Claude가 돌린다. 한 단계만 다시 할 때는 `--only <단계>`다.
 - 시험 기록 올리고 받기 ([0022](docs/decisions/0022-records-and-sync.md)). 실물 시험이 끝나면 올리고, 분석을 시작할 때 받는다:
