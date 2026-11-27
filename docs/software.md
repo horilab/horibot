@@ -87,7 +87,7 @@
 
 ## 개발 환경
 
-- Windows 네이티브에서 한다 (WSL 아님). 서보 어댑터가 COM 포트로 바로 잡히고, OCP CAD Viewer와 MuJoCo 뷰어가 GPU로 바로 그린다. 리눅스가 꼭 필요한 일은 라즈베리파이가 맡는다. 파이에서 도는 컨트롤러도 Windows에서 짜고 파이용으로 빌드하며, 리눅스에서만 도는 부분은 여분 파이(hori3)에서 돌려 본다 ([0008](decisions/0008-environment-and-packages.md)).
+- Windows 네이티브에서 한다 (WSL 아님). 서보 어댑터가 COM 포트로 바로 잡히고, OCP CAD Viewer와 MuJoCo 뷰어가 GPU로 바로 그린다. 리눅스가 꼭 필요한 일은 라즈베리파이가 맡는다. 파이에서 도는 컨트롤러도 Windows에서 짜고 파이용으로 빌드하며, 리눅스에서만 도는 부분은 컨트롤러 파이(hori1)에 올려 돌려 본다 ([0008](decisions/0008-environment-and-packages.md)).
 - Python은 3.12로 고정하고 uv로 관리한다. 패키지 버전은 uv.lock으로 고정하고, 올릴 때는 따로 검토한다.
 - Windows의 기본 인코딩이 cp949라서 파일은 항상 UTF-8로 읽고 쓰고, `PYTHONUTF8=1`을 켠다.
 - conda로만 설치되는 라이브러리는 쓰지 않는다.
