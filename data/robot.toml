@@ -172,6 +172,10 @@ id = 3
 model = "STS3250"
 soft_limits_deg = [-160, 160]
 pin_deg = 0
+# 영점 (2026-11-27, records/servo/2026-11-27_234024_zero-crazyhappy): 손으로 잰 방향이 설계와 같다
+position_offset = 1056
+zero_raw = 2048
+direction = 1
 
 # J4 (STS 관절, 아래팔 끝): 손목이 앞으로 숙는 쪽이 +다. 범위 가운데가 180°라 손목 1을 출력 원판에 반 바퀴 돌려 단다.
 # 손목 몸통은 범위 가운데에서 90° 돌린 자리에서 핀이 맞아서, 영점 핀(손목 1 발의 귀 → 아래팔 끝 집의 살)은 90°에
@@ -181,6 +185,10 @@ id = 4
 model = "STS3215"
 soft_limits_deg = [20, 340] # 범위 가운데 180° ± 160°
 pin_deg = 90
+# 영점 (2026-11-28, records/servo/2026-11-28_003348_zero-crazyhappy): 손으로 잰 방향이 설계와 같다
+position_offset = 1131
+zero_raw = 3073
+direction = -1
 
 # J5 (STS 관절, 손목 1): 축이 손목 2 쪽을 보는 +z라 출력 쪽(손목 2)에서 볼 때 반시계가 +다. 설계 코드(parts/joint.py의
 # turned)와 작업 안내는 그 반대로 그려서, 설계의 핀 자리 -90°가 여기서는 +90°다.
