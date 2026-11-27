@@ -22,6 +22,7 @@ from horibot_design.guide.build import (
 )
 from horibot_design.guide.guides import (
     base_pi,
+    d405_tie,
     first_joint,
     forearm,
     j1_base,
@@ -34,8 +35,12 @@ from horibot_design.guide.guides import (
 )
 from horibot_design.guide.meshes import pack, tessellate, unpack
 from horibot_design.guide.model import Guide, Move, PrintGuide, ScenePart, Step, View
+from horibot_design.parts import base as bp
+from horibot_design.parts import camera_mount as cmt
 from horibot_design.parts import joint as j
+from horibot_design.parts import links, wrist
 from horibot_design.parts.shapes import solid
+from horibot_design.studies import wiring as wr
 
 UP = View((0, 1, 0), (0, 0, 1))
 
@@ -476,6 +481,7 @@ def test_built_site_has_every_file_its_guides_need(tmp_path: Path) -> None:
     assert "/*@CSS@*/" not in page and "/*@JS@*/" not in page and "<title>작업 안내</title>" in page
     catalog = json.loads((tmp_path / "data" / "catalog.json").read_text(encoding="utf-8"))
     assert [g["id"] for g in catalog["guides"]] == [
+        d405_tie.GUIDE.id,
         base_pi.GUIDE.id,
         j1_zero.GUIDE.id,
         j2_shoulder.GUIDE.id,
@@ -524,6 +530,33 @@ def test_site_passes_its_selftest_in_a_headless_browser(tmp_path: Path) -> None:
         pytest.skip("three.js를 받지 못했다 (인터넷)")
     assert selftest.problems(report) == []
     plates = len(print_json(prints.ARM)["steps"])
-    guides = (base_pi, j1_zero, j2_shoulder, upper_arm, forearm, wrist_join, j1_base)
+    guides = (d405_tie, base_pi, j1_zero, j2_shoulder, upper_arm, forearm, wrist_join, j1_base)
     steps = sum(len(g.STEPS) for g in guides) + plates
     assert sum(g["steps"] for g in report["guides"]) == steps
+
+
+def test_d405_tie_lengths_and_spots() -> None:
+    # 테이프의 바깥 끝은 설계에서 가정한 잡는 자리와 같은 반지름이고, 높이는 카메라 밑면이다
+    assert d405_tie.hold_radius() == pytest.approx(cmt.HOLD_R, abs=2.0)
+    assert d405_tie.HOLD_H == pytest.approx(-cmt.CAM_H / 2 - cmt.WIRE_D / 2 - wrist.X_FOOT)
+    # 테이프는 밑면 안에 든다 (렌즈 면으로 넘어가지 않는다)
+    assert -cmt.CAM_W / 2 <= d405_tie.TAPE_Y[0] < d405_tie.TAPE_Y[1] <= cmt.CAM_W / 2
+    assert -cmt.CAM_D <= d405_tie.TAPE_Z[0] < d405_tie.TAPE_Z[1] <= 0.0
+    # 고리는 설계 값(테이프 자리로 다시 센 J4·J5)보다 짧지 않고 5 mm 단위다
+    loops = d405_tie.loop_mm()
+    hold = wr.d405_wrist_loop(d405_tie.hold_radius(), d405_tie.HOLD_H).length
+    assert loops["J4·J5"] >= hold and loops["J4·J5"] - hold < 5.0
+    assert loops["J3"] >= wr.d405_elbow_loop().length
+    assert loops["J1·J2"] >= wr.d405_base_loop().length
+    assert all(v % 5 == 0 for v in loops.values())
+    # 찍찍이 도막은 관을 한 바퀴 감고 3 cm 넘게 겹친다
+    for name in ("forearm", "upper_arm"):
+        assert d405_tie.TIE_CM[name] * 10.0 - links._tie_section(name).length >= 30.0
+    # 파이 판 타이: 구멍(폭 3 mm)의 몸통 쪽 벽에서 판 가장자리까지 살 4 mm를 감는다
+    t = d405_tie.base_tie()
+    assert t["z1"] - t["z0"] == pytest.approx(4.0, abs=0.1)
+    assert t["x1"] - t["x0"] == pytest.approx(links.TIE_W)
+    # 남는 선 뭉치(책상과 나란한 면에 감는다)는 책상 뒤 가장자리에서 30 mm 넘게 뒤, 책상 윗면 밑에 매달린다
+    cx, cy, _cz = d405_tie.COIL_AT
+    assert cx < -bp.EDGE - 30.0
+    assert cy + d405_tie.COIL_R < bp.Y_DESK

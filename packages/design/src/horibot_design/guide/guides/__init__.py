@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from horibot_design.guide.guides import (
     base_pi,
+    d405_tie,
     forearm,
     j1_base,
     j1_zero,
@@ -27,6 +28,7 @@ from horibot_design.guide.guides import (
 from horibot_design.guide.model import Guide, PrintGuide
 
 ALL: tuple[Guide | PrintGuide, ...] = (
+    d405_tie.GUIDE,
     base_pi.GUIDE,
     j1_zero.GUIDE,
     j2_shoulder.GUIDE,

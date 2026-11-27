@@ -1219,7 +1219,8 @@ def link_crossings() -> dict[str, tuple[Crossing, OverBody]]:
 # 타이의 자리(관 끝에서 14 mm와 19 mm)는 멈춤 귀 끝과 선 창을 비킨 자리다 (parts/links.py의 TIE_IN, tie_x)
 LOOP_R = j.R_DRUM + D405_D / 2 + 2.0  # 고리가 돌아가는 STS 관절 몸통 (원통 23.6에 선 반지름과 2 mm)
 BASE_LOOP_R = 50.0  # J1 몸통과 어깨 집을 돌아가는 반지름 (목 모서리가 축에서 47.5 mm)
-# 카메라 쪽에서 선을 잡는 자리 (가정: 방법은 아직 정하지 않았다, status.md 설계 0). 손목 2의 발 바닥에서 위로
+# 카메라 쪽에서 선을 잡는 자리 (앞선 가정: 실제로는 밑면에 테이프로 붙이고, 그 자리의 고리는 작업 안내가 다시 센다,
+# guide/guides/d405_tie.py). 손목 2의 발 바닥에서 위로
 # CAM_HOLD_H, J5 축에서 CAM_HOLD_R인 곳에서 선이 J5 축에서 멀어지는 쪽으로 나간다고 본다 (카메라 바닥면 밑).
 # J5의 멈춤 기둥과 영점 핀 귀는 이음매 둘레 반지름 SEAM_SWEEP_R 안을 쓸고 가므로(2026-11-22에 선이 낀 자리),
 # 팽팽한 선이 이음매 높이를 그 밖에서 지나야 한다 (d405_hold_check)
@@ -1314,8 +1315,9 @@ def d405_base_loop() -> Loop:
     return Loop("J1·J2", max(grid) + D405_SPARE, min(grid), need(0.0, 0.0))
 
 
-def d405_wrist_loop() -> Loop:
-    """J4·J5 고리 (어림): 카메라 쪽에서 잡은 자리와 아래팔 끝의 타이 사이.
+def d405_wrist_loop(hold_r: float = CAM_HOLD_R, hold_h: float = CAM_HOLD_H) -> Loop:
+    """J4·J5 고리 (어림): 카메라 쪽에서 잡은 자리(J5 축에서 hold_r, 손목 2의 발 바닥에서 hold_h)와 아래팔 끝의
+    타이 사이.
 
     손목 1에는 묶지 않는다. 길이는 손목 1의 발에 가상의 길잡이 점을 두고 두 구간으로 나눠 센 위쪽 값이다:
     J5 구간은 손목 1의 원통을 돌아 길잡이 점까지, J4 구간은 거기서 J4 집의 가장자리를 넘어 아래팔의 타이까지다.
@@ -1323,10 +1325,10 @@ def d405_wrist_loop() -> Loop:
     """
     _, r_f, _ = lp.LINKS["forearm"]
     guide_r = -wp.X_FOOT + 2.0  # 손목 1의 발 (J5 축에서)
-    drop = CAM_HOLD_H + (j.FRONT - wp.AX_Y)  # 잡는 자리에서 J5 원통의 가운데 높이까지
+    drop = hold_h + (j.FRONT - wp.AX_Y)  # 잡는 자리에서 J5 원통의 가운데 높이까지
 
     def j5(q: float) -> float:
-        return math.hypot(_around(LOOP_R, CAM_HOLD_R, guide_r, CAM_SIDE_AZ + q), drop)
+        return math.hypot(_around(LOOP_R, hold_r, guide_r, CAM_SIDE_AZ + q), drop)
 
     # J4 구간: 길잡이 점(J4 축 가까이, guide_off)에서 J4 집의 앞 가장자리를 넘어 아래팔의 타이까지
     guide_off = 15.0
