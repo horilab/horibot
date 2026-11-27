@@ -69,6 +69,32 @@ impl Kinematics {
         })
     }
 
+    /// 관절마다 부모 좌표계에서 본 원점 [m]. 관절 k의 원점이 링크 k 좌표계의 원점이다.
+    pub fn origins(&self) -> &[Vec3; 6] {
+        &self.origins
+    }
+
+    /// 관절마다의 축 (링크 좌표계에서, 영점 자세에서는 베이스 좌표계와 같다).
+    pub fn axes(&self) -> [Vec3; 6] {
+        AXES
+    }
+
+    /// 관절 각에서 링크 1 ~ 6 좌표계의 자세: 베이스에서 본 회전과 원점 [m] (부딪힘 검사가 부품을 놓는다, 0041).
+    pub fn link_frames(&self, q: &[f64; 6]) -> [Pose; 6] {
+        let mut rotation = IDENTITY;
+        let mut position = [0.0; 3];
+        let mut out = [Pose {
+            rotation: IDENTITY,
+            position: [0.0; 3],
+        }; 6];
+        for (k, ((origin, axis), angle)) in self.origins.iter().zip(AXES).zip(q).enumerate() {
+            position = add(position, mat_vec(&rotation, origin));
+            rotation = mat_mul(&rotation, &rot(axis, *angle));
+            out[k] = Pose { rotation, position };
+        }
+        out
+    }
+
     /// 정기구학: 관절 각에서의 플랜지 자세.
     pub fn forward(&self, q: &[f64; 6]) -> Pose {
         let mut rotation = IDENTITY;

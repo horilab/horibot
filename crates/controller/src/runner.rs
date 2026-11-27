@@ -30,6 +30,10 @@
 //!
 //! 움직이기는 관절 공간의 곧은 길이다([`move_joints`]). 시작 자세를 적으면 토크를 켠 자리가 그 자세인지 먼저 본다:
 //! 순서가 지나는 길은 그 자세에서 시작한 길이라, 다른 자리에서 시작하면 미리 따져 본 길과 달라진다 (0034).
+//!
+//! 실행 명령은 움직이기 전에 순서의 모든 움직이기를 부딪힘 검사로 거른다 ([`Script::check_collisions`], 0041):
+//! 지금 팔의 자세(읽은 관절 각)에서 시작해 단계마다 곧은 길을 검사하고, 막히면 어느 단계 어느 짝인지 알리고 시작하지
+//! 않는다. 쉬는 자세는 쉬는 자세 위(rest_above)를 거쳐 떠나고 앉는다 (곧게 가면 아래팔이 선반을 긁는다).
 
 use std::collections::BTreeMap;
 
@@ -37,6 +41,7 @@ use horibot_servo::feetech::ServoBus;
 use serde::Deserialize;
 
 use crate::check::Console;
+use crate::collision::Model;
 use crate::joints::Servo;
 use crate::plan::{MotionLimits, move_joints};
 use crate::runloop::{Grip, Mode, RunLoop};
@@ -293,6 +298,68 @@ impl Script {
             start,
             steps,
         })
+    }
+
+    /// 순서의 움직이기를 부딪힘 검사로 거른다 (0041). `start`는 지금 팔의 관절 각 [rad] (J1 ~ J6)이다. 단계마다
+    /// 순서의 관절만 목표로 바뀌고 나머지 관절은 그 자리다. 통과하면 사람이 볼 요약을, 막히면 어느 단계 어느
+    /// 짝인지 알리는 글을 낸다.
+    pub fn check_collisions(&self, model: &Model, start: &[f64; 6]) -> Result<String, String> {
+        let index_of = |name: &str| JOINT_NAMES.iter().position(|known| *known == name);
+        let mut q = *start;
+        if let Some(found) = model.first_within(&q, model.margin()) {
+            return Err(format!(
+                "부딪힘 검사: 지금 자세가 이미 여유({} mm) 안이다: {}",
+                model.margin(),
+                model.describe(&found)
+            ));
+        }
+        let mut moves = 0;
+        let mut samples = 0;
+        let mut closest: Option<(usize, crate::collision::Nearest)> = None;
+        for (n, step) in self.steps.iter().enumerate() {
+            let Step::Move(targets) = step else {
+                continue;
+            };
+            let mut next = q;
+            for &(index, angle) in targets {
+                let k = index_of(self.joints[index])
+                    .ok_or_else(|| format!("{}은 팔의 관절이 아니다", self.joints[index]))?;
+                next[k] = angle;
+            }
+            match model.check_move(&q, &next) {
+                Ok(report) => {
+                    moves += 1;
+                    samples += report.samples;
+                    if closest.is_none_or(|(_, c)| report.nearest.distance < c.distance) {
+                        closest = Some((n + 1, report.nearest));
+                    }
+                }
+                Err(blocked) => {
+                    let angles: Vec<String> = JOINT_NAMES
+                        .iter()
+                        .zip(blocked.q)
+                        .map(|(name, a)| format!("{name} {:.1}°", a.to_degrees()))
+                        .collect();
+                    return Err(format!(
+                        "부딪힘 검사: {}번째 단계(움직이기)에서 막힌다. 길의 {:.0}% 자리({})에서 {} (여유 {} mm)",
+                        n + 1,
+                        blocked.fraction * 100.0,
+                        angles.join(", "),
+                        model.describe(&blocked.nearest),
+                        model.margin()
+                    ));
+                }
+            }
+            q = next;
+        }
+        let near = match closest {
+            None => String::new(),
+            Some((n, c)) => format!(", 가장 가까운 것은 {n}번째 단계의 {}", model.describe(&c)),
+        };
+        Ok(format!(
+            "부딪힘 검사: 움직이기 {moves}개를 지난다 (자세 {samples}개 검사, 여유 {} mm{near})",
+            model.margin()
+        ))
     }
 
     /// 사람이 볼 순서: 단계마다 한 줄.

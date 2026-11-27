@@ -57,6 +57,41 @@ pub struct Settings {
     /// 이름 붙은 자세: 이름 → J1 ~ J6의 관절 각 [rad] (쉬는 자세 rest는 0037, 홈 자세 home은 0019). 시험 순서가
     /// 이름으로 부른다 (0034)
     pub poses: BTreeMap<String, [f64; 6]>,
+    /// 부딪힘 검사 (0041). 형상은 로봇 설정 옆의 `collision/`에 있다
+    pub collision: Option<CollisionSettings>,
+}
+
+/// 부딪힘 검사의 기준 (docs/decisions/0041-collision-checking.md).
+#[derive(Debug, Clone, PartialEq)]
+pub struct CollisionSettings {
+    /// 여유 [mm]: 검사하는 짝이나 안전 평면이 이보다 가까운 자세는 막는다
+    pub margin_mm: f64,
+    /// 안전 평면 (베이스 좌표계)
+    pub planes: Vec<SafetyPlane>,
+    /// 쉬는 자세에서 받침에 앉는 닿음 (0037)
+    pub rest_contact: Option<RestContact>,
+}
+
+/// 안전 평면: 팔과 도구는 `normal · x ≥ offset_mm` 쪽에 있어야 한다 (0023).
+#[derive(Debug, Clone, PartialEq)]
+pub struct SafetyPlane {
+    pub name: String,
+    /// 팔이 있는 쪽을 보는 단위 벡터 (베이스 좌표계)
+    pub normal: [f64; 3],
+    /// [mm]
+    pub offset_mm: f64,
+}
+
+/// 쉬는 자세의 닿음: 두 묶음(형상 자료의 group)의 짝은, 두 링크 사이의 관절이 쉬는 자세(이름 붙은 자세 rest)와
+/// `to`(쉬는 자세 위)를 잇는 곧은 길에서 `within` 안일 때만 보지 않는다. 앉고 떠나는 길에서만 닿음을 허락한다:
+/// 쉬는 자세 둘레 몇 도를 통째로 봐주면, 쉬는 자세에서 곧게 다른 데로 가며 받침을 긁는 길도 지나간다 (0041).
+#[derive(Debug, Clone, PartialEq)]
+pub struct RestContact {
+    pub groups: [String; 2],
+    /// 쉬는 자세 위의 이름 붙은 자세
+    pub to: String,
+    /// [rad]
+    pub within: f64,
 }
 
 /// 그리퍼 (0030, 0032). 서보는 관절처럼 다룬다: 관절 각은 손가락이 맞닿은 자리(영점)에서 돈 각이고, 소프트
@@ -383,6 +418,16 @@ impl Settings {
             problems.extend(found);
             BTreeMap::new()
         });
+        let collision = match &file.collision {
+            None => None,
+            Some(collision) => match collision.check(&poses) {
+                Ok(collision) => Some(collision),
+                Err(found) => {
+                    problems.extend(found);
+                    None
+                }
+            },
+        };
         if !problems.is_empty() {
             return Err(format!(
                 "고칠 것 {}가지\n- {}",
@@ -398,6 +443,7 @@ impl Settings {
             joints,
             gripper,
             poses,
+            collision,
         })
     }
 
@@ -511,6 +557,96 @@ struct SettingsFile {
     /// `<이름>_deg = [J1, …, J6]`
     #[serde(default)]
     poses: BTreeMap<String, [f64; 6]>,
+    collision: Option<CollisionFile>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CollisionFile {
+    margin_mm: f64,
+    #[serde(default)]
+    planes: Vec<PlaneFile>,
+    rest_contact: Option<RestContactFile>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PlaneFile {
+    name: String,
+    normal: [f64; 3],
+    offset_mm: f64,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RestContactFile {
+    groups: [String; 2],
+    to: String,
+    within_deg: f64,
+}
+
+impl CollisionFile {
+    fn check(&self, poses: &BTreeMap<String, [f64; 6]>) -> Result<CollisionSettings, Vec<String>> {
+        let mut problems = Vec::new();
+        // 여유는 측정한 헛경보(0041)와 이동 검사의 걸음(collision.rs의 창 30 mm) 안에서 받는다
+        if !(self.margin_mm.is_finite() && self.margin_mm > 0.0 && self.margin_mm < 20.0) {
+            problems.push(format!(
+                "collision.margin_mm는 0보다 크고 20보다 작다: {}",
+                self.margin_mm
+            ));
+        }
+        let mut planes = Vec::new();
+        for plane in &self.planes {
+            let size = plane.normal.iter().map(|v| v * v).sum::<f64>().sqrt();
+            if !(size.is_finite() && (size - 1.0).abs() < 1e-6) {
+                problems.push(format!(
+                    "collision.planes {}: normal은 단위 벡터다: {:?}",
+                    plane.name, plane.normal
+                ));
+            }
+            if !plane.offset_mm.is_finite() {
+                problems.push(format!(
+                    "collision.planes {}: offset_mm가 수가 아니다",
+                    plane.name
+                ));
+            }
+            planes.push(SafetyPlane {
+                name: plane.name.clone(),
+                normal: plane.normal,
+                offset_mm: plane.offset_mm,
+            });
+        }
+        let rest_contact = self.rest_contact.as_ref().map(|rest| {
+            // 읽은 각의 어긋남(영점, 백래시)만 받는 폭이다. 넓으면 앉고 떠나는 길 밖의 닿음까지 봐준다
+            if !(rest.within_deg.is_finite() && rest.within_deg > 0.0 && rest.within_deg <= 5.0) {
+                problems.push(format!(
+                    "collision.rest_contact.within_deg는 0보다 크고 5 이하다: {}",
+                    rest.within_deg
+                ));
+            }
+            for name in ["rest", rest.to.as_str()] {
+                if !poses.contains_key(name) {
+                    problems.push(format!(
+                        "collision.rest_contact: 이름 붙은 자세에 {name}이 없다"
+                    ));
+                }
+            }
+            RestContact {
+                groups: rest.groups.clone(),
+                to: rest.to.clone(),
+                within: rest.within_deg.to_radians(),
+            }
+        });
+        if problems.is_empty() {
+            Ok(CollisionSettings {
+                margin_mm: self.margin_mm,
+                planes,
+                rest_contact,
+            })
+        } else {
+            Err(problems)
+        }
+    }
 }
 
 /// 이름 붙은 자세를 검사한다: 키는 `<이름>_deg`이고, 로봇 설정에 있는 관절의 각은 그 관절의 소프트 한계 안이다.

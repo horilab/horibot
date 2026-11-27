@@ -43,6 +43,11 @@ REST_J5, REST_J6 = 0.0, 0.0
 # J1: 늘어진 손목과 그리퍼가 로봇 앞 가운데로 온다 (studies/rest_pose.py가 닿음을 본다)
 REST_J1 = -55.0
 REST_DEG = (REST_J1, REST_J2, REST_J3, REST_J4, REST_J5, REST_J6)
+# 쉬는 자세 위: J2만 세운 자세. 쉬는 자세는 여기를 거쳐 떠나고 앉는다. 다른 자세로 곧게 가면 아래팔이 선반을
+# 파고든다 (2026-11-27, 부딪힘 검사 0041). J2만 세우는 길이 선반에서 가장 빨리 벌어진다 (1°에 약 0.9 mm).
+# 이 길에서 형상이 겹치지 않는지는 tests/test_collision.py가 본다
+REST_ABOVE_LIFT = 10.0  # J2를 세우는 각 [°]
+REST_ABOVE_DEG = (REST_J1, REST_J2 - REST_ABOVE_LIFT, REST_J3, REST_J4, REST_J5, REST_J6)
 
 # ---- 받침이 받는 집 (아래팔 끝의 J4 집) ----
 HOUSE_R = j.R_DRUM  # 집의 바깥 반지름 23.6

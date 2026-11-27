@@ -278,7 +278,8 @@ move = { j3 = 0.0 }
 "#;
 
 /// 실행 명령(`run --sim`)을 끝까지 돌린다: 실행 루프 스레드, 기록 스레드, 터미널이 같이 돌아 순서를 마치고
-/// 기록(meta.json, 박자마다 깨어나는 지연이 든 samples.csv)을 남기는지 본다 (0026의 2, 5).
+/// 기록(meta.json, 박자마다 깨어나는 지연이 든 samples.csv)을 남기는지 본다 (0026의 2, 5). 관절 하나짜리 로봇
+/// 설정이라 부딪힘 검사는 끄고(`--no-collision`), 끈 것이 기록에 남는지 본다.
 #[test]
 fn the_run_command_finishes_a_script_on_the_simulation() {
     let (_server, address) = start_server();
@@ -293,7 +294,7 @@ fn the_run_command_finishes_a_script_on_the_simulation() {
         .arg(dir.join("robot.toml"))
         .arg("--script")
         .arg(dir.join("script.toml"))
-        .args(["--sim", &address, "--yes", "--records"])
+        .args(["--sim", &address, "--yes", "--no-collision", "--records"])
         .arg(dir.join("records"))
         .stdin(Stdio::null())
         .output()
@@ -310,6 +311,7 @@ fn the_run_command_finishes_a_script_on_the_simulation() {
     let meta: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(run_dir.join("meta.json")).unwrap()).unwrap();
     assert_eq!(meta["end"], "done", "{meta}");
+    assert_eq!(meta["collision"]["checked"], false, "{meta}");
     assert!(
         meta["realtime"].as_str().unwrap().starts_with("끔"),
         "시뮬레이션은 보통 스레드로 돈다: {meta}"
@@ -326,5 +328,61 @@ fn the_run_command_finishes_a_script_on_the_simulation() {
         "{header}"
     );
     assert_eq!(lines.count() as u64, ticks, "박자마다 한 줄");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// 실행 명령은 움직이기 전에 순서를 부딪힘 검사로 거른다 (0041): 레포의 로봇 설정과 형상으로, 시뮬레이션에서
+/// 순서의 관절(J1, J2)은 읽고 나머지는 범위 가운데로 본다. 책상에 박는 순서는 서보에 손대지 않고 멈추고, 쉬는 자세
+/// 위로 드는 순서는 지난다. `--yes`가 없어도 검사한다.
+#[test]
+fn the_run_command_checks_the_script_for_collisions_first() {
+    let (_server, address) = start_server();
+    let settings = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data/robot.toml");
+    let dir = std::env::temp_dir().join(format!("horibot-run-collision-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let run = |script: &str| {
+        let path = dir.join("script.toml");
+        std::fs::write(&path, script).unwrap();
+        let output = Command::new(env!("CARGO_BIN_EXE_horibot-controller"))
+            .arg("run")
+            .arg("--settings")
+            .arg(&settings)
+            .arg("--script")
+            .arg(&path)
+            .args(["--sim", &address, "--records"])
+            .arg(dir.join("records"))
+            .stdin(Stdio::null())
+            .output()
+            .expect("실행 명령을 띄우지 못했다");
+        let text = format!(
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        (output.status.success(), text)
+    };
+    // 곧게 선 아래팔(J3 0°)로 위팔을 120° 숙이면 손목이 책상 밑으로 간다
+    let (ok, text) = run(r#"
+name = "책상에 박기"
+joints = ["j1", "j2"]
+start = "rest"
+[[steps]]
+move = { j2 = 120.0 }
+"#);
+    assert!(!ok, "{text}");
+    assert!(
+        text.contains("1번째 단계") && text.contains("책상"),
+        "{text}"
+    );
+    let (ok, text) = run(r#"
+name = "쉬는 자세 위로"
+joints = ["j1", "j2"]
+start = "rest"
+[[steps]]
+move = "rest_above"
+"#);
+    assert!(ok, "{text}");
+    assert!(text.contains("움직이기 1개를 지난다"), "{text}");
     std::fs::remove_dir_all(&dir).unwrap();
 }

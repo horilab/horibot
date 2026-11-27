@@ -58,8 +58,8 @@
 
 - 응용은 이동 명령을 보내고, 컨트롤러가 IK와 블렌드로 관절 궤적을 만들어 실행 루프가 일정한 주기로 실행한다. 응용은 상대가 시뮬레이션인지 실물인지 모른다. 경계, API, 조종권, 펜던트는 [0023](decisions/0023-robot-controller.md), 실행 루프와 안전은 [0009](decisions/0009-control-architecture.md)에 있다.
 - 관절은 이름으로 부르고, 단위는 rad와 s다. 서보 값과 rad 사이 변환은 관절 층에서만 한다 (실물과 시뮬레이션이 같이 쓴다).
-- 컨트롤러는 Rust로 짜고(`crates/controller`, 서보 버스는 `crates/servo`) 로봇 옆 컨트롤러 파이에서 돈다. 개발과 시뮬레이션은 PC에서 같은 프로그램으로 한다 ([0025](decisions/0025-controller-on-pi.md)). 로봇 설정은 data/에서만 읽는다.
-- 안전 검사(시작 절차, 한계, 통신 오류, 서보 보호, 막힘과 부하, 온도, 정지)는 실행 루프에 있다 ([0032](decisions/0032-run-loop.md)). 자기 충돌과 안전 평면은 실행 전에 궤적을 통째로 검사하며, 팔 부품이 정해진 뒤 만든다. 실물을 처음 움직이기 전에 통과할 시험은 [0009](decisions/0009-control-architecture.md)에 있다.
+- 컨트롤러는 Rust로 짜고(`crates/controller`, 서보 버스는 `crates/servo`) 로봇 옆 컨트롤러 파이에서 돈다. 개발과 시뮬레이션은 PC에서 같은 프로그램으로 한다 ([0025](decisions/0025-controller-on-pi.md)). 로봇 설정과 부딪힘 검사의 형상은 data/에서만 읽는다.
+- 안전 검사(시작 절차, 한계, 통신 오류, 서보 보호, 막힘과 부하, 온도, 정지)는 실행 루프에 있다 ([0032](decisions/0032-run-loop.md)). 자기 충돌과 안전 평면은 실행 전에 궤적을 통째로 검사한다 (`crates/controller/src/collision.rs`, [0041](decisions/0041-collision-checking.md)). 형상은 설계가 만든 `data/collision/`이고, 지금은 실행 명령(`run`)이 움직이기 전에 순서의 이동을 모두 거른다. 실물을 처음 움직이기 전에 통과할 시험은 [0009](decisions/0009-control-architecture.md)에 있다.
 - 서보 버스는 메모리 표, 서보마다 확인하는 동기 읽기, EEPROM 쓰기 절차를 둔다. 실물이 없는 PC에서는 가짜 서보 버스로 시험한다 ([0024](decisions/0024-servo-bus.md)). 공식 SDK 위에 Python으로 먼저 짠 것(`horibot_servo.feetech`)은 기준 구현이다.
 - 프로그램은 기본으로 시뮬레이션만 움직이고, 실물은 명시적으로 켰을 때만 움직인다.
 

@@ -9,8 +9,9 @@
 - <파이>는 ssh에 주는 이름이다 (예: hori1, 사용자@192.168.0.101). SSH 키로 들어가고 sudo는 비밀번호 없이 된다.
 - 처음 설정은 pi/controller/setup.sh를 파이에서 root로 돌린다. 업로드 유닛의 rclone 인자는 tools/sync.py에서
   가져온다. 파이용 rclone은 PC가 공식 배포를 받아 해시를 맞춰 올린다.
-- 판마다 /opt/horilab/releases/<날짜시각>-<커밋>/에 실행 파일과 로봇 설정(data/robot.toml), 시험 순서
-  (data/scripts/)를 둔다. 임시 폴더에 올려 SHA-256을 맞춘 뒤 판 폴더로 옮기고, current 링크는 한 번에 바꾼다.
+- 판마다 /opt/horilab/releases/<날짜시각>-<커밋>/에 실행 파일과 로봇 설정(data/robot.toml), 부딪힘 검사의 형상
+  (data/collision/, 0041), 시험 순서(data/scripts/)를 둔다. 임시 폴더에 올려 SHA-256을 맞춘 뒤 판 폴더로 옮기고,
+  current 링크는 한 번에 바꾼다.
   새 판이 자가 점검(selfcheck)을 답하지 않으면 앞 판으로 되돌린다. 최근 KEEP개 판만 남긴다.
 - 컨트롤러가 돌고 있으면 바꾸지 않는다. --yes가 없으면 할 일만 보여 준다.
 - 파이에서 돌릴 때: cd /opt/horilab/current && ./horibot-controller <명령> --records /var/lib/horilab/records ...
@@ -254,7 +255,7 @@ def login(remote: Remote) -> int:
 
 
 def build_release(name: str, commit: str, dirty: bool) -> Path:
-    """판 폴더를 PC에 만든다: 실행 파일, 로봇 설정, 시험 순서, SHA256SUMS, RELEASE.json."""
+    """판 폴더를 PC에 만든다: 실행 파일, 로봇 설정, 부딪힘 검사의 형상, 시험 순서, SHA256SUMS, RELEASE.json."""
     if pi_build.main(["-p", BINARY, "--bin", BINARY]) != 0:
         raise SystemExit("파이용 빌드가 실패했다")
     binary = ROOT / "target" / pi_build.MUSL / "release" / BINARY
@@ -264,6 +265,8 @@ def build_release(name: str, commit: str, dirty: bool) -> Path:
     (stage / "data").mkdir(parents=True)
     shutil.copy2(binary, stage / BINARY)
     shutil.copy2(ROOT / "data" / "robot.toml", stage / "data" / "robot.toml")
+    # run은 움직이기 전에 이 형상으로 부딪힘을 검사한다 (없으면 시작하지 않는다)
+    shutil.copytree(ROOT / "data" / "collision", stage / "data" / "collision")
     scripts = ROOT / "data" / "scripts"
     if scripts.is_dir():
         shutil.copytree(scripts, stage / "data" / "scripts")

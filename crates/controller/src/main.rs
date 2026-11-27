@@ -33,16 +33,17 @@ use horibot_controller::bus_timing;
 use horibot_controller::check::{
     self, BENCH_RANGE, Check, Console, SPARE_IDS, STEPS, Terminal, WallClock,
 };
+use horibot_controller::collision::{Fingers, Model};
 use horibot_controller::joints::{BENCH_CAPS, Caps, Joints, Servo, Snapshot};
 use horibot_controller::prepare::{self, Change};
 use horibot_controller::record::{self, Log};
 use horibot_controller::rt;
 use horibot_controller::runloop::{Mode, RunLoop};
 use horibot_controller::runner::{Runner, Script, Status, Step};
-use horibot_controller::settings::{Direction, GRIPPER_NAME, Joint, Settings};
+use horibot_controller::settings::{Direction, GRIPPER_NAME, JOINT_NAMES, Joint, Settings};
 use horibot_controller::system::{self, Environment, LoopThread};
 use horibot_controller::zero;
-use horibot_servo::feetech::registers::BAUD_RATES;
+use horibot_servo::feetech::registers::{self as reg, BAUD_RATES};
 use horibot_servo::feetech::{Bus, Error, SerialLink, ServoBus};
 use horibot_servo::sim::{SimBus, SimServo};
 use serde_json::{Value, json};
@@ -66,6 +67,8 @@ const USAGE: &str = "\
                       그리퍼(--joint gripper)는 손가락끼리 맞닿은 자리를 읽고, 방향은 --direction으로 준다
   run                시험 순서(--script)를 실행 루프로 돌린다. --yes가 없으면 순서를 검사해 보여 주고
                       서보 상태만 읽는다. --yes가 있으면 서보가 움직인다. 움직이는 동안 Enter로 멈춘다.
+                      움직이기 전에 지금 팔 자세에서 순서의 모든 움직이기를 부딪힘 검사로 거르고(로봇 설정
+                      옆의 collision/), 막히면 시작하지 않는다.
                       리눅스에서 실물 서보로 돌리면 실행 루프를 실시간으로 돌린다 (코어 3, SCHED_FIFO 80)
   timing              서보 통신 시간 재기: 로봇 설정의 서보(그리퍼 포함)를 다 이은 채 짧은 읽기, 상태 읽기,
                       동기 읽기, 한 박자(동기 쓰기 + 동기 읽기)를 실행 루프처럼 10 ms마다 잰다.
@@ -89,6 +92,8 @@ const USAGE: &str = "\
   --script <파일>     시험 순서 (run). 쓰는 법은 crates/controller/src/runner.rs
   --sim <주소>        서보 대신 시뮬레이션 서버에 붙는다 (run, 예: 127.0.0.1:5600)
   --no-realtime       리눅스에서도 실행 루프를 보통 스레드로 돌린다 (run, timing. 실시간 설정이 안 걸릴 때만)
+  --no-collision      부딪힘 검사를 끈다 (run. 팔을 다 조립하지 않은 시험대처럼 형상이 실물과 다를 때만.
+                      기록에 남는다)
   --count <n>         동작마다 되풀이할 횟수 (timing, 기본 300)
 ";
 
@@ -127,6 +132,7 @@ struct Options {
     script: Option<PathBuf>,
     sim: Option<String>,
     no_realtime: bool,
+    no_collision: bool,
     count: Option<usize>,
 }
 
@@ -146,6 +152,7 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Options, String>
         script: None,
         sim: None,
         no_realtime: false,
+        no_collision: false,
         count: None,
     };
     while let Some(arg) = args.next() {
@@ -205,6 +212,7 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Options, String>
             }
             "--sim" => options.sim = Some(args.next().ok_or("--sim 뒤에 주소가 없다")?),
             "--no-realtime" => options.no_realtime = true,
+            "--no-collision" => options.no_collision = true,
             "--count" => {
                 let text = args.next().ok_or("--count 뒤에 횟수가 없다")?;
                 options.count = Some(
@@ -957,10 +965,15 @@ fn run_script(options: &Options) -> Result<(), String> {
     let caps = Caps::for_loop(&settings.run_loop);
     let robot_toml = fs::read_to_string(&options.settings)
         .map_err(|e| format!("{}을 읽지 못했다: {e}", options.settings.display()))?;
-    let source = Source {
-        settings: &settings,
-        script_text: &text,
-        robot_toml: &robot_toml,
+    // 부딪힘 검사의 형상은 서보에 붙기 전에 읽는다 (없거나 틀리면 붙지 않고 멈춘다)
+    let model = if options.no_collision {
+        None
+    } else {
+        let dir = options
+            .settings
+            .parent()
+            .map_or_else(|| PathBuf::from("collision"), |p| p.join("collision"));
+        Some(Model::load(&dir, &settings, Fingers::Swept)?)
     };
     if let Some(address) = &options.sim {
         let sim: Vec<SimServo> = joints
@@ -985,8 +998,15 @@ fn run_script(options: &Options) -> Result<(), String> {
                     .map(|(name, angle)| ((*name).to_owned(), *angle))
             })
             .collect();
-        let bus =
+        let mut bus =
             SimBus::connect_at(address, LOOP_PERIOD, &sim, &start).map_err(|e| e.to_string())?;
+        let collision = check_script(&settings, &script, model.as_ref(), &mut bus, true)?;
+        let source = Source {
+            settings: &settings,
+            script_text: &text,
+            robot_toml: &robot_toml,
+            collision,
+        };
         let link = json!({ "sim": address });
         // 시뮬레이션은 메모리 표(EEPROM)를 흉내 내지 않아서, 토크를 켤 때 값 적용의 목표와 견주지 않는다
         let servos = servos
@@ -1005,7 +1025,14 @@ fn run_script(options: &Options) -> Result<(), String> {
         );
     }
     let port = options.port.as_deref().unwrap_or_default();
-    let bus = Bus::open(port, BAUD_RATES[0].1, LOOP_LATENCY).map_err(|e| e.to_string())?;
+    let mut bus = Bus::open(port, BAUD_RATES[0].1, LOOP_LATENCY).map_err(|e| e.to_string())?;
+    let collision = check_script(&settings, &script, model.as_ref(), &mut bus, false)?;
+    let source = Source {
+        settings: &settings,
+        script_text: &text,
+        robot_toml: &robot_toml,
+        collision,
+    };
     let link = record::run_info(port, BAUD_RATES[0].1);
     start_script(
         options,
@@ -1016,11 +1043,69 @@ fn run_script(options: &Options) -> Result<(), String> {
     )
 }
 
+/// 움직이기 전의 부딪힘 검사 (0041): 지금 팔 자세를 읽어 순서의 모든 움직이기를 거른다. 막히면 오류라 서보에
+/// 손대지 않고 끝난다. 기록에 남길 결과를 낸다.
+fn check_script<B: ServoBus>(
+    settings: &Settings,
+    script: &Script,
+    model: Option<&Model>,
+    bus: &mut B,
+    sim: bool,
+) -> Result<Value, String> {
+    let Some(model) = model else {
+        println!("부딪힘 검사: 끔 (--no-collision)");
+        return Ok(json!({ "checked": false, "why": "--no-collision" }));
+    };
+    let start = arm_angles(bus, settings, script, sim)?;
+    let summary = script.check_collisions(model, &start)?;
+    println!("{summary}");
+    Ok(json!({
+        "checked": true,
+        "margin_mm": model.margin(),
+        "start_deg": start.map(f64::to_degrees),
+        "summary": summary,
+    }))
+}
+
+/// 지금 팔의 관절 각 [rad] (J1 ~ J6): 서보에서 읽어 영점으로 각을 낸다. 시뮬레이션은 순서에 없는 관절을 범위
+/// 가운데로 본다 (시뮬레이션 서버가 그 자리에 거의 잠가 둔다, 0033). 영점이 없거나 읽지 못하는 관절이 있으면 팔
+/// 자세를 몰라 검사할 수 없으므로 오류다.
+fn arm_angles<B: ServoBus>(
+    bus: &mut B,
+    settings: &Settings,
+    script: &Script,
+    sim: bool,
+) -> Result<[f64; 6], String> {
+    let unknown = "부딪힘 검사에 팔 자세가 있어야 해서 움직이지 않는다 (팔을 다 조립하지 않은 시험이면 --no-collision)";
+    let mut q = [0.0; 6];
+    for (k, name) in JOINT_NAMES.iter().enumerate() {
+        let joint = settings
+            .joint(name)
+            .ok_or_else(|| format!("로봇 설정에 {name}이 없다. {unknown}"))?;
+        if sim && !script.joints.contains(name) {
+            q[k] = (joint.lower + joint.upper) / 2.0;
+            continue;
+        }
+        let calibration = joint
+            .calibration
+            .ok_or_else(|| format!("{name}의 영점을 재지 않았다. {unknown}"))?;
+        let raw = bus
+            .read(joint.id, &[reg::PRESENT_POSITION])
+            .map_err(|e| format!("{name}의 위치를 읽지 못했다: {e}. {unknown}"))?
+            .get(reg::PRESENT_POSITION)
+            .ok_or_else(|| format!("{name}의 위치가 답에 없다. {unknown}"))?;
+        q[k] = calibration.angle_at(f64::from(raw));
+    }
+    Ok(q)
+}
+
 /// 시험 순서를 돌릴 때 기록에 함께 남길 것.
 struct Source<'a> {
     settings: &'a Settings,
     script_text: &'a str,
     robot_toml: &'a str,
+    /// 움직이기 전의 부딪힘 검사 결과
+    collision: Value,
 }
 
 /// --yes가 없으면 서보 상태만 읽어 보이고, 있으면 실행 루프를 세워 순서를 돌린다.
@@ -1342,6 +1427,7 @@ fn drive_script<B: ServoBus + Send + 'static>(
         "script_name": script.name,
         "script": source.script_text,
         "robot_toml": source.robot_toml,
+        "collision": source.collision,
         "period_s": LOOP_PERIOD.as_secs_f64(),
         "joints": names,
         "program": system::version(),

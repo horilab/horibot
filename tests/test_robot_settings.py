@@ -11,7 +11,7 @@ from typing import Any
 import numpy as np
 import pytest
 
-from horibot_design.parts.rest_shelf import REST_DEG
+from horibot_design.parts.rest_shelf import REST_ABOVE_DEG, REST_DEG
 from horibot_design.studies.home_view import HOME_DEG
 from horibot_design.values import load_arm, load_robot
 
@@ -48,7 +48,8 @@ def test_kinematics_match_design() -> None:
 
 
 def test_poses_match_design() -> None:
-    """이름 붙은 자세(robot.toml의 [poses])가 설계의 쉬는 자세(0037)와 홈 자세(0019)와 같다."""
+    """이름 붙은 자세(robot.toml의 [poses])가 설계의 쉬는 자세와 쉬는 자세 위(0037), 홈 자세(0019)와 같다."""
     poses = tomllib.loads((ROOT / "data" / "robot.toml").read_text(encoding="utf-8"))["poses"]
     assert poses["rest_deg"] == pytest.approx(list(REST_DEG))
+    assert poses["rest_above_deg"] == pytest.approx(list(REST_ABOVE_DEG))
     assert poses["home_deg"] == pytest.approx(list(HOME_DEG))
