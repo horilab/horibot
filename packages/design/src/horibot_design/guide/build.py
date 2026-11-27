@@ -238,6 +238,7 @@ def resolve(guide: Guide, prints: Sequence[PrintGuide] = (), plans: Path = PLANS
     ids: set[str] = set()
     handled: set[int] = set()
     mounted: set[int] = set()
+    ever_mounted: set[int] = set()  # 떼어 낸 것도 한 번 붙었으면 센다
     steps: list[dict[str, Any]] = []
     totals: Counter[str] = Counter()
     where_used: dict[str, list[str]] = {}
@@ -275,9 +276,15 @@ def resolve(guide: Guide, prints: Sequence[PrintGuide] = (), plans: Path = PLANS
             if i in mounted:
                 raise GuideError(f"{where}: '{parts[i].name}'는 이미 본체에 붙어 있다")
         mounted.update(mount)
+        ever_mounted.update(mount)
         hide = set(pick.many(step.hide, where))
         show = [i for i in (focus if focus else sorted(mounted)) if i not in hide]
         shown = set(show)
+        removed = pick.many(step.removes, where)
+        lost = [parts[i].name for i in removed if i not in mounted]
+        if lost:
+            raise GuideError(f"{where}: 붙지 않은 부품을 뗀다: {lost}")
+        mounted.difference_update(removed)
 
         moves = []
         moving: set[int] = set()
@@ -361,7 +368,7 @@ def resolve(guide: Guide, prints: Sequence[PrintGuide] = (), plans: Path = PLANS
                 "center": _r(step.center) if step.center else None,
             }
         )
-    left = [parts[i].name for i in range(len(parts)) if i not in mounted]
+    left = [parts[i].name for i in range(len(parts)) if i not in ever_mounted]
     if left:
         raise GuideError(f"{guide.id}: 어느 단계에서도 본체에 붙지 않는 부품이 있다: {left}")
 

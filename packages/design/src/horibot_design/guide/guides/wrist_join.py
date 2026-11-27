@@ -87,9 +87,14 @@ KEY_TURN = 270.0
 
 
 def _have_pieces() -> list[ac.Piece]:
-    """위팔과 아래팔 안내에서 붙인 것 (다시 그리는 것과 영점 핀은 빼고)."""
+    """위팔과 아래팔 안내에서 붙인 것 (다시 그리는 것, 영점 핀, 꽂아 보기만 한 시험 핀은 빼고)."""
     ups = [replace(p, name=f"{HAVE}{p.name}") for p in ua.pieces() if p.name not in fa._UA_REDRAW]
-    fores = [replace(p, name=f"{HAVE}{p.name}") for p in fa.pieces() if p.name not in _FA_REDRAW]
+    tried = (fa.TRY_UA, fa.TRY_FOOT, fa.TRY_END)
+    fores = [
+        replace(p, name=f"{HAVE}{p.name}")
+        for p in fa.pieces()
+        if p.name not in _FA_REDRAW and p.name not in tried
+    ]
     return [replace(p, key=DONE.key, count=False) for p in (*ups, *fores)]
 
 

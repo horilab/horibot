@@ -172,6 +172,8 @@ class Step:
     adds: tuple[str, ...] = ()
     still: tuple[str, ...] = ()
     mount: tuple[str, ...] | None = None
+    # 이 단계 끝에 본체에서 떼는 부품 (꽂아 보기만 하는 시험 핀 같은 것). 다음 단계부터 보이지 않는다
+    removes: tuple[str, ...] = ()
     uses: tuple[Use, ...] = ()
     focus: tuple[str, ...] = ()
     hide: tuple[str, ...] = ()

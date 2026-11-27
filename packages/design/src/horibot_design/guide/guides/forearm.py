@@ -1,5 +1,8 @@
 """아래팔 조립과 J3 영점: 아래팔 끝의 J4(STS3215, ID 4)와 선 둘, 아래팔 달기, J3(ID 3) 영점, 쉬는 자세 (0029, 0031, 0034).
 
+조립 전에 영점 핀이 구멍 셋(위팔 끝 집의 살, 아래팔 발의 귀, 아래팔 끝 집의 살)에 드는지 본다. 위팔 발 귀는 시험편 값으로
+그렸는데도 핀이 안 들어가 M3 × 8로 넓혔다 (2026-11-26). 막히면 같은 방법으로 넓힌다.
+
 순서는 위팔(upper_arm)과 같은 까닭으로 정했다 (2026-11-25):
 - 허브 판을 누름 틀보다 먼저 넣는다.
 - 서보를 넣기 전에 선 둘을 꿴다: J3 → J4 선(어제 위팔의 선 창 밖으로 빼 둔 끝)을 아래팔 발의 큰 구멍으로 넣어 관 속으로,
@@ -95,6 +98,11 @@ ITEMS_HERE: dict[str, Item] = {**PRINTED, **OTHER}
 
 J3_AXIS = ac.axis_of("j3")
 _LEN = links.LINKS["forearm"][0]
+TRY_UA, TRY_FOOT, TRY_END = (
+    "시험 핀 (위팔 끝 집)",
+    "시험 핀 (아래팔 발 귀)",
+    "시험 핀 (아래팔 끝 집)",
+)
 # 위팔 안내의 것 가운데 이 안내에서 다시 그리는 것: 창 밖에 늘어뜨린 J3 → J4 선의 끝, J2 영점 핀 (다시 꽂는다)
 _UA_REDRAW = ("J4 선 (창 밖)", "J4 선 끝 플러그", "영점 핀 (J2)")
 
@@ -177,6 +185,16 @@ def pieces() -> list[ac.Piece]:
     out.append(
         ac.Piece("영점 핀 (J3)", ac.put(ac.link_pin("forearm"), "j4"), "pin_msh3_20", "pin", "j3")
     )
+    # 조립 전에 핀이 구멍에 드는지 보는 핀 (같은 영점 핀이라 개수에 넣지 않는다). 위팔 발 귀 구멍은 시험편 값(3.35)으로
+    # 그렸는데도 핀이 안 들어가 M3 × 8로 넓혔다 (2026-11-26). 같은 식으로 뽑은 구멍 셋을 미리 본다:
+    # J3 핀이 드는 위팔 끝 집의 살과 아래팔 발의 귀, J4 핀이 드는 아래팔 끝 집의 살 (내일 손목 잇기)
+    j3_pin = ac.put(ac.link_pin("forearm"), "j4")
+    pin4 = next(p for p in wrist.child_hardware() if p.name.startswith("영점 핀"))
+    out += [
+        ac.Piece(TRY_UA, j3_pin, "pin_msh3_20", "pin", "j3", False),
+        ac.Piece(TRY_FOOT, j3_pin, "pin_msh3_20", "pin", "j3", False),
+        ac.Piece(TRY_END, ac.put(pin4.shape, "j4"), "pin_msh3_20", "pin", "j4", False),
+    ]
     return out
 
 
@@ -311,6 +329,74 @@ PREP = Step(
         "M3 × 8 5, × 10 5, × 12 2, × 20 4, 자가탭 4, M3 너트 10",
     ),
     stuck="모자라는 것이 있으면 무엇이 없는지 대화창에 적어 주세요.",
+)
+
+_WIDEN = (
+    "안 들어가거나 아주 빡빡하면, M3 × 8을 그 구멍에 육각렌치로 끝까지 조여 넣었다가 풀어 빼고 핀을 다시 꽂아 봅니다 "
+    "(어제 위팔 발 귀를 넓힌 방법)."
+)
+_TRY_WARN = (
+    "핀을 망치나 공구로 박지 않습니다.",
+    "넓힌 뒤 핀이 구멍에서 헐렁하게 흔들리면 더 넓히지 말고 알려 주세요.",
+)
+_TRY_USES = (
+    Use("longnose"),
+    Use("hexkey", note="막히면 넓힐 때", count=False),
+    Use("m3x8", note="막히면 구멍을 넓히는 데. 빼서 다시 쓴다", count=False),
+)
+PIN_TRY_STEPS: tuple[Step, ...] = (
+    Step(
+        "pin-try-upper",
+        "핀 구멍 (위팔)",
+        "J3 영점 핀이 위팔 끝 집 구멍에 드는지 보기",
+        do=(
+            "누워 있는 위팔 끝, J3 출력 원판 옆 끝 집의 살에 있는 작은 구멍(그림의 핀 자리)에 영점 핀을 손으로 꽂아 봅니다. "
+            "5 mm쯤 들어가면 됩니다. 아래팔을 단 뒤 J3 영점을 잴 때 핀이 여기까지 들어갑니다.",
+            _WIDEN,
+            "핀은 롱노즈로 곧게 당겨 뺍니다.",
+        ),
+        warn=_TRY_WARN,
+        check=("핀이 손으로 5 mm쯤 들어가고, 롱노즈로 빠진다.",),
+        stuck=ac.PHOTO,
+        adds=(TRY_UA,),
+        mount=(TRY_UA,),
+        removes=(TRY_UA,),
+        focus=(f"{HAVE}위팔$", f"{HAVE}J3 ", TRY_UA),
+        uses=_TRY_USES,
+        moves=(Move((TRY_UA,), (0.0, 0.0, 24.0)),),
+        view=FROM_RIGHT,
+        zoom=1.8,
+        center=_PIN_AT,
+        labels=(Label(TRY_UA, "위팔 끝 집 살의 구멍 (J3 핀)"),),
+    ),
+    Step(
+        "pin-try-forearm",
+        "핀 구멍 (아래팔)",
+        "영점 핀이 아래팔 구멍 둘에 드는지 보기 (손에 들고)",
+        do=(
+            "아래팔 발 끝의 핀 귀에 있는 작은 구멍에 영점 핀을 꽂아 봅니다. 핀이 귀를 지나 반대쪽으로 나오면 됩니다 (J3 핀).",
+            "아래팔 끝 집(J4가 들어갈 쪽)의 살에 있는 작은 구멍에도 꽂아 봅니다. 5 mm쯤 들어가면 됩니다. 내일 손목을 이을 때 "
+            "J4 핀이 여기에 듭니다.",
+            _WIDEN,
+        ),
+        warn=_TRY_WARN,
+        check=("두 구멍 모두 핀이 손으로 들어가고 롱노즈로 빠진다.",),
+        stuck=ac.PHOTO,
+        adds=(TRY_FOOT, TRY_END),
+        mount=(TRY_FOOT, TRY_END),
+        removes=(TRY_FOOT, TRY_END),
+        focus=(ARM, TRY_FOOT, TRY_END),
+        uses=_TRY_USES,
+        moves=(
+            Move((TRY_FOOT,), (0.0, 0.0, 24.0)),
+            Move((TRY_END,), (0.0, 0.0, -24.0), 0.8),
+        ),
+        view=ac.link_view("j4", (0, 0, 1), (0, 1, 0.4), 30),
+        labels=(
+            Label(TRY_FOOT, "발 귀의 구멍 (J3 핀)"),
+            Label(TRY_END, "끝 집 살의 구멍 (J4 핀)"),
+        ),
+    ),
 )
 
 J4_STEPS: tuple[Step, ...] = (
@@ -871,6 +957,7 @@ def _rest_step(sid: str, kind: str = "work") -> Step:
 
 STEPS: tuple[Step, ...] = (
     PREP,
+    *PIN_TRY_STEPS,
     *J4_STEPS,
     *ATTACH_STEPS,
     *ZERO_STEPS,
