@@ -163,6 +163,25 @@ def test_servo_reads_2048_at_the_range_middle_and_turns_its_own_way(ask: Ask) ->
     assert not wrong["ok"]
 
 
+def test_servo_keeps_the_position_offset_burned_at_zeroing(ask: Ask) -> None:
+    # 영점을 잰 서보는 위치 오프셋이 구워져 있다 (로봇 설정의 값). 읽는 위치는 그대로 범위 가운데가 2048이다
+    servo = {"id": 4, "joint": "j4", "model": 2825, "direction": -1, "position_offset": -1865}
+    assert ask(op="hello", period=0.01, servos=[servo])["ok"]
+    values = ask(op="read", id=4, registers=["position_offset", "present_position"])["values"]
+    assert values == {"position_offset": -1865, "present_position": 2048}
+    enable(ask, 4, 2048 + 20)
+    for _ in range(100):
+        ask(op="sync_read", ids=[4], registers=STATE)
+    middle = (0.349066 + 5.934119) / 2
+    assert ask(op="state")["angles"]["j4"] == pytest.approx(middle - 20 * RAD_PER_STEP, abs=0.003)
+    # 전원을 껐다 켜도 남는다
+    ask(op="power_cycle", id=4)
+    offset = ask(op="read", id=4, registers=["position_offset"])["values"]["position_offset"]
+    assert offset == -1865
+    # 담을 수 없는 값이면 세계를 만들지 않는다
+    assert not ask(op="hello", period=0.01, servos=[{**servo, "position_offset": 2048}])["ok"]
+
+
 def test_world_starts_at_the_given_pose(ask: Ask) -> None:
     # 시험 순서의 시작 자세(예: 쉬는 자세)에서 시작한다. 적지 않은 관절은 범위 가운데다 (0034)
     servos = [{"id": 4, "joint": "j4", "model": 2825, "direction": -1}]

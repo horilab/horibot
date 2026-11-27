@@ -984,6 +984,7 @@ fn run_script(options: &Options) -> Result<(), String> {
                 model: joint.model_number,
                 // 영점이 없는 관절은 위 Servo::from_joint에서 이미 걸렀다
                 direction: joint.calibration.map_or(1, |c| c.direction.number()),
+                position_offset: joint.calibration.map_or(0, |c| c.position_offset),
             })
             .collect();
         // 시뮬레이션은 순서의 시작 자세에서 시작한다 (없으면 범위 가운데)

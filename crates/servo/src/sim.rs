@@ -24,6 +24,9 @@ pub struct SimServo {
     /// 관절 각이 늘 때 서보 값이 느는 쪽이면 1, 주는 쪽이면 -1 (로봇 설정의 방향). 시뮬레이션 서보는 실물처럼 이
     /// 방향으로 달려 있고, 영점을 재서 범위 가운데가 서보 값 2048로 읽힌다고 본다 (0024의 영점, 0033)
     pub direction: i8,
+    /// 영점을 잴 때 구운 위치 오프셋 (로봇 설정의 값, 재기 전이면 0). 관절 층은 토크를 켤 때 서보의 값을 로봇
+    /// 설정과 견준다
+    pub position_offset: i32,
 }
 
 /// 시뮬레이션 서버에 붙은 서보 버스.
@@ -80,7 +83,15 @@ impl SimBus {
         };
         let servos: Vec<Value> = servos
             .iter()
-            .map(|s| json!({"id": s.id, "joint": s.joint, "model": s.model, "direction": s.direction}))
+            .map(|s| {
+                json!({
+                    "id": s.id,
+                    "joint": s.joint,
+                    "model": s.model,
+                    "direction": s.direction,
+                    "position_offset": s.position_offset,
+                })
+            })
             .collect();
         let start: serde_json::Map<String, Value> = start
             .iter()

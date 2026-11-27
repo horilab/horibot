@@ -177,6 +177,7 @@ fn main() {
             joint: joint.to_owned(),
             model,
             direction: direction.number(),
+            position_offset: 0,
         })
         .collect();
     let clock = Instant::now();

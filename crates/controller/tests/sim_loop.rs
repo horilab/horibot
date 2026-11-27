@@ -129,6 +129,7 @@ fn tilt_and_hold(address: &str, sag_gain: f64) -> (f64, i32) {
             joint: joint.to_owned(),
             model,
             direction: 1,
+            position_offset: 0,
         })
         .collect();
     let bus = SimBus::connect(address, PERIOD, &sim).unwrap();
@@ -174,6 +175,7 @@ fn planned_joint_move_runs_on_the_simulated_arm() {
             joint: joint.to_owned(),
             model,
             direction: 1,
+            position_offset: 0,
         })
         .collect();
     let bus = SimBus::connect(&address, PERIOD, &sim).unwrap();

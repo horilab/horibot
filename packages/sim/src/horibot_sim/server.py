@@ -1,9 +1,10 @@
 """시뮬레이션 서버의 TCP 쪽: JSON 한 줄 요청에 JSON 한 줄로 답한다 (0033). 한 번에 한 클라이언트를 받는다.
 
 요청 (op):
-- hello {period, servos: [{id, joint, model, direction}], start?: {관절: 각 [rad]}}: 세계를 새로 만든다. 맨 먼저
-  보낸다. direction은 로봇 설정의 방향(1, -1)이다: 서보는 그 방향으로 달려 범위 가운데가 2048로 읽힌다. start에 적은
-  관절은 그 각에서, 나머지는 범위 가운데에서 시작한다.
+- hello {period, servos: [{id, joint, model, direction, position_offset?}], start?: {관절: 각 [rad]}}: 세계를 새로
+  만든다. 맨 먼저 보낸다. direction은 로봇 설정의 방향(1, -1)이다: 서보는 그 방향으로 달려 범위 가운데가 2048로
+  읽힌다. position_offset은 영점을 잴 때 구운 위치 오프셋이다 (없으면 0, 토크를 켤 때 컨트롤러가 견준다). start에
+  적은 관절은 그 각에서, 나머지는 범위 가운데에서 시작한다.
 - ping {id} → {model}. 없는 서보는 {"ok": false, "error": "no_reply"}.
 - read {id, registers} → {values, fault}
 - sync_read {ids, registers} → {replies: {id: {values, fault} | {error}}, time}. 답하기 전에 한 주기만큼 진행한다.
@@ -43,7 +44,13 @@ class Session:
         op = request.get("op")
         if op == "hello":
             servos = [
-                (int(s["id"]), str(s["joint"]), int(s["model"]), int(s["direction"]))
+                (
+                    int(s["id"]),
+                    str(s["joint"]),
+                    int(s["model"]),
+                    int(s["direction"]),
+                    int(s.get("position_offset", 0)),
+                )
                 for s in request["servos"]
             ]
             start = {str(k): float(v) for k, v in request.get("start", {}).items()}
