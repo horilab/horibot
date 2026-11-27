@@ -19,7 +19,7 @@
 
 use std::collections::BTreeSet;
 use std::fs;
-use std::io::{self, BufRead, IsTerminal};
+use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -1163,44 +1163,88 @@ fn start_script<B: ServoBus + Send + 'static>(
     drive_script(options, source, script, joints, link)
 }
 
-/// 실행 명령의 터미널: 같은 줄을 고쳐 쓰는 상태 줄 뒤에 알림을 낼 때 먼저 줄을 바꾼다.
+/// 상태 줄의 칸 수: 창 폭(보통 120칸)보다 좁게 둔다. 줄이 창 폭을 넘으면 다음 줄로 넘어가 같은 줄을 고쳐 쓰지
+/// 못하고 쌓여서, 멈춤의 안내가 위로 밀려 Enter를 누를 차례인지 알 수 없었다 (2026-11-27).
+const STATUS_COLUMNS: usize = 100;
+
+/// 터미널에서 차지하는 칸 수: 한글 같은 넓은 글자는 두 칸이다.
+fn columns_of(c: char) -> usize {
+    match u32::from(c) {
+        0x1100..=0x115F
+        | 0x2E80..=0xA4CF
+        | 0xAC00..=0xD7A3
+        | 0xF900..=0xFAFF
+        | 0xFE30..=0xFE4F
+        | 0xFF00..=0xFF60
+        | 0xFFE0..=0xFFE6 => 2,
+        _ => 1,
+    }
+}
+
+/// 한 줄을 `columns` 칸 안으로 자르고 남는 칸은 빈칸으로 채운다 (고쳐 쓸 때 앞 줄의 글자를 지운다).
+fn fit_line(text: &str, columns: usize) -> String {
+    let mut out = String::new();
+    let mut used = 0;
+    for c in text.chars() {
+        let width = columns_of(c);
+        if used + width > columns {
+            break;
+        }
+        out.push(c);
+        used += width;
+    }
+    out.extend(std::iter::repeat_n(' ', columns - used));
+    out
+}
+
+/// 실행 명령의 터미널: 맨 아래 한 줄은 고쳐 쓰는 상태 줄이고, 알림은 그 위에 쌓인다. 상태 줄 앞머리는 사람이
+/// 할 일이다: 멈춤에서는 Enter를 누를 차례, 움직이거나 버티는 동안은 지켜보다 위험할 때만 Enter(그 자리에 선다).
 struct RunConsole {
-    terminal: Terminal,
-    status_shown: bool,
+    /// 지금 쓴 상태 줄의 칸 수 (없으면 0)
+    status_width: usize,
+    /// 멈춤에서 Enter를 기다린다
+    waiting: bool,
 }
 
 impl RunConsole {
+    /// 상태 줄을 지운다 (알림을 그 자리에 쓴다).
     fn end_status(&mut self) {
-        if self.status_shown {
-            println!();
-            self.status_shown = false;
+        if self.status_width > 0 {
+            print!("\r{}\r", " ".repeat(self.status_width));
+            let _ = io::stdout().flush();
+            self.status_width = 0;
         }
     }
-}
 
-impl Console for RunConsole {
     fn say(&mut self, text: &str) {
         self.end_status();
-        self.terminal.say(text);
+        if std::mem::take(&mut self.waiting) {
+            println!(
+                "   Enter를 받았다. 이제 지켜본다 (위험할 때만 Enter를 누르면 그 자리에 선다)"
+            );
+        }
+        println!("{text}");
     }
 
-    fn ask(&mut self, question: &str) -> String {
+    /// 멈춤: 빈 줄 뒤에 눈에 띄게 쓰고 삑 소리를 낸다 (팔을 보고 있어도 알게).
+    fn wait(&mut self, prompt: &str) {
         self.end_status();
-        self.terminal.ask(question)
-    }
-
-    fn begin_wait(&mut self, prompt: &str) {
-        self.end_status();
-        self.terminal.begin_wait(prompt);
-    }
-
-    fn enter_pressed(&mut self) -> bool {
-        self.terminal.enter_pressed()
+        self.waiting = true;
+        println!("\n>> Enter를 누를 차례: {prompt}\x07");
     }
 
     fn status(&mut self, text: &str) {
-        self.terminal.status(text);
-        self.status_shown = true;
+        let todo = if self.waiting {
+            ">> Enter 누를 차례"
+        } else {
+            "지켜보기 (위험할 때만 Enter)"
+        };
+        print!(
+            "\r{}",
+            fit_line(&format!("{todo} | {text}"), STATUS_COLUMNS)
+        );
+        let _ = io::stdout().flush();
+        self.status_width = STATUS_COLUMNS;
     }
 }
 
@@ -1245,32 +1289,54 @@ fn run_row<B: ServoBus>(run: &RunLoop<B>) -> Vec<i32> {
     row
 }
 
-/// 사람이 볼 한 줄: 관절마다 각, 부하, 온도 (실행 루프가 판단에 쓰는 값. 기록에는 읽은 값 그대로 남는다).
+/// 상태 줄의 값: 관절 각 [°], 그리퍼 열림 폭, 가장 큰 부하와 그 관절, 가장 높은 온도 (실행 루프가 판단에 쓰는 값.
+/// 기록에는 읽은 값 그대로 남는다). 창 폭에 들게 짧게 쓴다 (예: `j1~j6 -55 52 154 325 0 0 | 그리퍼 30mm | 부하 j3
+/// 11% | 25°C`).
 fn run_status<B: ServoBus>(run: &RunLoop<B>, settings: &Settings, names: &[&str]) -> String {
-    let parts: Vec<String> = run
-        .states()
-        .iter()
-        .zip(names)
-        .map(|((id, state), name)| {
-            let temperature = run
-                .temperatures()
-                .iter()
-                .find(|(known, _)| known == id)
-                .map_or(state.temperature, |&(_, temperature)| temperature);
-            let load = f64::from(state.load) / 10.0;
-            if *name == GRIPPER_NAME {
-                let width = run.gripper().map_or(f64::NAN, |(width, _)| width);
-                return format!("그리퍼 {width:.1} mm 부하 {load:.1}% {temperature}°C");
-            }
-            let angle = settings
-                .joint(name)
-                .and_then(|joint| joint.calibration)
-                .map_or(f64::NAN, |c| {
-                    c.angle_at(f64::from(state.position)).to_degrees()
-                });
-            format!("{name} {angle:.1}° 부하 {load:.1}% {temperature}°C")
-        })
-        .collect();
+    let mut joints: Vec<&str> = Vec::new();
+    let mut angles = Vec::new();
+    let mut gripper = None;
+    let mut heaviest: Option<(&str, f64)> = None;
+    let mut hottest: Option<i32> = None;
+    for ((id, state), name) in run.states().iter().zip(names) {
+        let temperature = run
+            .temperatures()
+            .iter()
+            .find(|(known, _)| known == id)
+            .map_or(state.temperature, |&(_, temperature)| temperature);
+        hottest = Some(hottest.map_or(temperature, |most| most.max(temperature)));
+        let load = (f64::from(state.load) / 10.0).abs();
+        if heaviest.is_none_or(|(_, most)| load > most) {
+            heaviest = Some((name, load));
+        }
+        if *name == GRIPPER_NAME {
+            gripper = run.gripper().map(|(width, _)| width);
+            continue;
+        }
+        let angle = settings
+            .joint(name)
+            .and_then(|joint| joint.calibration)
+            .map_or(f64::NAN, |c| {
+                c.angle_at(f64::from(state.position)).to_degrees()
+            });
+        joints.push(name);
+        angles.push(format!("{angle:.0}"));
+    }
+    let label = match (joints.first(), joints.last()) {
+        (Some(first), Some(last)) if first != last => format!("{first}~{last}"),
+        (Some(only), _) => (*only).to_owned(),
+        _ => String::new(),
+    };
+    let mut parts = vec![format!("{label} {}", angles.join(" "))];
+    if let Some(width) = gripper {
+        parts.push(format!("그리퍼 {width:.0}mm"));
+    }
+    if let Some((name, load)) = heaviest {
+        parts.push(format!("부하 {name} {load:.0}%"));
+    }
+    if let Some(temperature) = hottest {
+        parts.push(format!("{temperature}°C"));
+    }
     parts.join(" | ")
 }
 
@@ -1291,6 +1357,8 @@ enum Record {
 /// 실행 루프 스레드에서 터미널(이 프로그램의 첫 스레드)로 넘기는 줄.
 enum Line {
     Say(String),
+    /// 멈춤의 안내: Enter를 누를 차례
+    Wait(String),
     Status(String),
 }
 
@@ -1324,7 +1392,7 @@ impl Console for LoopConsole {
 
     fn begin_wait(&mut self, prompt: &str) {
         self.enter.store(false, Ordering::Relaxed); // 앞서 누른 Enter를 버린다
-        let _ = self.lines.try_send(Line::Say(prompt.to_owned()));
+        let _ = self.lines.try_send(Line::Wait(prompt.to_owned()));
     }
 
     fn enter_pressed(&mut self) -> bool {
@@ -1545,15 +1613,20 @@ fn drive_script<B: ServoBus + Send + 'static>(
         (None, None) => {}
     }
 
+    println!(
+        "Enter: \">> Enter를 누를 차례\"가 뜨면 할 일을 하고 누른다. 움직이거나 버티는 동안에는 지켜보다 위험할 때만 \
+         누른다 (감속해 그 자리에 선다)"
+    );
     watch_enter(enter);
     let mut console = RunConsole {
-        terminal: Terminal::closed_is_silent(),
-        status_shown: false,
+        status_width: 0,
+        waiting: false,
     };
     // 실행 루프가 끝나 줄을 닫을 때까지 받는다
     for line in line_rx {
         match line {
             Line::Say(text) => console.say(&text),
+            Line::Wait(text) => console.wait(&text),
             Line::Status(text) => console.status(&text),
         }
     }
@@ -1746,6 +1819,20 @@ mod tests {
             .map(str::to_owned)
             .collect::<Vec<_>>()
             .into_iter()
+    }
+
+    #[test]
+    fn the_status_line_fits_the_window_counting_hangul_as_two_columns() {
+        // 한글 2칸 + 2칸 + 빈칸 1칸 + ab 2칸 = 7칸, 남는 3칸은 빈칸으로 채운다
+        assert_eq!(fit_line("가나 ab", 10), "가나 ab   ");
+        // 다음 한글은 두 칸이라 9칸 안에 들지 않는다
+        assert_eq!(fit_line("가나다라마바사", 9), "가나다라 ");
+        let line = fit_line(
+            ">> Enter 누를 차례 | j1~j6 -55 52 154 325 0 0 | 그리퍼 30mm | 부하 j3 11% | 25°C",
+            STATUS_COLUMNS,
+        );
+        assert_eq!(line.chars().map(columns_of).sum::<usize>(), STATUS_COLUMNS);
+        assert!(line.contains("25°C"), "{line}");
     }
 
     #[test]
