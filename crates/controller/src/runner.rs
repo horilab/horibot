@@ -475,7 +475,7 @@ impl Script {
         }
         for (n, step) in self.steps.iter().enumerate() {
             let text = match step {
-                Step::Pause(text) => format!("멈춤: {text} (Enter)"),
+                Step::Pause(text) => format!("멈춤: {text} (누르면 다음)"),
                 Step::Move(targets) => {
                     let parts: Vec<String> = targets
                         .iter()
@@ -643,6 +643,14 @@ impl Runner {
             self.note(console, text.clone());
             return Status::Stopped(text);
         }
+        // 게임패드의 B나 끊긴 게임패드: 어느 단계에서든 선다. 움직이던 관절과 그리퍼는 감속해 그 자리에 서고, 멈춤과
+        // 버티기에서는 팔이 이미 서 있다
+        if let Some(why) = console.stop_requested() {
+            run.stop();
+            let text = format!("[{}] {why}", self.label());
+            self.note(console, text.clone());
+            return Status::Stopped(text);
+        }
         if !self.checked_start {
             self.checked_start = true;
             if let Some(start) = self.script.start.clone() {
@@ -699,7 +707,8 @@ impl Runner {
             };
             match (self.phase, step) {
                 (Phase::Begin, Step::Pause(text)) => {
-                    console.begin_wait(&format!("[{}] {text} (Enter)", self.label()));
+                    // 누를 키(Enter, 게임패드의 A)는 콘솔이 붙인다
+                    console.begin_wait(&format!("[{}] {text}", self.label()));
                     self.phase = Phase::Waiting;
                     return Status::Running;
                 }
@@ -913,11 +922,14 @@ mod tests {
         RunLoop::start(joints, settings.run_loop, Some(gripper)).unwrap()
     }
 
-    /// 누를 줄을 미리 정해 두는 콘솔: 박자마다 Enter를 눌렀는지를 순서대로 준다.
+    /// 누를 줄을 미리 정해 두는 콘솔: 박자마다 Enter를 눌렀는지를 순서대로 준다. `stop_at`번째 박자에는 서라는
+    /// 요청(게임패드의 B)을 낸다.
     #[derive(Default)]
     struct Keys {
         presses: Vec<bool>,
         said: Vec<String>,
+        stop_at: Option<usize>,
+        ticks: usize,
     }
 
     impl Console for Keys {
@@ -938,6 +950,10 @@ mod tests {
             }
         }
         fn status(&mut self, _text: &str) {}
+        fn stop_requested(&mut self) -> Option<String> {
+            self.ticks += 1;
+            (Some(self.ticks) == self.stop_at).then(|| "사람이 멈췄다 (게임패드 B)".to_owned())
+        }
     }
 
     fn run_loop(settings: &Settings) -> RunLoop<Bus<FakePort>> {
@@ -1086,6 +1102,61 @@ mod tests {
             "{}",
             run.targets()[0]
         );
+    }
+
+    /// 게임패드의 B는 멈춤에서 기다리는 중에도 순서를 끝낸다 (Enter와 A는 멈춤에서 "다음"이다). 팔은 움직이지 않고
+    /// 그 자리에서 버틴다.
+    #[test]
+    fn a_stop_request_ends_the_script_at_a_pause() {
+        let settings = settings();
+        let text = "name = \"t\"\njoints = [\"j3\"]\n\
+                    [[steps]]\npause = \"선을 봤으면\"\n\
+                    [[steps]]\nmove = { j3 = 20.0 }\n\
+                    [[steps]]\nrelease = true\n";
+        let script = Script::parse(text, &settings).unwrap();
+        let mut run = run_loop(&settings);
+        let mut runner = Runner::new(script, &settings.run_loop, DT);
+        let mut keys = Keys {
+            stop_at: Some(30),
+            ..Default::default()
+        };
+        let status = drive(&mut run, &mut runner, &mut keys, 5000, |_, _| {});
+        assert!(
+            matches!(&status, Status::Stopped(text) if text == "[1-pause] 사람이 멈췄다 (게임패드 B)"),
+            "{status:?}"
+        );
+        assert_eq!(
+            keys.said[0], "[1-pause] 선을 봤으면",
+            "누를 키는 콘솔이 붙인다"
+        );
+        assert_eq!(run.mode(), &Mode::Holding);
+        assert!(run.targets()[0].abs() < 1e-9, "움직이지 않았다");
+        assert!(!runner.released(), "토크를 끄지 않았다");
+    }
+
+    /// 움직이는 동안의 B는 Enter처럼 감속해 서게 한다.
+    #[test]
+    fn a_stop_request_stops_a_move() {
+        let settings = settings();
+        let text = "name = \"t\"\njoints = [\"j3\"]\n[[steps]]\nmove = { j3 = 60.0 }\n[[steps]]\nhold_s = 5\n";
+        let script = Script::parse(text, &settings).unwrap();
+        let mut run = run_loop(&settings);
+        let mut runner = Runner::new(script, &settings.run_loop, DT);
+        let mut keys = Keys {
+            stop_at: Some(50),
+            ..Default::default()
+        };
+        let status = drive(&mut run, &mut runner, &mut keys, 5000, |_, _| {});
+        assert!(
+            matches!(&status, Status::Stopped(text) if text.contains("게임패드")),
+            "{status:?}"
+        );
+        assert_eq!(run.mode(), &Mode::Stopping);
+        for _ in 0..500 {
+            run.tick(DT);
+        }
+        assert_eq!(run.mode(), &Mode::Holding);
+        assert!(run.targets()[0] < 60f64.to_radians() - 0.1);
     }
 
     #[test]

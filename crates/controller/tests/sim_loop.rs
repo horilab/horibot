@@ -241,7 +241,15 @@ fn the_run_command_finishes_a_script_on_the_simulation() {
         .arg(dir.join("robot.toml"))
         .arg("--script")
         .arg(dir.join("script.toml"))
-        .args(["--sim", &address, "--yes", "--no-collision", "--records"])
+        // 게임패드는 리눅스에서만 읽는다: 어느 운영 체제에서 돌려도 같게 끈다
+        .args([
+            "--sim",
+            &address,
+            "--yes",
+            "--no-collision",
+            "--no-gamepad",
+            "--records",
+        ])
         .arg(dir.join("records"))
         .stdin(Stdio::null())
         .output()
@@ -259,6 +267,7 @@ fn the_run_command_finishes_a_script_on_the_simulation() {
         serde_json::from_str(&std::fs::read_to_string(run_dir.join("meta.json")).unwrap()).unwrap();
     assert_eq!(meta["end"], "done", "{meta}");
     assert_eq!(meta["collision"]["checked"], false, "{meta}");
+    assert_eq!(meta["gamepad"], "끔: --no-gamepad", "{meta}");
     assert!(
         meta["realtime"].as_str().unwrap().starts_with("끔"),
         "시뮬레이션은 보통 스레드로 돈다: {meta}"

@@ -450,6 +450,7 @@ name = "horibot-controller"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "evdev",
  "horibot-servo",
  "libc",
  "parry3d",

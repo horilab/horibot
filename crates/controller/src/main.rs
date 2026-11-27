@@ -22,9 +22,9 @@ use std::fs;
 use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, SyncSender};
+use std::sync::{Arc, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -34,6 +34,7 @@ use horibot_controller::check::{
     self, BENCH_RANGE, Check, Console, SPARE_IDS, STEPS, Terminal, WallClock,
 };
 use horibot_controller::collision::{Fingers, Model};
+use horibot_controller::gamepad::{Buzz, Gamepad, Press};
 use horibot_controller::joints::{BENCH_CAPS, Caps, Joints, Servo, Snapshot};
 use horibot_controller::prepare::{self, Change};
 use horibot_controller::record::{self, Log};
@@ -66,10 +67,12 @@ const USAGE: &str = "\
                       설정에 방향이 없으면) 핀 자리를 읽어 굽는다. 토크가 꺼져 있어야 하고 움직이지 않는다.
                       그리퍼(--joint gripper)는 손가락끼리 맞닿은 자리를 읽고, 방향은 --direction으로 준다
   run                시험 순서(--script)를 실행 루프로 돌린다. --yes가 없으면 순서를 검사해 보여 주고
-                      서보 상태만 읽는다. --yes가 있으면 서보가 움직인다. 움직이는 동안 Enter로 멈춘다.
-                      움직이기 전에 지금 팔 자세에서 순서의 모든 움직이기를 부딪힘 검사로 거르고(로봇 설정
-                      옆의 collision/), 막히면 시작하지 않는다.
-                      리눅스에서 실물 서보로 돌리면 실행 루프를 실시간으로 돌린다 (코어 3, SCHED_FIFO 80)
+                      서보 상태만 읽는다. --yes가 있으면 서보가 움직인다. 움직이기 전에 지금 팔 자세에서
+                      순서의 모든 움직이기를 부딪힘 검사로 거르고(로봇 설정 옆의 collision/), 막히면 시작하지
+                      않는다. 리눅스에서 실물 서보로 돌리면 실행 루프를 실시간으로 돌린다 (코어 3, SCHED_FIFO 80).
+                      리눅스에서 --yes로 돌리면 게임패드가 있어야 한다. 버튼은 둘이다: A는 다음(A를 눌러야 토크를
+                      켜고 시작하고, 멈춤에서 넘어간다), B는 멈춤(언제든 그 자리에 서서 끝낸다). 키보드 Enter는
+                      멈춤에서 다음, 움직이거나 버티는 동안은 서기다 (리눅스가 아니면 Enter만 쓴다)
   timing              서보 통신 시간 재기: 로봇 설정의 서보(그리퍼 포함)를 다 이은 채 짧은 읽기, 상태 읽기,
                       동기 읽기, 한 박자(동기 쓰기 + 동기 읽기)를 실행 루프처럼 10 ms마다 잰다.
                       --yes가 없으면 서보의 토크와 응답 지연만 읽어 보인다. 토크가 꺼져 있어야 하고
@@ -96,6 +99,7 @@ const USAGE: &str = "\
                       기록에 남는다)
   --hold-max <초>     순서의 버티기를 이 시간까지로 줄인다 (run --sim에서만. 시뮬레이션은 온도를 흉내 내지
                       않아 오래 버텨도 새로 볼 것이 없다. 기록에 남는다)
+  --no-gamepad        게임패드 없이 Enter로만 돌린다 (run, 리눅스. 기록에 남는다)
   --count <n>         동작마다 되풀이할 횟수 (timing, 기본 300)
 ";
 
@@ -136,6 +140,7 @@ struct Options {
     no_realtime: bool,
     no_collision: bool,
     hold_max: Option<f64>,
+    no_gamepad: bool,
     count: Option<usize>,
 }
 
@@ -157,6 +162,7 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Options, String>
         no_realtime: false,
         no_collision: false,
         hold_max: None,
+        no_gamepad: false,
         count: None,
     };
     while let Some(arg) = args.next() {
@@ -217,6 +223,7 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Options, String>
             "--sim" => options.sim = Some(args.next().ok_or("--sim 뒤에 주소가 없다")?),
             "--no-realtime" => options.no_realtime = true,
             "--no-collision" => options.no_collision = true,
+            "--no-gamepad" => options.no_gamepad = true,
             "--hold-max" => {
                 let text = args.next().ok_or("--hold-max 뒤에 초가 없다")?;
                 options.hold_max = Some(
@@ -282,6 +289,9 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Options, String>
         return Err(
             "--hold-max는 run --sim에서만 쓴다 (실물에서는 순서의 버티기를 그대로 한다)".to_owned(),
         );
+    }
+    if options.no_gamepad && options.command != Command::Run {
+        return Err("--no-gamepad는 run에서만 쓴다".to_owned());
     }
     Ok(options)
 }
@@ -1135,7 +1145,7 @@ struct Source<'a> {
     hold_max_s: Option<f64>,
 }
 
-/// --yes가 없으면 서보 상태만 읽어 보이고, 있으면 실행 루프를 세워 순서를 돌린다.
+/// --yes가 없으면 서보 상태와 게임패드만 보이고, 있으면 실행 루프를 세워 순서를 돌린다.
 fn start_script<B: ServoBus + Send + 'static>(
     options: &Options,
     source: &Source,
@@ -1143,24 +1153,87 @@ fn start_script<B: ServoBus + Send + 'static>(
     mut joints: Joints<B>,
     link: Value,
 ) -> Result<(), String> {
+    // 게임패드는 리눅스(컨트롤러 파이)에서만 읽는다. 거기서는 --no-gamepad가 아니면 꼭 있어야 한다: 팔 옆에 선
+    // 사람이 쥐는 리모컨이라, 없는 줄 모르고 시작하면 세울 손이 없다 (0034)
+    let wants_pad = !options.no_gamepad && cfg!(target_os = "linux");
     if !options.yes {
         for id in joints.ids() {
             let state = joints.snapshot(id)?;
             println!("서보 {id}: {}", check::describe(&state));
         }
+        if wants_pad {
+            match Gamepad::find() {
+                Ok(pad) => println!("게임패드: {}", pad_label(&pad)),
+                Err(error) => println!("게임패드: {error}"),
+            }
+        }
         println!(
-            "--yes를 붙이면 토크를 켜고 순서대로 움직인다. 움직이거나 버티는 동안 Enter를 누르면 감속해 선다"
+            "--yes를 붙이면 토크를 켜고 순서대로 움직인다. 움직이거나 버티는 동안 Enter(게임패드는 B)를 누르면 \
+             감속해 선다"
         );
         return Ok(());
     }
+    let pad = if wants_pad {
+        let found = Gamepad::find()
+            .map_err(|e| format!("{e}. 게임패드 없이 Enter로만 돌리려면 --no-gamepad"))?;
+        Some(found)
+    } else {
+        None
+    };
     let pauses = script
         .steps
         .iter()
         .any(|step| matches!(step, Step::Pause(_)));
-    if pauses && !io::stdin().is_terminal() {
+    if pauses && pad.is_none() && !io::stdin().is_terminal() {
         return Err("멈춤 단계가 있는 순서는 Enter를 눌러야 해서 터미널 창에서 돌린다".to_owned());
     }
-    drive_script(options, source, script, joints, link)
+    drive_script(options, source, script, joints, link, pad)
+}
+
+/// 게임패드 이름과 경로, 떨림이 있는지.
+fn pad_label(pad: &Gamepad) -> String {
+    let rumble = if pad.rumbles() {
+        "떨림 있음"
+    } else {
+        "떨림 없음: 차례는 PC의 삑 소리로 안다"
+    };
+    format!("{} ({}, {rumble})", pad.name(), pad.path().display())
+}
+
+/// 시작할 때 누르는 법을 알린다.
+fn print_legend(pad: Option<&Gamepad>) {
+    match pad {
+        Some(pad) => {
+            println!("게임패드: {}", pad_label(pad));
+            println!(
+                "  A = 다음: \">> A를 누를 차례\"가 뜨면(짧게 두 번 떨린다) 할 일을 하고 누른다"
+            );
+            println!(
+                "  B = 멈춤: 위험하면 언제든 누른다. 감속해 그 자리에 서고 순서를 끝낸다. 게임패드가 끊겨도 선다"
+            );
+            println!(
+                "  다른 버튼은 쓰지 않는다. 순서가 끝나면(마쳤거나 섰으면) 길게 떨린다: 그때 화면을 본다. \
+                 키보드 Enter도 전처럼 된다"
+            );
+        }
+        None => println!(
+            "Enter: \">> Enter를 누를 차례\"가 뜨면 할 일을 하고 누른다. 움직이거나 버티는 동안에는 지켜보다 \
+             위험할 때만 누른다 (감속해 그 자리에 선다)"
+        ),
+    }
+}
+
+/// 기록(meta.json)에 남길 게임패드.
+fn pad_record(pad: Option<&Gamepad>, options: &Options) -> Value {
+    match pad {
+        Some(pad) => json!({
+            "name": pad.name(),
+            "path": pad.path().display().to_string(),
+            "rumble": pad.rumbles(),
+        }),
+        None if options.no_gamepad => json!("끔: --no-gamepad"),
+        None => json!("끔: 리눅스가 아니다"),
+    }
 }
 
 /// 상태 줄의 칸 수: 창 폭(보통 120칸)보다 좁게 둔다. 줄이 창 폭을 넘으면 다음 줄로 넘어가 같은 줄을 고쳐 쓰지
@@ -1198,12 +1271,15 @@ fn fit_line(text: &str, columns: usize) -> String {
 }
 
 /// 실행 명령의 터미널: 맨 아래 한 줄은 고쳐 쓰는 상태 줄이고, 알림은 그 위에 쌓인다. 상태 줄 앞머리는 사람이
-/// 할 일이다: 멈춤에서는 Enter를 누를 차례, 움직이거나 버티는 동안은 지켜보다 위험할 때만 Enter(그 자리에 선다).
+/// 할 일이다: 멈춤에서는 누를 차례(Enter, 게임패드는 A), 움직이거나 버티는 동안은 지켜보다 위험할 때만 누른다
+/// (Enter, 게임패드는 B. 그 자리에 선다).
 struct RunConsole {
     /// 지금 쓴 상태 줄의 칸 수 (없으면 0)
     status_width: usize,
-    /// 멈춤에서 Enter를 기다린다
+    /// 멈춤에서 누름을 기다린다
     waiting: bool,
+    /// 게임패드로 다룬다 (다음은 A, 멈춤은 B)
+    pad: bool,
 }
 
 impl RunConsole {
@@ -1218,11 +1294,6 @@ impl RunConsole {
 
     fn say(&mut self, text: &str) {
         self.end_status();
-        if std::mem::take(&mut self.waiting) {
-            println!(
-                "   Enter를 받았다. 이제 지켜본다 (위험할 때만 Enter를 누르면 그 자리에 선다)"
-            );
-        }
         println!("{text}");
     }
 
@@ -1230,14 +1301,29 @@ impl RunConsole {
     fn wait(&mut self, prompt: &str) {
         self.end_status();
         self.waiting = true;
-        println!("\n>> Enter를 누를 차례: {prompt}\x07");
+        let key = if self.pad { "A" } else { "Enter" };
+        println!("\n>> {key}를 누를 차례: {prompt}\x07");
+    }
+
+    /// 멈춤에서 누름을 받아 다음으로 간다.
+    fn resumed(&mut self) {
+        self.end_status();
+        self.waiting = false;
+        if self.pad {
+            println!("   A를 받았다. 이제 지켜본다 (위험할 때만 B를 누르면 그 자리에 선다)");
+        } else {
+            println!(
+                "   Enter를 받았다. 이제 지켜본다 (위험할 때만 Enter를 누르면 그 자리에 선다)"
+            );
+        }
     }
 
     fn status(&mut self, text: &str) {
-        let todo = if self.waiting {
-            ">> Enter 누를 차례"
-        } else {
-            "지켜보기 (위험할 때만 Enter)"
+        let todo = match (self.waiting, self.pad) {
+            (true, true) => ">> A 누를 차례",
+            (true, false) => ">> Enter 누를 차례",
+            (false, true) => "지켜보기 (위험할 때만 B)",
+            (false, false) => "지켜보기 (위험할 때만 Enter)",
         };
         print!(
             "\r{}",
@@ -1357,10 +1443,17 @@ enum Record {
 /// 실행 루프 스레드에서 터미널(이 프로그램의 첫 스레드)로 넘기는 줄.
 enum Line {
     Say(String),
-    /// 멈춤의 안내: Enter를 누를 차례
+    /// 멈춤의 안내: 사람이 누를 차례 (Enter, 게임패드는 A)
     Wait(String),
+    /// 멈춤에서 누름을 받아 다음으로 간다
+    Resumed,
     Status(String),
 }
+
+/// 게임패드가 낸 서기 요청 ([`LoopConsole`]의 `stop`): 없다, B를 눌렀다, 게임패드가 끊겼다.
+const STOP_NONE: u8 = 0;
+const STOP_BUTTON: u8 = 1;
+const STOP_GONE: u8 = 2;
 
 /// 기록 줄의 크기: 박자마다 하나라 10초 몫이다. 차면 실행 루프는 기다리지 않고 버리고 센다 (0026의 5)
 const RECORD_QUEUE: usize = 1000;
@@ -1373,11 +1466,21 @@ const CATCH_UP_LIMIT_NS: u64 = 200_000_000;
 /// 깨어나는 지연의 기준 (0026의 2의 통과 기준) [µs]. 넘은 박자를 센다
 const WAKE_LIMIT_US: u64 = 1_000;
 
-/// 실행 루프가 순서의 사람 쪽 일을 넘기는 곳: 말은 터미널 줄로 보내고(기다리지 않는다), Enter는 표준 입력을 읽는
-/// 스레드가 세운 표시로 본다.
+/// 실행 루프가 순서의 사람 쪽 일을 넘기는 곳: 말은 터미널 줄로 보내고(기다리지 않는다), 누름은 표준 입력과
+/// 게임패드를 읽는 스레드가 세운 표시로 본다. Enter는 멈춤에서 다음, 움직이거나 버티는 동안은 서기다. 게임패드의
+/// A는 멈춤에서만 다음이고 (다른 때 누른 A는 버린다), B는 언제든 서기다.
 struct LoopConsole {
     lines: SyncSender<Line>,
+    /// 키보드 Enter
     enter: Arc<AtomicBool>,
+    /// 게임패드 A
+    next: Arc<AtomicBool>,
+    /// 게임패드가 낸 서기 요청 ([`STOP_NONE`], [`STOP_BUTTON`], [`STOP_GONE`])
+    stop: Arc<AtomicU8>,
+    /// 게임패드가 끊긴 까닭 (게임패드 스레드가 끊길 때 한 번 쓴다)
+    gone: Arc<OnceLock<String>>,
+    /// 멈춤에서 누름을 기다린다
+    waiting: bool,
 }
 
 impl Console for LoopConsole {
@@ -1385,22 +1488,43 @@ impl Console for LoopConsole {
         let _ = self.lines.try_send(Line::Say(text.to_owned()));
     }
 
-    /// 실행 루프는 묻지 않는다 (순서는 Enter만 받는다).
+    /// 실행 루프는 묻지 않는다 (순서는 누름만 받는다).
     fn ask(&mut self, _question: &str) -> String {
         String::new()
     }
 
     fn begin_wait(&mut self, prompt: &str) {
-        self.enter.store(false, Ordering::Relaxed); // 앞서 누른 Enter를 버린다
+        // 앞서 누른 것을 버린다
+        self.enter.store(false, Ordering::Relaxed);
+        self.next.store(false, Ordering::Relaxed);
+        self.waiting = true;
         let _ = self.lines.try_send(Line::Wait(prompt.to_owned()));
     }
 
     fn enter_pressed(&mut self) -> bool {
-        self.enter.swap(false, Ordering::Relaxed)
+        let enter = self.enter.swap(false, Ordering::Relaxed);
+        // 게임패드의 A는 멈춤에서만 센다: 움직이는 동안 누른 A로 서지 않는다
+        let next = self.next.swap(false, Ordering::Relaxed) && self.waiting;
+        let pressed = enter || next;
+        if pressed && std::mem::take(&mut self.waiting) {
+            let _ = self.lines.try_send(Line::Resumed);
+        }
+        pressed
     }
 
     fn status(&mut self, text: &str) {
         let _ = self.lines.try_send(Line::Status(text.to_owned()));
+    }
+
+    fn stop_requested(&mut self) -> Option<String> {
+        match self.stop.load(Ordering::Acquire) {
+            STOP_NONE => None,
+            STOP_BUTTON => Some("사람이 멈췄다 (게임패드 B)".to_owned()),
+            _ => Some(format!(
+                "{}. 그 자리에 섰다",
+                self.gone.get().map_or("게임패드가 끊겼다", String::as_str)
+            )),
+        }
     }
 }
 
@@ -1497,13 +1621,15 @@ fn realtime_off_reason(options: &Options) -> Option<&'static str> {
 }
 
 /// 시험 순서를 돌린다. 이 스레드는 터미널을 맡고, 실행 루프와 기록 쓰기는 따로 스레드를 둔다 (0026의 2, 5):
-/// 실행 루프 스레드는 실시간 설정을 건 뒤에 토크를 켠다 (못 걸면 서보에 손대지 않고 끝낸다).
+/// 실행 루프 스레드는 실시간 설정을 건 뒤에 토크를 켠다 (못 걸면 서보에 손대지 않고 끝낸다). 게임패드가 있으면
+/// 사람이 A를 누른 뒤에 토크를 켠다.
 fn drive_script<B: ServoBus + Send + 'static>(
     options: &Options,
     source: &Source,
     script: Script,
     joints: Joints<B>,
     link: Value,
+    mut pad: Option<Gamepad>,
 ) -> Result<(), String> {
     // 기록 칸과 상태 줄의 서보 이름 (관절 층의 순서: 관절 번호 순, 그리퍼는 마지막)
     let mut names = script.joints.clone();
@@ -1524,6 +1650,7 @@ fn drive_script<B: ServoBus + Send + 'static>(
         "robot_toml": source.robot_toml,
         "collision": source.collision,
         "hold_max_s": source.hold_max_s,
+        "gamepad": pad_record(pad.as_ref(), options),
         "period_s": LOOP_PERIOD.as_secs_f64(),
         "joints": names,
         "program": system::version(),
@@ -1547,6 +1674,48 @@ fn drive_script<B: ServoBus + Send + 'static>(
             return finish_failed(&meta_path, &mut meta, error);
         }
     }
+    // 사람이 누르는 것: 표준 입력(Enter)과 게임패드(A, B). 게임패드가 있으면 A를 눌러야 토크를 켜고 시작한다:
+    // 명령을 친 뒤 게임패드를 들고 팔 옆에 가서 시작하고, 게임패드가 살아 있는지도 여기서 본다
+    let enter = Arc::new(AtomicBool::new(false));
+    let next = Arc::new(AtomicBool::new(false));
+    let stop = Arc::new(AtomicU8::new(STOP_NONE));
+    let gone: Arc<OnceLock<String>> = Arc::new(OnceLock::new());
+    print_legend(pad.as_ref());
+    watch_enter(Arc::clone(&enter));
+    if let Some(pad) = &mut pad {
+        println!(
+            "\n>> A를 누를 차례: 게임패드를 들고 팔 옆에 섰으면 A를 누른다. 토크를 켜고 순서를 시작한다 \
+             (B는 시작하지 않고 끝낸다)\x07"
+        );
+        pad.buzz(Buzz::Ready);
+        match pad.wait_press() {
+            Ok(Press::Next) => println!("   A를 받았다. 시작한다"),
+            Ok(Press::Stop) => {
+                let why = "시작하지 않았다 (게임패드 B)".to_owned();
+                meta["end"] = json!("cancelled");
+                meta["result"] = json!(why);
+                meta["ended"] = json!(record::time_text(&Local::now()));
+                record::write_json(&meta_path, &meta)?;
+                return Err(why);
+            }
+            Err(error) => return finish_failed(&meta_path, &mut meta, error),
+        }
+        let (pad_next, pad_stop) = (Arc::clone(&next), Arc::clone(&stop));
+        let (gone_stop, gone_why) = (Arc::clone(&stop), Arc::clone(&gone));
+        let spawned = pad.spawn(
+            move |press| match press {
+                Press::Next => pad_next.store(true, Ordering::Relaxed),
+                Press::Stop => pad_stop.store(STOP_BUTTON, Ordering::Release),
+            },
+            move |why| {
+                let _ = gone_why.set(why);
+                gone_stop.store(STOP_GONE, Ordering::Release);
+            },
+        );
+        if let Err(error) = spawned {
+            return finish_failed(&meta_path, &mut meta, error);
+        }
+    }
     let mut columns = vec![
         "mode".to_owned(),
         "wake_us".to_owned(),
@@ -1567,16 +1736,22 @@ fn drive_script<B: ServoBus + Send + 'static>(
 
     let (ready_tx, ready_rx) = mpsc::channel();
     let (line_tx, line_rx) = mpsc::sync_channel::<Line>(LINE_QUEUE);
-    let enter = Arc::new(AtomicBool::new(false));
     let dropped = Arc::new(AtomicU64::new(0));
     let job = LoopJob {
         script,
         settings: source.settings.clone(),
         realtime: off.is_none(),
     };
+    // 시작을 기다리는 동안 누른 Enter와 A는 버린다
+    enter.store(false, Ordering::Relaxed);
+    next.store(false, Ordering::Relaxed);
     let console = LoopConsole {
         lines: line_tx,
         enter: Arc::clone(&enter),
+        next: Arc::clone(&next),
+        stop: Arc::clone(&stop),
+        gone: Arc::clone(&gone),
+        waiting: false,
     };
     let loop_dropped = Arc::clone(&dropped);
     let runner = thread::Builder::new()
@@ -1613,24 +1788,29 @@ fn drive_script<B: ServoBus + Send + 'static>(
         (None, None) => {}
     }
 
-    println!(
-        "Enter: \">> Enter를 누를 차례\"가 뜨면 할 일을 하고 누른다. 움직이거나 버티는 동안에는 지켜보다 위험할 때만 \
-         누른다 (감속해 그 자리에 선다)"
-    );
-    watch_enter(enter);
     let mut console = RunConsole {
         status_width: 0,
         waiting: false,
+        pad: pad.is_some(),
     };
     // 실행 루프가 끝나 줄을 닫을 때까지 받는다
     for line in line_rx {
         match line {
             Line::Say(text) => console.say(&text),
-            Line::Wait(text) => console.wait(&text),
+            Line::Wait(text) => {
+                console.wait(&text);
+                if let Some(pad) = &mut pad {
+                    pad.buzz(Buzz::Turn);
+                }
+            }
+            Line::Resumed => console.resumed(),
             Line::Status(text) => console.status(&text),
         }
     }
     console.end_status();
+    if let Some(pad) = &mut pad {
+        pad.buzz(Buzz::End);
+    }
     let end = runner
         .join()
         .map_err(|_| "실행 루프 스레드가 죽었다".to_owned())??;
@@ -1907,6 +2087,75 @@ mod tests {
         // 버티기를 줄이는 것은 시뮬레이션에서만이다
         assert!(parse_args(args("run --script a.toml --port COM5 --hold-max 5")).is_err());
         assert!(parse_args(args("run --script a.toml --sim x:1 --hold-max 0")).is_err());
+        let options = parse_args(args("run --script a.toml --port COM5 --no-gamepad")).unwrap();
+        assert!(options.no_gamepad);
+        assert!(
+            !parse_args(args("run --script a.toml --port COM5"))
+                .unwrap()
+                .no_gamepad
+        );
+        assert!(parse_args(args("timing --port COM5 --no-gamepad")).is_err());
+    }
+
+    /// 실행 루프 쪽 콘솔과 누름 표시들.
+    fn loop_console() -> (LoopConsole, Receiver<Line>) {
+        let (lines, received) = mpsc::sync_channel(LINE_QUEUE);
+        let console = LoopConsole {
+            lines,
+            enter: Arc::new(AtomicBool::new(false)),
+            next: Arc::new(AtomicBool::new(false)),
+            stop: Arc::new(AtomicU8::new(STOP_NONE)),
+            gone: Arc::new(OnceLock::new()),
+            waiting: false,
+        };
+        (console, received)
+    }
+
+    /// 게임패드의 A는 멈춤에서만 다음이다: 움직이는 동안 누른 A는 버려서 서지 않는다. 키보드 Enter는 전처럼
+    /// 멈춤에서 다음, 움직이는 동안은 서기다. 멈춤에서 넘어가면 터미널에 알린다.
+    #[test]
+    fn a_counts_only_at_a_pause_and_enter_still_stops_a_move() {
+        let (mut console, lines) = loop_console();
+        // 움직이는 중(기다리지 않는다): A는 버리고, Enter는 센다(실행 루프는 서기로 본다)
+        console.next.store(true, Ordering::Relaxed);
+        assert!(!console.enter_pressed());
+        assert!(
+            !console.next.load(Ordering::Relaxed),
+            "버린 A는 남지 않는다"
+        );
+        console.enter.store(true, Ordering::Relaxed);
+        assert!(console.enter_pressed());
+        // 멈춤: 앞서 누른 것을 버리고 A를 기다린다
+        console.next.store(true, Ordering::Relaxed);
+        console.begin_wait("[2-pause] 선을 봤으면");
+        assert!(!console.enter_pressed());
+        console.next.store(true, Ordering::Relaxed);
+        assert!(console.enter_pressed());
+        assert!(!console.waiting);
+        let received: Vec<Line> = lines.try_iter().collect();
+        assert!(
+            matches!(&received[..], [Line::Wait(prompt), Line::Resumed] if prompt == "[2-pause] 선을 봤으면")
+        );
+    }
+
+    #[test]
+    fn b_and_a_lost_gamepad_ask_the_loop_to_stop() {
+        let (mut console, _lines) = loop_console();
+        assert_eq!(console.stop_requested(), None);
+        console.stop.store(STOP_BUTTON, Ordering::Relaxed);
+        assert_eq!(
+            console.stop_requested().as_deref(),
+            Some("사람이 멈췄다 (게임패드 B)")
+        );
+        console
+            .gone
+            .set("게임패드가 끊겼다 (꺼졌거나 잠들었거나 동글이 빠졌다)".to_owned())
+            .unwrap();
+        console.stop.store(STOP_GONE, Ordering::Relaxed);
+        assert_eq!(
+            console.stop_requested().as_deref(),
+            Some("게임패드가 끊겼다 (꺼졌거나 잠들었거나 동글이 빠졌다). 그 자리에 섰다")
+        );
     }
 
     #[test]

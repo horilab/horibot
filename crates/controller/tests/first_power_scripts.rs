@@ -281,7 +281,7 @@ fn first_power_scripts_run_to_the_end_on_the_simulation() {
         let (status, end, said) = run_on_simulation(&address, &settings, script, None);
         assert_eq!(status, Status::Done, "{name}: {said:?}");
         assert!(same(&end, &rest), "{name}: 쉬는 자세에서 끝난다");
-        let waited = said.iter().filter(|line| line.ends_with("(Enter)")).count();
+        let waited = said.iter().filter(|line| line.contains("-pause] ")).count();
         assert_eq!(waited, pauses, "{name}: 멈춤마다 기다렸다");
         if name.contains("shoulder") {
             assert!(

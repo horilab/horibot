@@ -154,6 +154,11 @@ pub trait Console {
     fn enter_pressed(&mut self) -> bool;
     /// 기다리는 동안 같은 줄을 고쳐 쓰는 상태 표시.
     fn status(&mut self, text: &str);
+    /// 언제든 그 자리에 서서 끝내라는 요청과 그 까닭 (게임패드의 B, 게임패드가 끊김). 멈춤에서 기다리는 중에도
+    /// 받는다. 기본은 없다.
+    fn stop_requested(&mut self) -> Option<String> {
+        None
+    }
 }
 
 /// 시계. 시험에서는 기다리지 않는 시계로 바꾼다.
