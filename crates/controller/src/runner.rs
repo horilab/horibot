@@ -362,6 +362,21 @@ impl Script {
         ))
     }
 
+    /// 버티기를 `max_s`초까지로 줄이고 줄인 버티기 수를 낸다 (실행 명령의 --hold-max: 시뮬레이션은 온도를
+    /// 흉내 내지 않아 오래 버텨도 새로 볼 것이 없다).
+    pub fn cap_holds(&mut self, max_s: f64) -> usize {
+        let mut shortened = 0;
+        for step in &mut self.steps {
+            if let Step::Hold(seconds) = step
+                && *seconds > max_s
+            {
+                *seconds = max_s;
+                shortened += 1;
+            }
+        }
+        shortened
+    }
+
     /// 사람이 볼 순서: 단계마다 한 줄.
     pub fn describe(&self) -> String {
         let mut lines = vec![format!(
@@ -885,6 +900,26 @@ mod tests {
             "{:?}",
             keys.said
         );
+    }
+
+    #[test]
+    fn long_holds_are_capped_for_the_simulation() {
+        let settings = settings();
+        let text = "name = \"t\"\njoints = [\"j3\"]\n\
+                    [[steps]]\nhold_s = 600\n\
+                    [[steps]]\nmove = { j3 = 20.0 }\n\
+                    [[steps]]\nhold_s = 2\n";
+        let mut script = Script::parse(text, &settings).unwrap();
+        assert_eq!(script.cap_holds(5.0), 1);
+        let holds: Vec<f64> = script
+            .steps
+            .iter()
+            .filter_map(|step| match step {
+                Step::Hold(seconds) => Some(*seconds),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(holds, [5.0, 2.0]);
     }
 
     #[test]

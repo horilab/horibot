@@ -186,14 +186,7 @@ fn run_on_simulation(
     settings: &Settings,
     mut script: Script,
 ) -> (Status, Vec<f64>, Vec<String>) {
-    script.steps = script
-        .steps
-        .into_iter()
-        .map(|step| match step {
-            Step::Hold(seconds) => Step::Hold(seconds.min(2.0)),
-            other => other,
-        })
-        .collect();
+    script.cap_holds(2.0);
     let mut joints: Vec<&Joint> = script
         .joints
         .iter()

@@ -94,6 +94,8 @@ const USAGE: &str = "\
   --no-realtime       리눅스에서도 실행 루프를 보통 스레드로 돌린다 (run, timing. 실시간 설정이 안 걸릴 때만)
   --no-collision      부딪힘 검사를 끈다 (run. 팔을 다 조립하지 않은 시험대처럼 형상이 실물과 다를 때만.
                       기록에 남는다)
+  --hold-max <초>     순서의 버티기를 이 시간까지로 줄인다 (run --sim에서만. 시뮬레이션은 온도를 흉내 내지
+                      않아 오래 버텨도 새로 볼 것이 없다. 기록에 남는다)
   --count <n>         동작마다 되풀이할 횟수 (timing, 기본 300)
 ";
 
@@ -133,6 +135,7 @@ struct Options {
     sim: Option<String>,
     no_realtime: bool,
     no_collision: bool,
+    hold_max: Option<f64>,
     count: Option<usize>,
 }
 
@@ -153,6 +156,7 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Options, String>
         sim: None,
         no_realtime: false,
         no_collision: false,
+        hold_max: None,
         count: None,
     };
     while let Some(arg) = args.next() {
@@ -213,6 +217,15 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Options, String>
             "--sim" => options.sim = Some(args.next().ok_or("--sim 뒤에 주소가 없다")?),
             "--no-realtime" => options.no_realtime = true,
             "--no-collision" => options.no_collision = true,
+            "--hold-max" => {
+                let text = args.next().ok_or("--hold-max 뒤에 초가 없다")?;
+                options.hold_max = Some(
+                    text.parse()
+                        .ok()
+                        .filter(|&s: &f64| s.is_finite() && s > 0.0)
+                        .ok_or_else(|| format!("--hold-max는 0보다 큰 초다: {text}"))?,
+                );
+            }
             "--count" => {
                 let text = args.next().ok_or("--count 뒤에 횟수가 없다")?;
                 options.count = Some(
@@ -264,6 +277,11 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Options, String>
         if options.port.is_some() == options.sim.is_some() {
             return Err("run은 --port(서보)나 --sim(시뮬레이션) 가운데 하나에 붙는다".to_owned());
         }
+    }
+    if options.hold_max.is_some() && (options.command != Command::Run || options.sim.is_none()) {
+        return Err(
+            "--hold-max는 run --sim에서만 쓴다 (실물에서는 순서의 버티기를 그대로 한다)".to_owned(),
+        );
     }
     Ok(options)
 }
@@ -941,7 +959,11 @@ fn run_script(options: &Options) -> Result<(), String> {
     let path = options.script.as_ref().ok_or("--script가 없다")?;
     let text =
         fs::read_to_string(path).map_err(|e| format!("{}을 읽지 못했다: {e}", path.display()))?;
-    let script = Script::parse(&text, &settings)?;
+    let mut script = Script::parse(&text, &settings)?;
+    if let Some(max) = options.hold_max {
+        let shortened = script.cap_holds(max);
+        println!("버티기 {shortened}개를 {max} s까지로 줄였다 (--hold-max, 시뮬레이션)");
+    }
     print!("{}", script.describe());
     let mut joints: Vec<&Joint> = script
         .joints
@@ -1007,6 +1029,7 @@ fn run_script(options: &Options) -> Result<(), String> {
             script_text: &text,
             robot_toml: &robot_toml,
             collision,
+            hold_max_s: options.hold_max,
         };
         let link = json!({ "sim": address });
         // 시뮬레이션은 메모리 표(EEPROM)를 흉내 내지 않아서, 토크를 켤 때 값 적용의 목표와 견주지 않는다
@@ -1033,6 +1056,7 @@ fn run_script(options: &Options) -> Result<(), String> {
         script_text: &text,
         robot_toml: &robot_toml,
         collision,
+        hold_max_s: None,
     };
     let link = record::run_info(port, BAUD_RATES[0].1);
     start_script(
@@ -1107,6 +1131,8 @@ struct Source<'a> {
     robot_toml: &'a str,
     /// 움직이기 전의 부딪힘 검사 결과
     collision: Value,
+    /// 줄인 버티기의 상한 [s] (--hold-max, 시뮬레이션에서만)
+    hold_max_s: Option<f64>,
 }
 
 /// --yes가 없으면 서보 상태만 읽어 보이고, 있으면 실행 루프를 세워 순서를 돌린다.
@@ -1429,6 +1455,7 @@ fn drive_script<B: ServoBus + Send + 'static>(
         "script": source.script_text,
         "robot_toml": source.robot_toml,
         "collision": source.collision,
+        "hold_max_s": source.hold_max_s,
         "period_s": LOOP_PERIOD.as_secs_f64(),
         "joints": names,
         "program": system::version(),
@@ -1788,6 +1815,11 @@ mod tests {
         assert!(parse_args(args("run --script a.toml")).is_err()); // 붙을 곳이 없다
         assert!(parse_args(args("run --script a.toml --port COM5 --sim x:1")).is_err());
         assert!(parse_args(args("run --port COM5")).is_err()); // 순서가 없다
+        let options = parse_args(args("run --script a.toml --sim x:1 --hold-max 5")).unwrap();
+        assert_eq!(options.hold_max, Some(5.0));
+        // 버티기를 줄이는 것은 시뮬레이션에서만이다
+        assert!(parse_args(args("run --script a.toml --port COM5 --hold-max 5")).is_err());
+        assert!(parse_args(args("run --script a.toml --sim x:1 --hold-max 0")).is_err());
     }
 
     #[test]

@@ -11,6 +11,8 @@
 - write {id, register, value} → {fault}. sync_write {register, values: [[id, value]]}.
 - write_trial {id, values: [[register, value]]}. dump {id} → {bytes} (메모리 표는 흉내 내지 않아 비어 있다).
 - 시험용: power_cycle {id}, state → {time, angles}.
+
+`--viewer`면 MuJoCo 창을 띄워 세계를 보기 모델(build/sim/horibot_view.xml)로 그린다 (view.py).
 """
 
 from __future__ import annotations
@@ -22,6 +24,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from horibot_sim.view import VIEW_MODEL, View
 from horibot_sim.world import World
 
 NO_REPLY = {"ok": False, "error": "no_reply"}
@@ -33,11 +36,14 @@ SERVO_SPECS = Path("params/servos.toml")
 class Session:
     """클라이언트 하나와의 대화. 세계는 hello로 만든다."""
 
-    def __init__(self, model: Path, servo_specs: Path, realtime: bool) -> None:
+    def __init__(
+        self, model: Path, servo_specs: Path, realtime: bool, view: View | None = None
+    ) -> None:
         self.world: World | None = None
         self.model = model
         self.servo_specs = servo_specs
         self.realtime = realtime
+        self.view = view
         self.started = 0.0
 
     def handle(self, request: dict[str, Any]) -> dict[str, Any]:
@@ -58,6 +64,8 @@ class Session:
                 self.model, self.servo_specs, float(request["period"]), servos, start
             )
             self.started = time.monotonic()
+            if self.view is not None:
+                self.view.update(self.world, force=True)
             return {"ok": True, "time": 0.0}
         world = self.world
         if world is None:
@@ -74,6 +82,8 @@ class Session:
             return {"ok": True, "values": values, "fault": servo.regs["status"]}
         if op == "sync_read":
             world.step()
+            if self.view is not None:
+                self.view.update(world)
             self._pace(world)
             replies: dict[str, Any] = {}
             for servo_id in request["ids"]:
@@ -127,6 +137,7 @@ class Handler(socketserver.StreamRequestHandler):
             Path(getattr(server, "model", SIM_MODEL)),
             Path(getattr(server, "servo_specs", SERVO_SPECS)),
             bool(getattr(server, "realtime", False)),
+            getattr(server, "view", None),
         )
         for line in self.rfile:
             try:
@@ -146,11 +157,13 @@ class Server(socketserver.TCPServer):
         model: Path = SIM_MODEL,
         servo_specs: Path = SERVO_SPECS,
         realtime: bool = False,
+        view: View | None = None,
     ) -> None:
         super().__init__(address, Handler)
         self.model = model
         self.servo_specs = servo_specs
         self.realtime = realtime
+        self.view = view
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -162,7 +175,23 @@ def main(argv: list[str] | None = None) -> None:
     )
     parser.add_argument("--model", type=Path, default=SIM_MODEL, help="설계가 쓴 MJCF")
     parser.add_argument("--servos", type=Path, default=SERVO_SPECS, help="서보 사양 (멈춤 토크)")
+    parser.add_argument(
+        "--viewer",
+        action="store_true",
+        help="MuJoCo 창에 팔을 그린다 (보기 모델이 먼저 있어야 한다)",
+    )
+    parser.add_argument(
+        "--view-model", type=Path, default=VIEW_MODEL, help="설계가 쓴 보기 모델 (mjcf_view)"
+    )
     args = parser.parse_args(argv)
-    with Server((args.host, args.port), args.model, args.servos, args.realtime) as server:
-        print(f"listening {server.server_address[1]}", flush=True)
-        server.serve_forever()
+    view = None
+    if args.viewer:
+        view = View(args.view_model)
+        view.show()
+    try:
+        with Server((args.host, args.port), args.model, args.servos, args.realtime, view) as server:
+            print(f"listening {server.server_address[1]}", flush=True)
+            server.serve_forever()
+    finally:
+        if view is not None:
+            view.close()
