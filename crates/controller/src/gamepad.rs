@@ -33,6 +33,33 @@ const EV_KEY: u16 = 0x01;
 const BTN_SOUTH: u16 = 0x130;
 const BTN_EAST: u16 = 0x131;
 
+/// 짧은 떨림 한 번의 길이와 그 앞에 쉬는 틈, 긴 떨림의 길이 (ms)
+const PULSE_MS: u16 = 150;
+const PULSE_GAP_MS: u16 = 120;
+const LONG_MS: u16 = 700;
+
+impl Buzz {
+    /// 긴 떨림인지, 몇 번 트는지.
+    fn plan(self) -> (bool, u16) {
+        match self {
+            Buzz::Ready => (false, 1),
+            Buzz::Turn => (false, 2),
+            Buzz::End => (true, 1),
+        }
+    }
+
+    /// 틀고 나서 다 떨 때까지 걸리는 시간 (ms).
+    pub fn total_ms(self) -> u64 {
+        let (long, count) = self.plan();
+        let once = if long {
+            LONG_MS
+        } else {
+            PULSE_GAP_MS + PULSE_MS
+        };
+        u64::from(once) * u64::from(count)
+    }
+}
+
 /// 입력 이벤트 하나(종류, 번호, 값)를 누름으로 바꾼다. 누를 때(값 1)만 센다: 뗄 때(0)와 누르고 있을 때의
 /// 되풀이(2)는 버린다.
 pub fn press_of(kind: u16, code: u16, value: i32) -> Option<Press> {
@@ -48,10 +75,11 @@ mod device {
     use std::io;
     use std::path::{Path, PathBuf};
     use std::thread;
+    use std::time::{Duration, Instant};
 
     use evdev::{Device, FFEffect, FFEffectCode, FFEffectData, FFEffectKind, FFReplay, FFTrigger};
 
-    use super::{Buzz, Press, press_of};
+    use super::{Buzz, LONG_MS, PULSE_GAP_MS, PULSE_MS, Press, press_of};
 
     /// 게임패드를 찾는 곳: 이름이 [`SUFFIX`]로 끝나는 링크가 게임패드의 입력 장치다.
     const BY_ID: &str = "/dev/input/by-id";
@@ -68,6 +96,8 @@ mod device {
         /// 짧은 떨림 (앞에 쉬는 틈이 있어 두 번 틀면 두 번 떤다)
         pulse: Option<FFEffect>,
         long: Option<FFEffect>,
+        /// 마지막에 튼 떨림이 끝나는 때. 놓을 때 여기까지 기다린다 (아래 Drop)
+        buzz_until: Option<Instant>,
     }
 
     impl Gamepad {
@@ -102,8 +132,8 @@ mod device {
                 .is_some_and(|ff| ff.contains(FFEffectCode::FF_RUMBLE));
             let (pulse, long) = if rumbles {
                 (
-                    upload(&mut device, 150, 120).ok(),
-                    upload(&mut device, 700, 0).ok(),
+                    upload(&mut device, PULSE_MS, PULSE_GAP_MS).ok(),
+                    upload(&mut device, LONG_MS, 0).ok(),
                 )
             } else {
                 (None, None)
@@ -114,6 +144,7 @@ mod device {
                 device: Some(device),
                 pulse,
                 long,
+                buzz_until: None,
             })
         }
 
@@ -179,13 +210,25 @@ mod device {
 
         /// 떤다. 떨지 못하면 그냥 둔다 (떨림이 없거나 게임패드가 사라졌다).
         pub fn buzz(&mut self, buzz: Buzz) {
-            let (effect, count) = match buzz {
-                Buzz::Ready => (&mut self.pulse, 1),
-                Buzz::Turn => (&mut self.pulse, 2),
-                Buzz::End => (&mut self.long, 1),
+            let (long, count) = buzz.plan();
+            let effect = if long {
+                &mut self.long
+            } else {
+                &mut self.pulse
             };
-            if let Some(effect) = effect {
-                let _ = effect.play(count);
+            let Some(effect) = effect else { return };
+            if effect.play(i32::from(count)).is_ok() {
+                self.buzz_until = Some(Instant::now() + Duration::from_millis(buzz.total_ms()));
+            }
+        }
+    }
+
+    impl Drop for Gamepad {
+        /// 틀어 둔 떨림이 끝날 때까지 기다린 뒤 놓는다. 떨림 효과를 놓으면(EVIOCRMFF) 커널이 도는 떨림을 바로
+        /// 끊는데, 순서가 끝날 때의 긴 떨림은 틀자마자 프로그램이 끝나 느껴지지 않았다 (2026-11-28 hori1).
+        fn drop(&mut self) {
+            if let Some(until) = self.buzz_until {
+                thread::sleep(until.saturating_duration_since(Instant::now()));
             }
         }
     }
@@ -285,5 +328,13 @@ mod tests {
         for code in [2, 5, 16, 17, 0, 1, 3, 4] {
             assert_eq!(press_of(0x03, code, 255), None);
         }
+    }
+
+    #[test]
+    fn buzz_lengths_cover_every_pulse() {
+        // 짧게 한 번은 틈 120 ms + 150 ms, 두 번은 그 두 배, 길게 한 번은 700 ms다
+        assert_eq!(Buzz::Ready.total_ms(), 270);
+        assert_eq!(Buzz::Turn.total_ms(), 540);
+        assert_eq!(Buzz::End.total_ms(), 700);
     }
 }
