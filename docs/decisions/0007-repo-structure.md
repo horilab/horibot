@@ -53,7 +53,7 @@ horibot/
 │   ├── controller/   컨트롤러 파이 설정: 처음 설정 스크립트, systemd 유닛, 부팅 인자 (0026)
 │   └── camera/       카메라 파이 프로그램. 별도 uv 프로젝트, camera 패키지를 경로로 가져다 쓴다
 ├── params/           설계 값 (TOML). 응용에 딸린 값은 params/<응용>/
-├── data/             실측 값, 로봇 설정·캘리브레이션, 구매 데이터 (TOML), 부딪힘 검사의 형상 (collision/, 설계가 만든다, 0041)
+├── data/             실측 값, 로봇 설정·캘리브레이션, 구매 데이터 (TOML), 부딪힘 검사의 형상 (collision/, 설계가 만든다, 0041), 시험 순서 (scripts/, 0034)
 ├── docs/             (docs-local/은 git 제외)
 ├── tools/            레포 도구 (시험 기록 올리고 받기, 파이 배포). tools/local/은 PC마다 받는 실행 파일과 로그인 설정 (git 제외)
 ├── tests/            패키지 경계와 레포 도구 검사

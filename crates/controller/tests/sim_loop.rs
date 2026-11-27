@@ -3,11 +3,13 @@
 //! Python 시뮬레이션 서버(`uv run python -m horibot_sim --port 0`)를 띄워 쓴다. 관절 층과 실행 루프는
 //! 실물과 같은 코드이고, 서보 버스만 시뮬레이션이다.
 
-use std::io::{BufRead, BufReader};
+mod common;
+
 use std::path::Path;
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::time::Duration;
 
+use common::start_server;
 use horibot_controller::joints::{Caps, Joints, Servo};
 use horibot_controller::plan::{MotionLimits, move_joints};
 use horibot_controller::runloop::{Mode, RunLoop, Trajectory};
@@ -15,63 +17,6 @@ use horibot_controller::settings::{Calibration, Direction, Joint, LoopSettings, 
 use horibot_servo::sim::{SimBus, SimServo};
 
 const PERIOD: Duration = Duration::from_millis(10);
-
-/// 띄운 시뮬레이션 서버. 시험이 끝나면 끈다.
-struct Server(Child);
-
-impl Drop for Server {
-    fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
-    }
-}
-
-/// 가상환경의 Python으로 서버를 바로 띄운다. `uv run`을 거치면 시험이 끝나 uv를 꺼도 Python 서버가 남아
-/// (Windows는 손자 프로세스를 같이 끄지 않는다) 출력 통로를 붙잡는다. 가상환경은 `uv sync`로 만든다.
-fn start_server() -> (Server, String) {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let python = if cfg!(windows) {
-        root.join(".venv/Scripts/python.exe")
-    } else {
-        root.join(".venv/bin/python")
-    };
-    // 시뮬레이션은 설계를 불러오지 않고 설계가 쓴 MJCF만 읽는다 (0007)
-    let model = std::env::temp_dir().join(format!("horibot-sim-{}.xml", std::process::id()));
-    let written = Command::new(&python)
-        .args(["-m", "horibot_design.mjcf", "--out"])
-        .arg(&model)
-        .current_dir(&root)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .expect("설계 MJCF를 쓰는 명령을 띄우지 못했다");
-    assert!(written.success(), "설계 MJCF를 쓰지 못했다");
-    let mut child = Command::new(&python)
-        .args(["-m", "horibot_sim", "--port", "0", "--model"])
-        .arg(&model)
-        .arg("--servos")
-        .arg(root.join("params/servos.toml"))
-        .current_dir(&root)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .unwrap_or_else(|e| {
-            panic!(
-                "{}로 시뮬레이션 서버를 띄우지 못했다: {e}",
-                python.display()
-            )
-        });
-    let stdout = child.stdout.take().expect("서버의 출력");
-    let mut line = String::new();
-    BufReader::new(stdout)
-        .read_line(&mut line)
-        .expect("서버가 준비됐다는 줄");
-    let port = line
-        .trim()
-        .strip_prefix("listening ")
-        .unwrap_or_else(|| panic!("서버의 첫 줄이 다르다: {line}"));
-    (Server(child), format!("127.0.0.1:{port}"))
-}
 
 /// 서보를 단 관절: 이름, ID, 모델, 모델 번호. 실물과 같은 서보다 (팔의 무게가 실물이라 J2는 ST-3120이 든다)
 const SERVOS: [(&str, u8, &str, u16); 2] = [("j2", 2, "ST-3120", 3337), ("j3", 3, "STS3250", 2825)];
