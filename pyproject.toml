@@ -27,6 +27,7 @@ horibot-sim = { workspace = true }
 [dependency-groups]
 dev = [
     "cargo-zigbuild>=0.24.1",
+    "opencv-python>=4.10",
     "pyright[nodejs]>=1.1.414",
     "pytest>=8",
     "pytest-xdist>=3.8.0",

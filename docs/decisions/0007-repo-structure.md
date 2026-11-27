@@ -61,7 +61,7 @@ horibot/
 └── build/, target/   생성물 (git 제외)
 ```
 
-- 폴더는 첫 코드를 넣을 때 만든다. 지금 있는 것은 servo, controller, bench 크레이트, design, servo, sim, camera 패키지와 pi/controller, params, data, docs, tools, tests, typings다.
+- 폴더는 첫 코드를 넣을 때 만든다. 지금 있는 것은 servo, controller, bench 크레이트, design, servo, sim, camera 패키지와 pi/controller, pi/camera, params, data, docs, tools, tests, typings다.
 - 이름: Python 패키지의 import 이름은 `horibot_<폴더>`, Rust 크레이트 이름은 `horibot-<폴더>`, 응용은 `horibot_<응용>`이다.
 - 의존 방향:
   - design, servo, camera, client는 다른 horibot 패키지를 불러오지 않는다.

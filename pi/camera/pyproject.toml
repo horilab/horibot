@@ -1,0 +1,25 @@
+[project]
+name = "horibot-camera-pi"
+version = "0.1.0"
+description = "카메라 파이 프로그램: D405 영상을 압축 없이 PC로 보낸다 (docs/decisions/0039-camera-stream.md)"
+# 파이의 Python은 uv가 받은 3.12다. pyrealsense2 2.59.2의 aarch64 리눅스 판이 3.11용은 없어서(2026-11-28 uv가
+# 풀지 못했다) 시험한 3.12로 묶는다.
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "horibot-camera",
+    # 2026-11-22 hori2에서 시험한 판 (docs/decisions/0039-camera-stream.md)
+    "pyrealsense2==2.59.2.*",
+    "pyzmq>=26",
+]
+
+[tool.uv]
+package = false
+# 카메라 파이(라즈베리파이, aarch64 리눅스)에서만 돈다
+environments = ["sys_platform == 'linux' and platform_machine == 'aarch64'"]
+
+[tool.uv.sources]
+horibot-camera = { path = "../../packages/camera" }
+
+[tool.ruff]
+extend = "../../pyproject.toml"
+target-version = "py311"
