@@ -2,7 +2,7 @@
 
 [0023](decisions/0023-robot-controller.md)의 리서치 계획을 2026-11-10에 조사했다. 1~4절은 어디서 해도 결과가 같은 네 주제다: 산업용 컨트롤러, 데스크톱·오픈소스 팔, 전송 방식, 시뮬레이션 연결과 파이용 계획 라이브러리. 5~6절(파이 컨트롤러의 실행 환경·빌드·배포·기록, NAS 쓸 자리)은 실물이 있는 PC에서 파이, NAS, PC, 집 네트워크를 확인한 뒤에 조사했다 ([hardware.md](hardware.md#가진-것)). 추천은 검토를 거쳐 [0026](decisions/0026-pi-runtime-deploy-records.md)으로 정했다.
 
-- 이 문서는 조사한 사실이다. 정하는 것은 0023, 0025, 0026, 0033에 있다.
+- 이 문서는 조사한 사실이다. 정하는 것은 0009, 0023, 0025, 0026, 0033, 0041에 있다.
 - 사실마다 출처를 붙였다. 출처를 직접 확인하지 못한 것은 "(확인 안 됨)", 프로젝트나 업체가 스스로 밝힌 것은 "(주장)"으로 적었다.
 - 남의 결론은 그대로 믿지 않는다. 우리 결정에 쓰기 전에 계산이나 실측으로 다시 본다.
 
@@ -56,6 +56,28 @@
 
 - UR: 화살표를 누르는 동안 기준 좌표계(베이스, 공구, 사용자)로 움직이고, 떼면 멈춘다. 사용자 좌표계는 컨트롤러에 저장한다 ([조그](https://www.universal-robots.com/articles/ur/programming/how-to-jog-the-robot/)).
 - ABB: 스텝 크기를 소·중·대·사용자 중에 고르고, 1초 넘게 누르면 초당 10스텝으로 반복한다.
+
+### 경로 계획과 부딪힘 막기
+
+2026-11-27에 더 조사했다 ([0009](decisions/0009-control-architecture.md#안전), [0041](decisions/0041-collision-checking.md)). 링크마다 원문을 열어 확인했고, 그러지 못한 것은 표시했다.
+
+- 바깥 물체를 피해 가는 길 찾기
+  - UR의 공식 길은 AI Accelerator다. 그 위의 cuMotion이 부딪히지 않는 관절 궤적을 계획하고, 받은 궤적을 로봇에서 실행한다. 장애물은 상자, 도구와 쥔 물건은 공으로 YAML에 적는다 ([경로 계획](https://docs.universal-robots.com/AI_Accelerator_Documentation/html/urscript-api/pathplanning.html), [예제](https://docs.universal-robots.com/AI_Accelerator_Documentation/html/examples/path_planning_advanced.html)).
+  - AI Accelerator는 제어 상자와 이더넷으로 잇는 따로인 계산 모듈(NVIDIA Jetson AGX Orin)이다 ([AI Accelerator](https://www.universal-robots.com/developer/ai-accelerator/), 확인 안 됨, 검색 요약).
+  - UR 기본 컨트롤러가 피해 가는 길을 찾는다는 설명은 찾지 못했다.
+- PC에서 미리 보기
+  - ABB RobotStudio는 시뮬레이션에서 물체 묶음(collision set)끼리 부딪힘과, 정한 거리 안으로 다가감(near miss)을 본다 ([예제](https://developercenter.robotstudio.com/api/robotstudio/articles/How-To/Miscellaneous/CollisionDetectionExample.html)).
+- 움직이는 중 감시
+  - UR: 안전 기능은 저마다 EN ISO 13849-1의 PLd, 범주 3으로 만든다. 관절 위치 한계, 안전 평면, 방향 한계는 예상 정지 거리를 넣어 보고 한계 앞에서 미리 느려진다. 힘 한계는 끼일 때 도구와 팔꿈치가 내는 힘을 막는다. 도구(엔드 이펙터)는 안전 시스템이 지키지 않는다 ([안전 기능](https://www.universal-robots.com/manuals/EN/HTML/SW10_12/Content/prod-usr-man/complianceUR15/PolyX_SW/psx_safety_func.htm)).
+  - UR 안전 평면은 정한 도구 공과 팔꿈치만 막는다. 팔의 다른 부분까지 따른다는 보장은 없다고 적혀 있다 ([안전 평면](https://www.universal-robots.com/manuals/EN/HTML/SW10_15/Content/prod-usr-man/complianceUR15/PolyX_SW/safety_planes.htm)).
+  - UR에는 "아래팔과 도구 플랜지 사이 끼임 위험" 오류(C403)가 있다 ([C403](https://www.universal-robots.com/manuals/EN/HTML/SW5_23/Content/prod-err-codes/topics/CODE_403.html), 확인 안 됨, 검색 요약). 어떤 모양으로 재는지는 공식 자료에서 찾지 못했다. 사용자 글에는 아래팔 둘레의 원통과 플랜지 둘레의 공이라는 말과, 약 70 mm 상자 같다는 말이 같이 있다 ([포럼](https://forum.universal-robots.com/t/error-c403a0-danger-of-clamping-between-the-robot-lower-arm-and-tool/16142)). 팔 전체의 자기 충돌을 모양으로 막는다는 설명은 찾지 못했다.
+  - ABB SafeMove: 로봇과 도구를 캡슐 같은 모양으로 감싸고, 안전 구역을 정한다 ([CRB 1300 제품 설명서](https://www.manualslib.com/manual/3016656/Abb-Crb-1300.html?page=127)). 공과 마름모꼴(lozenge)도 쓴다는 것은 검색 요약만 봤다 (확인 안 됨).
+  - KUKA SafeOperation: 플랜지의 도구를 공 6개까지로 나타내고, 공이 셀 영역(꼭짓점 3 ~ 10개인 볼록 다각형) 경계에 닿으면 안전하게 멈춘다 ([SafeOperation](https://www.kuka.com/en-de/products/robot-systems/software/hub-technologies/kuka_safeoperation), 페이지가 열리지 않아 확인 안 됨, 검색 요약).
+  - FANUC DCS: 위치 검사가 정한 안전 구역을 지키고, 넘으면 바로 전원을 끊는다 ([DCS](https://www.fanucamerica.com/products/software/robot/fanuc-dual-check-safety-dcs)). 로봇을 어떤 모양으로 나타내는지는 그 페이지에 없다.
+- 부딪힌 뒤 알아채기
+  - ABB Collision Detection: 어느 축이든 토크가 비정상이면 알아채 빨리 멈추고, 뒤로 물러나 누르는 힘을 푼다. 센서나 기계 클러치 없이 소프트웨어로 한다 ([자료](https://library.e.abb.com/public/d4708d0240be2966c125772f00528ca9/Collision%20det%20PR10044EN_R2.pdf), 2010년 자료).
+  - FANUC: 외란 토크를 감시해 부딪힘을 알아채면 바로 멈춘다 ([Collision Detection](https://www.fanucamerica.com/products/software/collision-guard)).
+  - UR: 보호 정지 코드 C157, C158이 "관절이 부딪힘을 감지함"이다. 어떻게 감지하는지는 그 글에 없다 ([보호 정지](https://www.universal-robots.com/articles/ur/robot-care-maintenance/understanding-protective-stops/)).
 
 ## 2. 데스크톱·오픈소스 팔
 

@@ -17,7 +17,7 @@
 | [design.md](docs/design.md) | 기구 설계 원칙과 구조, D405 케이블, 체결, 그리퍼 교체 구조 |
 | [manufacturing.md](docs/manufacturing.md) | 출력 제약, 재료, 색, 공차 |
 | [servo-setup.md](docs/servo-setup.md) | 서보 준비: 첫 연결(찾기, 덤프, 통신 시간, ID 바꾸기)과 값 적용의 순서와 명령 |
-| [software.md](docs/software.md) | 치수 값에서 결과물까지의 흐름, 레포 구조, 도구, 시뮬레이션, 제어 구조, 하드웨어 연결, 개발 환경, 패키지 |
+| [software.md](docs/software.md) | 치수 값에서 결과물까지의 흐름, 레포 구조, 도구, 시뮬레이션, 제어 구조와 산업용 컨트롤러와 견주기, 하드웨어 연결, 개발 환경, 패키지 |
 | [controller-research.md](docs/controller-research.md) | 로봇 컨트롤러 리서치: 산업용 컨트롤러, 데스크톱 팔, 전송 방식, 시뮬레이션 연결과 계획 라이브러리 |
 | [conventions.md](docs/conventions.md) | 문서·코드·테스트·git 규칙 |
 | [setup.md](docs/setup.md) | 새 PC 준비 |
