@@ -121,6 +121,14 @@ impl SimBus {
         check(id, &answer)
     }
 
+    /// 시험용: 시뮬레이션 시간 `at_s`부터 서보 온도가 `celsius`로 읽힌다 (시뮬레이션은 온도를 흉내 내지 않는다).
+    /// 뜨거울 때 순서가 돌아가는지 볼 때 쓴다.
+    pub fn heat(&mut self, id: u8, celsius: i32, at_s: f64) -> Result<(), Error> {
+        let answer =
+            self.request(&json!({"op": "heat", "id": id, "celsius": celsius, "at": at_s}))?;
+        check(id, &answer)
+    }
+
     /// 요청 한 줄을 보내고 답 한 줄을 받는다. 보내거나 받지 못하면(제한 시간 포함) 연결을 버린다: 늦게 온 답이
     /// 다음 요청의 답으로 읽히면 안 된다. 버린 뒤의 요청은 모두 실패하고, 실행 루프는 잇단 실패로 멈춘다.
     fn request(&mut self, body: &Value) -> Result<Value, Error> {

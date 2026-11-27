@@ -18,6 +18,7 @@
 //! hold_s = 600              # 버틴다. 온도가 알림 기준에 닿으면 일찍 끝낸다
 //! [[steps]]
 //! move = { j2 = 0.0 }
+//! hot_return = true         # 뜨거울 때 돌아갈 곳 (move 단계 하나에만): 아래 설명
 //! [[steps]]
 //! pause = "팔을 받쳤으면 (다음에 토크를 끈다)"
 //! [[steps]]
@@ -34,6 +35,13 @@
 //! 실행 명령은 움직이기 전에 순서의 모든 움직이기를 부딪힘 검사로 거른다 ([`Script::check_collisions`], 0041):
 //! 지금 팔의 자세(읽은 관절 각)에서 시작해 단계마다 곧은 길을 검사하고, 막히면 어느 단계 어느 짝인지 알리고 시작하지
 //! 않는다. 쉬는 자세는 쉬는 자세 위(rest_above)를 거쳐 떠나고 앉는다 (곧게 가면 아래팔이 선반을 긁는다).
+//!
+//! 뜨거울 때 돌아갈 곳(`hot_return`, 0034): 그 단계 앞에서 서보 온도가 알림 기준에 닿으면, 하던 움직이기는 끝까지
+//! 가고(버티기는 바로 끝낸다) 남은 단계를 건너뛰어 그 단계로 간다. 그다음은 순서대로다 (예: 짐을 사람이 받아 빼고
+//! 쉬는 자세로). 첫 움직이기를 마친 뒤에만 돌아가고(시작 자세에서 곧게 가는 길은 쉬는 자세 위를 거치지 않는다),
+//! 그 뒤 그 앞의 단계 어디서든 그 자리로 곧게 가는 길도 움직이기 전에 부딪힘 검사로 거른다. 이 표시가 있는 순서는
+//! 서보가 이미 알림 기준에 닿아 있으면 시작하지 않는다. 적지 않으면 버티기만 일찍 끝내고 다음 단계로 간다 (쉬는
+//! 자세로 가는 순서처럼 뜨거워도 돌아야 하는 순서). 실행 루프는 쉬는 기준에서 따로 선다 (마지막 보호).
 
 use std::collections::BTreeMap;
 
@@ -81,6 +89,7 @@ struct StepFile {
     hold_s: Option<f64>,
     grip: Option<f64>,
     release: Option<bool>,
+    hot_return: Option<bool>,
 }
 
 /// 단계 하나.
@@ -117,6 +126,8 @@ pub struct Script {
     pub speed: f64,
     pub start: Option<Start>,
     pub steps: Vec<Step>,
+    /// 뜨거울 때 돌아갈 단계 (움직이기 단계의 번호, 0부터)
+    pub hot_return: Option<usize>,
 }
 
 /// 자세를 순서의 관절마다 (관절 번호, 각 [rad])로 푼다. 이름 붙은 자세는 순서의 모든 관절을 정한다. 소프트
@@ -172,6 +183,22 @@ fn resolve(
         }
     }
     found
+}
+
+/// 막힌 길을 사람이 읽을 글로: 어느 길의 몇 % 자리, 그 자세, 가까운 짝.
+fn blocked_text(model: &Model, what: &str, blocked: &crate::collision::Blocked) -> String {
+    let angles: Vec<String> = JOINT_NAMES
+        .iter()
+        .zip(blocked.q)
+        .map(|(name, a)| format!("{name} {:.1}°", a.to_degrees()))
+        .collect();
+    format!(
+        "부딪힘 검사: {what}에서 막힌다. 길의 {:.0}% 자리({})에서 {} (여유 {} mm)",
+        blocked.fraction * 100.0,
+        angles.join(", "),
+        model.describe(&blocked.nearest),
+        model.margin()
+    )
 }
 
 impl Script {
@@ -236,6 +263,7 @@ impl Script {
             }
         });
         let mut steps = Vec::new();
+        let mut hot_return = None;
         let last = file.steps.len().saturating_sub(1);
         for (n, step) in file.steps.iter().enumerate() {
             let at = format!("{}번째 단계", n + 1);
@@ -249,6 +277,15 @@ impl Script {
                     "{at}: pause, move, hold_s, grip, release 가운데 하나만 적는다"
                 ));
                 continue;
+            }
+            if let Some(flag) = step.hot_return {
+                if step.move_to.is_none() {
+                    problems.push(format!("{at}: hot_return은 move 단계에만 적는다"));
+                } else if !flag {
+                    problems.push(format!("{at}: hot_return은 true만 적는다"));
+                } else if hot_return.replace(n).is_some() {
+                    problems.push(format!("{at}: hot_return은 한 단계에만 적는다"));
+                }
             }
             if let Some(text) = &step.pause {
                 steps.push(Step::Pause(text.clone()));
@@ -297,14 +334,15 @@ impl Script {
             speed: speed / 100.0,
             start,
             steps,
+            hot_return,
         })
     }
 
     /// 순서의 움직이기를 부딪힘 검사로 거른다 (0041). `start`는 지금 팔의 관절 각 [rad] (J1 ~ J6)이다. 단계마다
-    /// 순서의 관절만 목표로 바뀌고 나머지 관절은 그 자리다. 통과하면 사람이 볼 요약을, 막히면 어느 단계 어느
-    /// 짝인지 알리는 글을 낸다.
+    /// 순서의 관절만 목표로 바뀌고 나머지 관절은 그 자리다. 뜨거울 때 돌아갈 곳(`hot_return`)이 있으면, 그 앞의
+    /// 단계마다 그 단계를 시작하는 자리에서 돌아갈 곳으로 곧게 가는 길도 본다. 통과하면 사람이 볼 요약을, 막히면
+    /// 어느 단계 어느 짝인지 알리는 글을 낸다.
     pub fn check_collisions(&self, model: &Model, start: &[f64; 6]) -> Result<String, String> {
-        let index_of = |name: &str| JOINT_NAMES.iter().position(|known| *known == name);
         let mut q = *start;
         if let Some(found) = model.first_within(&q, model.margin()) {
             return Err(format!(
@@ -315,51 +353,88 @@ impl Script {
         }
         let mut moves = 0;
         let mut samples = 0;
-        let mut closest: Option<(usize, crate::collision::Nearest)> = None;
+        let mut closest: Option<(String, crate::collision::Nearest)> = None;
+        // 뜨거울 때 돌아가는 길의 출발점: (단계 번호, 그 단계를 시작하는 자리)
+        // 돌아가기는 첫 움직이기를 마친 뒤에만 한다 (쉬는 자세에서 곧게 가면 아래팔이 선반을 긁는다, 0037)
+        let mut departures: Vec<(usize, [f64; 6])> = Vec::new();
+        let mut left = false;
         for (n, step) in self.steps.iter().enumerate() {
+            if left
+                && self.hot_return.is_some_and(|target| n < target)
+                && departures.last().is_none_or(|(_, last)| *last != q)
+            {
+                departures.push((n, q));
+            }
             let Step::Move(targets) = step else {
                 continue;
             };
-            let mut next = q;
-            for &(index, angle) in targets {
-                let k = index_of(self.joints[index])
-                    .ok_or_else(|| format!("{}은 팔의 관절이 아니다", self.joints[index]))?;
-                next[k] = angle;
-            }
-            match model.check_move(&q, &next) {
-                Ok(report) => {
-                    moves += 1;
-                    samples += report.samples;
-                    if closest.is_none_or(|(_, c)| report.nearest.distance < c.distance) {
-                        closest = Some((n + 1, report.nearest));
-                    }
-                }
-                Err(blocked) => {
-                    let angles: Vec<String> = JOINT_NAMES
-                        .iter()
-                        .zip(blocked.q)
-                        .map(|(name, a)| format!("{name} {:.1}°", a.to_degrees()))
-                        .collect();
-                    return Err(format!(
-                        "부딪힘 검사: {}번째 단계(움직이기)에서 막힌다. 길의 {:.0}% 자리({})에서 {} (여유 {} mm)",
-                        n + 1,
-                        blocked.fraction * 100.0,
-                        angles.join(", "),
-                        model.describe(&blocked.nearest),
-                        model.margin()
-                    ));
-                }
+            left = true;
+            let next = self.moved(&q, targets)?;
+            let what = format!("{}번째 단계(움직이기)", n + 1);
+            let report = model
+                .check_move(&q, &next)
+                .map_err(|blocked| blocked_text(model, &what, &blocked))?;
+            moves += 1;
+            samples += report.samples;
+            if closest
+                .as_ref()
+                .is_none_or(|(_, c)| report.nearest.distance < c.distance)
+            {
+                closest = Some((format!("{}번째 단계", n + 1), report.nearest));
             }
             q = next;
         }
+        let mut returns = 0;
+        if let Some(target) = self.hot_return
+            && let Some(Step::Move(targets)) = self.steps.get(target)
+        {
+            for (n, from) in departures {
+                let to = self.moved(&from, targets)?;
+                let what = format!(
+                    "{}번째 단계에서 뜨거울 때 돌아갈 곳({}번째 단계)으로 가는 길",
+                    n + 1,
+                    target + 1
+                );
+                let report = model
+                    .check_move(&from, &to)
+                    .map_err(|blocked| blocked_text(model, &what, &blocked))?;
+                returns += 1;
+                samples += report.samples;
+                if closest
+                    .as_ref()
+                    .is_none_or(|(_, c)| report.nearest.distance < c.distance)
+                {
+                    closest = Some((what, report.nearest));
+                }
+            }
+        }
         let near = match closest {
             None => String::new(),
-            Some((n, c)) => format!(", 가장 가까운 것은 {n}번째 단계의 {}", model.describe(&c)),
+            Some((where_, c)) => format!(", 가장 가까운 것은 {where_}의 {}", model.describe(&c)),
+        };
+        let back = if self.hot_return.is_some() {
+            format!(", 뜨거울 때 돌아가는 길 {returns}개")
+        } else {
+            String::new()
         };
         Ok(format!(
-            "부딪힘 검사: 움직이기 {moves}개를 지난다 (자세 {samples}개 검사, 여유 {} mm{near})",
+            "부딪힘 검사: 움직이기 {moves}개를 지난다{back} (자세 {samples}개 검사, 여유 {} mm{near})",
             model.margin()
         ))
+    }
+
+    /// 자세 `q`(J1 ~ J6)에서 움직이기의 목표를 적용한 자세. 순서에 없는 관절은 그 자리다.
+    fn moved(&self, q: &[f64; 6], targets: &[(usize, f64)]) -> Result<[f64; 6], String> {
+        let mut next = *q;
+        for &(index, angle) in targets {
+            let name = self.joints[index];
+            let k = JOINT_NAMES
+                .iter()
+                .position(|known| *known == name)
+                .ok_or_else(|| format!("{name}은 팔의 관절이 아니다"))?;
+            next[k] = angle;
+        }
+        Ok(next)
     }
 
     /// 버티기를 `max_s`초까지로 줄이고 줄인 버티기 수를 낸다 (실행 명령의 --hold-max: 시뮬레이션은 온도를
@@ -408,7 +483,12 @@ impl Script {
                             format!("{} {:.1}°", self.joints[index], angle.to_degrees())
                         })
                         .collect();
-                    format!("움직이기: {}", parts.join(", "))
+                    let back = if self.hot_return == Some(n) {
+                        " (뜨거우면 여기로 돌아온다)"
+                    } else {
+                        ""
+                    };
+                    format!("움직이기: {}{back}", parts.join(", "))
                 }
                 Step::Hold(seconds) => {
                     format!("버티기: {seconds} s (온도가 알림 기준에 닿으면 일찍 끝낸다)")
@@ -457,6 +537,10 @@ pub struct Runner {
     released: bool,
     /// 시작 자세를 봤다 (첫 박자에 한 번)
     checked_start: bool,
+    /// 뜨거워 돌아갈 곳으로 건너뛰었다 (한 번만)
+    returned: bool,
+    /// 첫 움직이기를 마쳤다: 그 전에는 돌아가지 않는다 (시작 자세에서 곧게 가는 길은 검사하지 않았다)
+    left_start: bool,
 }
 
 impl Runner {
@@ -479,7 +563,35 @@ impl Runner {
             events: Vec::new(),
             released: false,
             checked_start: false,
+            returned: false,
+            left_start: false,
         }
+    }
+
+    /// 서보 온도가 알림 기준에 닿았고 뜨거울 때 돌아갈 곳이 아직 앞에 있으면 그 단계로 건너뛴다. 건너뛰었으면
+    /// 참이다 (한 번만 건너뛴다).
+    fn return_if_hot<B: ServoBus>(&mut self, run: &RunLoop<B>, console: &mut dyn Console) -> bool {
+        let Some(target) = self.script.hot_return else {
+            return false;
+        };
+        if self.returned || !self.left_start || self.index >= target {
+            return false;
+        }
+        let hottest = run.hottest().map_or(0, |(_, temperature)| temperature);
+        if f64::from(hottest) < self.temperature_warn {
+            return false;
+        }
+        let text = format!(
+            "[{}] 온도 {hottest}°C가 알림 기준 {}°C에 닿아, 남은 단계를 건너뛰고 {}번째 단계로 돌아간다",
+            self.label(),
+            self.temperature_warn,
+            target + 1
+        );
+        self.note(console, text);
+        self.returned = true;
+        self.index = target;
+        self.phase = Phase::Begin;
+        true
     }
 
     /// 순서가 모든 관절의 토크를 껐다 (끈 뒤에는 박자를 돌리지 않아 읽은 상태로는 알 수 없다).
@@ -561,8 +673,27 @@ impl Runner {
                 }
                 self.note(console, "시작 자세를 확인했다".to_owned());
             }
+            // 뜨거울 때 돌아갈 곳이 있는 순서(짐을 드는 시험)는 식은 서보로 시작한다. 쉬는 자세로 가는 순서는 이
+            // 검사가 없어 뜨거워도 돈다
+            let hottest = run.hottest();
+            if self.script.hot_return.is_some()
+                && let Some((id, temperature)) = hottest
+                && f64::from(temperature) >= self.temperature_warn
+            {
+                let text = format!(
+                    "서보 {id}가 이미 {temperature}°C로 알림 기준 {}°C에 닿아 있어 시작하지 않는다. 식힌 뒤 다시 \
+                     돌린다",
+                    self.temperature_warn
+                );
+                self.note(console, text.clone());
+                return Status::Stopped(text);
+            }
         }
         loop {
+            // 단계를 시작할 때마다 본다: 하던 움직이기는 끝까지 가고 나서 돌아간다
+            if self.phase == Phase::Begin && self.return_if_hot(run, console) {
+                continue;
+            }
             let Some(step) = self.script.steps.get(self.index).cloned() else {
                 return Status::Done;
             };
@@ -631,6 +762,7 @@ impl Runner {
                         self.note(console, text.clone());
                         return Status::Stopped(text);
                     }
+                    self.left_start = true;
                     self.next();
                 }
                 (Phase::Begin, Step::Hold(seconds)) => {
@@ -646,6 +778,9 @@ impl Runner {
                         let text = format!("[{}] 사람이 멈췄다", self.label());
                         self.note(console, text.clone());
                         return Status::Stopped(text);
+                    }
+                    if self.return_if_hot(run, console) {
+                        continue;
                     }
                     let hottest = run.hottest().map_or(0, |(_, temperature)| temperature);
                     if f64::from(hottest) >= self.temperature_warn {
@@ -1029,6 +1164,95 @@ mod tests {
         );
         // 버티기를 끝내고 다음 단계(움직이기)를 했다
         assert!((run.targets()[0] - 10f64.to_radians()).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_warm_servo_skips_to_the_hot_return_step() {
+        let settings = settings();
+        // 20°에서 버티다 뜨거워지면 40°로 가지 않고, 돌아갈 곳(5°)으로 간 뒤 남은 순서를 한다
+        let text = "name = \"t\"\njoints = [\"j3\"]\n\
+                    [[steps]]\nmove = { j3 = 20.0 }\n\
+                    [[steps]]\nhold_s = 600\n\
+                    [[steps]]\nmove = { j3 = 40.0 }\n\
+                    [[steps]]\nhold_s = 600\n\
+                    [[steps]]\nmove = { j3 = 5.0 }\nhot_return = true\n\
+                    [[steps]]\nhold_s = 1\n";
+        let script = Script::parse(text, &settings).unwrap();
+        assert_eq!(script.hot_return, Some(4));
+        assert!(script.describe().contains("뜨거우면 여기로"));
+        let mut run = run_loop(&settings);
+        let mut runner = Runner::new(script, &settings.run_loop, DT);
+        let mut keys = Keys::default();
+        let warm = settings.run_loop.temperature_warn as i32;
+        let mut peak = 0.0_f64;
+        let status = drive(&mut run, &mut runner, &mut keys, 20_000, |run, now| {
+            if now > 3.0 {
+                run.joints_for_test().wire().servos[0].set(reg::PRESENT_TEMPERATURE, warm);
+            }
+            peak = peak.max(run.targets()[0]);
+        });
+        assert_eq!(status, Status::Done);
+        assert!(
+            keys.said
+                .iter()
+                .any(|line| line.contains("5번째 단계로 돌아간다")),
+            "{:?}",
+            keys.said
+        );
+        assert!(peak < 20f64.to_radians() + 1e-9, "{}", peak.to_degrees());
+        assert!((run.targets()[0] - 5f64.to_radians()).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_script_with_a_hot_return_does_not_start_hot() {
+        let settings = settings();
+        let text = "name = \"t\"\njoints = [\"j3\"]\n\
+                    [[steps]]\nmove = { j3 = 20.0 }\n\
+                    [[steps]]\nhold_s = 600\n\
+                    [[steps]]\nmove = { j3 = 5.0 }\nhot_return = true\n";
+        let script = Script::parse(text, &settings).unwrap();
+        // 실행 루프를 세울 때 이미 뜨겁다 (세울 때 읽은 온도로 온도 기록을 채운다)
+        let warm = settings.run_loop.temperature_warn as i32;
+        let joint = settings.joint("j3").unwrap();
+        let servo = Servo::from_joint(joint).unwrap();
+        let mut fake = programmed(FakeServo::with(3, joint.model_number, 2048), &servo);
+        fake.set(reg::PRESENT_TEMPERATURE, warm);
+        let joints = Joints::open(
+            open_fake_bus([fake]),
+            vec![servo],
+            Caps::for_loop(&settings.run_loop),
+        )
+        .unwrap();
+        let mut run = RunLoop::start(joints, settings.run_loop, None).unwrap();
+        let mut runner = Runner::new(script, &settings.run_loop, DT);
+        let mut keys = Keys::default();
+        let status = drive(&mut run, &mut runner, &mut keys, 2000, |_, _| {});
+        assert!(
+            matches!(&status, Status::Stopped(text) if text.contains("시작하지 않는다")),
+            "{status:?}"
+        );
+        assert!(run.targets()[0].abs() < 1e-9, "움직이지 않았다");
+    }
+
+    #[test]
+    fn hot_return_marks_one_move_step() {
+        let settings = settings();
+        let parse = |steps: &str| {
+            Script::parse(
+                &format!("name = \"t\"\njoints = [\"j3\"]\n{steps}"),
+                &settings,
+            )
+        };
+        let error = parse("[[steps]]\nhold_s = 1\nhot_return = true\n").unwrap_err();
+        assert!(error.contains("move 단계에만"), "{error}");
+        let error = parse(
+            "[[steps]]\nmove = { j3 = 1.0 }\nhot_return = true\n\
+             [[steps]]\nmove = { j3 = 2.0 }\nhot_return = true\n",
+        )
+        .unwrap_err();
+        assert!(error.contains("한 단계에만"), "{error}");
+        let error = parse("[[steps]]\nmove = { j3 = 1.0 }\nhot_return = false\n").unwrap_err();
+        assert!(error.contains("true만"), "{error}");
     }
 
     #[test]

@@ -100,7 +100,7 @@ fn first_power_scripts_leave_and_return_by_the_rest_pose_and_pass_the_collision_
     let scripts = first_power();
     assert_eq!(
         scripts.len(),
-        4,
+        3,
         "{:?}",
         scripts.iter().map(|s| &s.0).collect::<Vec<_>>()
     );
@@ -134,6 +134,17 @@ fn first_power_scripts_leave_and_return_by_the_rest_pose_and_pass_the_collision_
             .check_collisions(&model, &rest)
             .unwrap_or_else(|e| panic!("{name}: {e}"));
         println!("{name}: {summary}");
+        // 짐을 드는 어깨 버티기는 뜨거우면 홈 자세로 돌아가 짐을 빼고, 그 길도 검사했다
+        if name.contains("shoulder") {
+            let target = script
+                .hot_return
+                .unwrap_or_else(|| panic!("{name}: hot_return"));
+            assert!(
+                matches!(&script.steps[target], Step::Move(_)),
+                "{name}: 돌아갈 곳은 움직이기"
+            );
+            assert!(summary.contains("뜨거울 때 돌아가는 길"), "{summary}");
+        }
     }
 }
 
@@ -180,11 +191,13 @@ impl Console for Operator {
     fn status(&mut self, _text: &str) {}
 }
 
-/// 순서를 시뮬레이션에서 실행 명령처럼 돌린다 (버티기는 2초로 줄인다). 끝난 상태, 끝의 목표 [rad], 말한 줄.
+/// 순서를 시뮬레이션에서 실행 명령처럼 돌린다 (버티기는 2초로 줄인다). `heat`는 (서보 ID, 온도, 시뮬레이션 시간
+/// [s]): 그 시간부터 그 서보가 그 온도로 읽힌다. 끝난 상태, 끝의 목표 [rad], 말한 줄.
 fn run_on_simulation(
     address: &str,
     settings: &Settings,
     mut script: Script,
+    heat: Option<(u8, i32, f64)>,
 ) -> (Status, Vec<f64>, Vec<String>) {
     script.cap_holds(2.0);
     let mut joints: Vec<&Joint> = script
@@ -212,13 +225,16 @@ fn run_on_simulation(
         .zip(&script.start.as_ref().unwrap().angles)
         .map(|(name, angle)| ((*name).to_owned(), *angle))
         .collect();
-    let bus = SimBus::connect_at(
+    let mut bus = SimBus::connect_at(
         address,
         std::time::Duration::from_secs_f64(DT),
         &sim,
         &start,
     )
     .unwrap();
+    if let Some((id, celsius, at)) = heat {
+        bus.heat(id, celsius, at).unwrap();
+    }
     // 시뮬레이션은 메모리 표를 흉내 내지 않는다 (실행 명령과 같다)
     let servos: Vec<Servo> = joints
         .iter()
@@ -262,7 +278,7 @@ fn first_power_scripts_run_to_the_end_on_the_simulation() {
             .iter()
             .filter(|step| matches!(step, Step::Pause(_)))
             .count();
-        let (status, end, said) = run_on_simulation(&address, &settings, script);
+        let (status, end, said) = run_on_simulation(&address, &settings, script, None);
         assert_eq!(status, Status::Done, "{name}: {said:?}");
         assert!(same(&end, &rest), "{name}: 쉬는 자세에서 끝난다");
         let waited = said.iter().filter(|line| line.ends_with("(Enter)")).count();
@@ -274,4 +290,35 @@ fn first_power_scripts_run_to_the_end_on_the_simulation() {
             );
         }
     }
+}
+
+/// 어깨 버티기 도중 J2가 온도 알림 기준에 닿으면, 더 힘든 자세로 가지 않고 홈 자세로 돌아가 짐을 빼고 쉬는 자세에서
+/// 토크를 끄고 끝난다 (0034). 시뮬레이션 시간 30초는 반지름 20 ~ 24 cm 자세 둘레다 (버티기는 2초로 줄였다).
+#[test]
+fn the_shoulder_hold_goes_back_home_when_a_servo_gets_warm() {
+    let (_server, address) = start_server();
+    let settings = settings();
+    let rest = *settings.pose("rest").unwrap();
+    let (name, text) = first_power()
+        .into_iter()
+        .find(|(name, _)| name.contains("shoulder"))
+        .unwrap();
+    let script = parse(&name, &text, &settings);
+    let target = script.hot_return.unwrap();
+    // 가장 힘든 자세(30 cm)로 가는 움직이기: 돌아갈 곳 앞의 마지막 움직이기
+    let hardest = (0..target)
+        .rev()
+        .find(|&n| matches!(script.steps[n], Step::Move(_)))
+        .unwrap();
+    let warm = settings.run_loop.temperature_warn as i32;
+    let (status, end, said) = run_on_simulation(&address, &settings, script, Some((2, warm, 30.0)));
+    assert_eq!(status, Status::Done, "{said:?}");
+    assert!(same(&end, &rest), "쉬는 자세에서 끝난다");
+    let back = format!("{}번째 단계로 돌아간다", target + 1);
+    assert!(said.iter().any(|line| line.contains(&back)), "{said:?}");
+    let skipped = format!("[{}-move]", hardest + 1);
+    assert!(
+        !said.iter().any(|line| line.starts_with(&skipped)),
+        "30 cm 자세로 가지 않는다: {said:?}"
+    );
 }

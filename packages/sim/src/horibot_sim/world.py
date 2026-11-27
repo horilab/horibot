@@ -149,6 +149,8 @@ class World:
         self.period = period
         self.substeps = max(1, round(period / self.model.opt.timestep))
         self.time = 0.0
+        # 시험용: (시뮬레이션 시간, 서보 ID, 온도) — 그 시간부터 그 온도로 읽힌다 (heat)
+        self.heats: list[tuple[float, int, int]] = []
         stall_sts3250 = stalls["STS3250"]
         self.servos: dict[int, Servo] = {}
         for servo_id, joint, model, direction, offset, stall in planned:
@@ -180,9 +182,23 @@ class World:
             mujoco.mj_step(self.model, self.data)
         self.time += self.substeps * self.model.opt.timestep
         self._read_back()
+        self._apply_heats()
 
     def write(self, servo_id: int, name: str, value: int) -> None:
         self.servos[servo_id].regs[name] = value
+
+    def heat(self, servo_id: int, celsius: int, at: float = 0.0) -> None:
+        """시험용: 시뮬레이션 시간 at [s]부터 서보 온도가 celsius로 읽힌다 (온도는 흉내 내지 않아 그대로 남는다)."""
+        if servo_id not in self.servos:
+            raise KeyError(servo_id)
+        self.heats.append((at, servo_id, celsius))
+        self._apply_heats()
+
+    def _apply_heats(self) -> None:
+        due = [h for h in self.heats if h[0] <= self.time + 1e-9]
+        for _, servo_id, celsius in due:
+            self.servos[servo_id].regs["present_temperature"] = celsius
+        self.heats = [h for h in self.heats if h not in due]
 
     def power_cycle(self, servo_id: int) -> None:
         """서보 전원을 껐다 켠다: RAM은 처음 값이 되고, 잠근 채 쓴 EEPROM 값은 사라진다."""

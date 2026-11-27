@@ -10,7 +10,8 @@
 - sync_read {ids, registers} → {replies: {id: {values, fault} | {error}}, time}. 답하기 전에 한 주기만큼 진행한다.
 - write {id, register, value} → {fault}. sync_write {register, values: [[id, value]]}.
 - write_trial {id, values: [[register, value]]}. dump {id} → {bytes} (메모리 표는 흉내 내지 않아 비어 있다).
-- 시험용: power_cycle {id}, state → {time, angles}.
+- 시험용: power_cycle {id}, heat {id, celsius, at?} (시뮬레이션 시간 at부터 그 온도로 읽힌다. 온도는 흉내 내지
+  않는다), state → {time, angles}.
 
 `--viewer`면 MuJoCo 창을 띄워 세계를 보기 모델(build/sim/horibot_view.xml)로 그린다 (view.py).
 """
@@ -116,6 +117,12 @@ class Session:
             return NO_REPLY if int(request["id"]) not in servos else {"ok": True, "bytes": []}
         if op == "power_cycle":
             world.power_cycle(int(request["id"]))
+            return {"ok": True}
+        if op == "heat":
+            servo_id = int(request["id"])
+            if servo_id not in servos:
+                return NO_REPLY
+            world.heat(servo_id, int(request["celsius"]), float(request.get("at", 0.0)))
             return {"ok": True}
         if op == "state":
             angles = {servo.joint: world.angle(servo.id) for servo in servos.values()}

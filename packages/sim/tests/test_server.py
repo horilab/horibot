@@ -182,6 +182,19 @@ def test_servo_keeps_the_position_offset_burned_at_zeroing(ask: Ask) -> None:
     assert not ask(op="hello", period=0.01, servos=[{**servo, "position_offset": 2048}])["ok"]
 
 
+def test_heat_makes_a_servo_read_hot_from_the_given_time(ask: Ask) -> None:
+    # 시험용: 시뮬레이션은 온도를 흉내 내지 않아 시험이 정한다 (뜨거울 때 순서가 돌아가는지 본다, 0034)
+    assert ask(op="heat", id=2, celsius=46, at=0.05)["ok"]
+    hot = ["present_temperature"]
+    first = ask(op="sync_read", ids=[2], registers=hot)
+    assert first["replies"]["2"]["values"]["present_temperature"] == 25
+    for _ in range(4):
+        ask(op="sync_read", ids=[2], registers=hot)
+    assert ask(op="read", id=2, registers=hot)["values"]["present_temperature"] == 46
+    assert ask(op="read", id=3, registers=hot)["values"]["present_temperature"] == 25
+    assert not ask(op="heat", id=9, celsius=46)["ok"]
+
+
 def test_world_starts_at_the_given_pose(ask: Ask) -> None:
     # 시험 순서의 시작 자세(예: 쉬는 자세)에서 시작한다. 적지 않은 관절은 범위 가운데다 (0034)
     servos = [{"id": 4, "joint": "j4", "model": 2825, "direction": -1}]
