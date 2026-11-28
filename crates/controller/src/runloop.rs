@@ -1967,6 +1967,29 @@ mod tests {
         run.submit(line([0.1, 0.1], 1.0)).unwrap();
     }
 
+    /// 토크가 꺼진 동안 소프트 한계 밖의 기계 멈춤까지 내려간 관절도 켜고 붙잡는다: 목표를 가까운 한계로 잡고 서보가
+    /// 그리 간다 (2026-11-28: 쉬는 자세 밖에서 늘어진 손목의 J4가 한계 20° 밖 15.9°에 있었다. 읽은 위치를 목표로
+    /// 쓰면 서보만 한계로 가고 목표는 한계 밖에 남아, 실행 루프가 첫 박자에 고장으로 선다).
+    #[test]
+    fn a_joint_resting_beyond_its_soft_limit_is_held_at_the_limit() {
+        // 한계 -30° ~ 118°, 영점 2048에서 0°: 아래 한계는 1707칸이고, 서보에 구운 각도 한계는 1706칸이다
+        let mut run = two_joints_reading(|servo| servo.set(reg::PRESENT_POSITION, 1660));
+        let lower = run.joints.servo(3).unwrap().min_raw;
+        assert_eq!(lower, 1707);
+        settle(&mut run);
+        assert_eq!(run.mode(), &Mode::Holding);
+        for index in 0..2 {
+            assert_eq!(fake(&mut run, index).get(reg::GOAL_POSITION), lower);
+            assert_eq!(position(&mut run, index), lower);
+        }
+        let low = run.angle_limits().unwrap()[0].0;
+        assert!(
+            run.targets
+                .iter()
+                .all(|&target| (target - low).abs() < 1e-12)
+        );
+    }
+
     /// 판단 창이 차기 전에는 정말 뜨거워도 쉬지 않고, 차는 박자에 쉰다 (시험 순서는 그때까지 기다렸다 시작한다).
     #[test]
     fn heat_is_judged_once_the_window_is_full() {

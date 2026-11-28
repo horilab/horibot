@@ -423,11 +423,11 @@ impl<B: ServoBus> Joints<B> {
             .collect()
     }
 
-    /// 토크를 켠다 (0009). 꺼져 있으면 목표를 현재 위치로 맞추고 상한을 쓴 뒤 켠다. 이미 켜져 있으면 아무것도
-    /// 쓰지 않고 이어받는다. 서보 보호 비트가 켜져 있거나(보호가 걸려도 토크 스위치는 켜진 채다), 로봇 관절의
-    /// 위치 오프셋이 로봇 설정과 다르면(읽는 위치가 그만큼 틀어진다) 켜지도 이어받지도 않는다 (0024). 로봇 설정이
-    /// EEPROM 목표를 주면 덤프로 모두 견주고, 하나라도 다르면 켜지 않는다 (예비 서보를 갈아 끼우고 값 적용을
-    /// 빠뜨리면 각도 한계와 보호 설정이 다르다).
+    /// 토크를 켠다 (0009). 꺼져 있으면 목표를 현재 위치(한계 밖이면 가까운 한계)로 맞추고 상한을 쓴 뒤 켠다.
+    /// 이미 켜져 있으면 아무것도 쓰지 않고 이어받는다. 서보 보호 비트가 켜져 있거나(보호가 걸려도 토크 스위치는
+    /// 켜진 채다), 로봇 관절의 위치 오프셋이 로봇 설정과 다르면(읽는 위치가 그만큼 틀어진다) 켜지도 이어받지도
+    /// 않는다 (0024). 로봇 설정이 EEPROM 목표를 주면 덤프로 모두 견주고, 하나라도 다르면 켜지 않는다 (예비
+    /// 서보를 갈아 끼우고 값 적용을 빠뜨리면 각도 한계와 보호 설정이 다르다).
     pub fn enable(&mut self, id: u8) -> Result<Enabled, String> {
         self.require_running()?;
         let state = self.snapshot(id)?;
@@ -465,7 +465,11 @@ impl<B: ServoBus> Joints<B> {
             return Ok(Enabled::AlreadyOn);
         }
         let caps = self.caps;
-        self.write(id, reg::GOAL_POSITION, state.position)?;
+        // 지금 위치가 한계 밖이면(토크가 꺼진 동안 관절이 소프트 한계 밖의 기계 멈춤까지 내려갔다) 서보는 토크를 켜면
+        // 스스로 각도 한계까지 가지만 목표는 쓴 값 그대로 남는다 (0024의 맨 서보 확인). 그 목표를 이어받은 실행
+        // 루프가 한계 밖 목표로 고장 나지 않게, 목표를 가까운 한계로 쓴다
+        let goal = state.position.clamp(servo.min_raw, servo.max_raw);
+        self.write(id, reg::GOAL_POSITION, goal)?;
         let torque_limit = servo
             .torque_limit
             .map_or(caps.torque_limit, |limit| limit.min(caps.torque_limit));
