@@ -51,6 +51,16 @@ impl MotionLimits {
             jerk: vec![jerk; joints],
         }
     }
+
+    /// 속도, 가속, 저크 한계에 모두 `factor`를 곱한 한계 (시험 순서의 빠르기).
+    pub fn scaled(&self, factor: f64) -> Self {
+        let scale = |values: &[f64]| values.iter().map(|value| value * factor).collect();
+        Self {
+            velocity: scale(&self.velocity),
+            acceleration: scale(&self.acceleration),
+            jerk: scale(&self.jerk),
+        }
+    }
 }
 
 /// 관절 이동: `start`에서 `goal`까지 멈춘 채 시작해 멈춘 채 끝나고, 모든 관절이 같이 끝난다. 점은 `period`마다
@@ -127,12 +137,16 @@ pub fn move_joints(
 ///   계산해 다음 박자가 2.6 ~ 5.8 ms 늦게 깼다).
 /// - 그 자리에서([`Planner::inline`]): 시험과 시뮬레이션. 맡긴 박자에 결과가 나와 박자 수가 늘 같다.
 ///
-/// 한 번에 하나만 맡는다: 결과를 받기 전에 다시 맡기면 거절한다.
+/// 한 번에 하나만 맡는다: 결과를 받기 전에 다시 맡기면 거절한다. 한계는 실행 루프의 한계 그대로 주고, 맡길 때마다
+/// 거기에 곱할 빠르기를 준다 (시험 순서는 움직이기마다 빠르기가 다를 수 있다).
 pub struct Planner {
     work: Work,
     /// 맡긴 계산의 결과를 아직 받지 않았다
     pending: bool,
 }
+
+/// 계산 스레드에 맡기는 일: 시작, 목표, 한계에 곱할 빠르기
+type Job = (Vec<f64>, Vec<f64>, f64);
 
 enum Work {
     Inline {
@@ -141,7 +155,7 @@ enum Work {
         done: Option<Result<Trajectory, String>>,
     },
     Thread {
-        requests: Sender<(Vec<f64>, Vec<f64>)>,
+        requests: Sender<Job>,
         results: Receiver<Result<Trajectory, String>>,
     },
 }
@@ -162,17 +176,15 @@ impl Planner {
     /// 계산 스레드를 띄운다. 스레드는 실행 루프의 코어를 피하고, 이 값이 사라지면(맡길 줄이 닫히면) 끝난다. 실행
     /// 루프 스레드가 아닌 곳에서 부른다: 새 스레드는 부른 스레드의 실시간 설정(코어, 우선순위)을 물려받는다.
     pub fn spawn(limits: MotionLimits, period: f64) -> Result<Self, String> {
-        let (requests, jobs) = mpsc::channel::<(Vec<f64>, Vec<f64>)>();
+        let (requests, jobs) = mpsc::channel::<Job>();
         let (done, results) = mpsc::channel();
         thread::Builder::new()
             .name("planner".to_owned())
             .spawn(move || {
                 crate::system::avoid_loop_cpu();
-                for (start, goal) in jobs {
-                    if done
-                        .send(move_joints(&start, &goal, &limits, period))
-                        .is_err()
-                    {
+                for (start, goal, speed) in jobs {
+                    let planned = move_joints(&start, &goal, &limits.scaled(speed), period);
+                    if done.send(planned).is_err() {
                         break;
                     }
                 }
@@ -184,19 +196,23 @@ impl Planner {
         })
     }
 
-    /// `start`에서 `goal`까지의 관절 이동([`move_joints`])을 맡긴다.
-    pub fn request(&mut self, start: &[f64], goal: &[f64]) -> Result<(), String> {
+    /// `start`에서 `goal`까지의 관절 이동([`move_joints`])을 맡긴다. `speed`는 한계(속도, 가속, 저크)에 곱하는
+    /// 몫이다 (0보다 크고 1 이하).
+    pub fn request(&mut self, start: &[f64], goal: &[f64], speed: f64) -> Result<(), String> {
         if self.pending {
             return Err("앞서 맡긴 계산의 결과를 아직 받지 않았다".to_owned());
+        }
+        if !(speed.is_finite() && speed > 0.0 && speed <= 1.0) {
+            return Err(format!("빠르기는 0보다 크고 1 이하다: {speed}"));
         }
         match &mut self.work {
             Work::Inline {
                 limits,
                 period,
                 done,
-            } => *done = Some(move_joints(start, goal, limits, *period)),
+            } => *done = Some(move_joints(start, goal, &limits.scaled(speed), *period)),
             Work::Thread { requests, .. } => requests
-                .send((start.to_vec(), goal.to_vec()))
+                .send((start.to_vec(), goal.to_vec(), speed))
                 .map_err(|_| "계획 스레드가 멈췄다".to_owned())?,
         }
         self.pending = true;
@@ -520,7 +536,8 @@ mod tests {
         assert!((1.0..2.0).contains(&duration), "{duration}");
     }
 
-    /// 계산 스레드도 그 자리에서 계산한 것과 같은 궤적을 낸다. 결과를 받기 전에는 다시 맡지 않는다.
+    /// 계산 스레드도 그 자리에서 계산한 것과 같은 궤적을 낸다. 결과를 받기 전에는 다시 맡지 않는다. 빠르기는 한계에
+    /// 곱한다.
     #[test]
     fn the_planner_thread_gives_the_same_trajectory() {
         let limits = MotionLimits::same(2, 1.0, 2.0, 10.0);
@@ -528,8 +545,18 @@ mod tests {
         let expected = move_joints(&start, &goal, &limits, PERIOD).unwrap();
         let mut inline = Planner::inline(limits.clone(), PERIOD);
         assert!(inline.poll().is_none(), "맡긴 것이 없다");
-        inline.request(&start, &goal).unwrap();
+        inline.request(&start, &goal, 1.0).unwrap();
         assert_eq!(inline.poll().unwrap().unwrap(), expected);
+        let half = move_joints(&start, &goal, &limits.scaled(0.5), PERIOD).unwrap();
+        inline.request(&start, &goal, 0.5).unwrap();
+        assert_eq!(inline.poll().unwrap().unwrap(), half);
+        assert!(
+            half.points.len() > expected.points.len() * 3 / 2,
+            "반 빠르기는 오래 걸린다"
+        );
+        for wrong in [0.0, 1.5, f64::NAN] {
+            assert!(inline.request(&start, &goal, wrong).is_err(), "{wrong}");
+        }
         let mut planner = Planner::spawn(limits, PERIOD).unwrap();
         let wait = |planner: &mut Planner| {
             let started = std::time::Instant::now();
@@ -545,13 +572,15 @@ mod tests {
             }
         };
         for _ in 0..2 {
-            planner.request(&start, &goal).unwrap();
-            assert!(planner.request(&start, &goal).is_err());
+            planner.request(&start, &goal, 1.0).unwrap();
+            assert!(planner.request(&start, &goal, 1.0).is_err());
             assert_eq!(wait(&mut planner).unwrap(), expected);
             assert!(planner.poll().is_none());
         }
+        planner.request(&start, &goal, 0.5).unwrap();
+        assert_eq!(wait(&mut planner).unwrap(), half);
         // 맡을 수 없는 이동은 오류가 돌아온다
-        planner.request(&[0.0], &goal).unwrap();
+        planner.request(&[0.0], &goal, 1.0).unwrap();
         let error = wait(&mut planner).unwrap_err();
         assert!(error.contains("관절 수"), "{error}");
     }

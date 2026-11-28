@@ -43,8 +43,9 @@ use horibot_controller::runloop::{Mode, RunLoop};
 use horibot_controller::runner::{Runner, Script, Status, Step};
 use horibot_controller::settings::{Direction, GRIPPER_NAME, JOINT_NAMES, Joint, Settings};
 use horibot_controller::system::{self, Environment, LoopThread};
+use horibot_controller::trial::{self, Trials};
 use horibot_controller::zero;
-use horibot_servo::feetech::registers::{self as reg, BAUD_RATES};
+use horibot_servo::feetech::registers::{self as reg, BAUD_RATES, Register};
 use horibot_servo::feetech::{Bus, Error, SerialLink, ServoBus};
 use horibot_servo::sim::{SimBus, SimServo};
 use serde_json::{Value, json};
@@ -100,6 +101,9 @@ const USAGE: &str = "\
   --hold-max <초>     순서의 버티기를 이 시간까지로 줄인다 (run --sim에서만. 시뮬레이션은 온도를 흉내 내지
                       않아 오래 버텨도 새로 볼 것이 없다. 기록에 남는다)
   --no-gamepad        게임패드 없이 Enter로만 돌린다 (run, 리눅스. 기록에 남는다)
+  --trial <값>        이번 실행에만 서보 게인, 서보 안 가속 상한, 처짐 보정 이득을 바꿔 본다 (run, 여러 번 준다.
+                      예: j2,j3:p_gain=48, acceleration=0, sag_gain_per_s=2. 관절을 적지 않으면 순서의 모든 팔
+                      관절). 토크를 켠 뒤 쓰고 순서가 끝나면 되돌린다. 받는 값은 crates/controller/src/trial.rs (0042)
   --count <n>         동작마다 되풀이할 횟수 (timing, 기본 300)
 ";
 
@@ -142,6 +146,8 @@ struct Options {
     hold_max: Option<f64>,
     no_gamepad: bool,
     count: Option<usize>,
+    /// --trial로 준 시험 값 (읽기는 순서를 읽은 뒤에 한다: 순서의 관절이 있어야 한다)
+    trials: Vec<String>,
 }
 
 fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
@@ -164,6 +170,7 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Options, String>
         hold_max: None,
         no_gamepad: false,
         count: None,
+        trials: Vec::new(),
     };
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -233,6 +240,10 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Options, String>
                         .ok_or_else(|| format!("--hold-max는 0보다 큰 초다: {text}"))?,
                 );
             }
+            "--trial" => options.trials.push(
+                args.next()
+                    .ok_or("--trial 뒤에 값이 없다 (예: j2:p_gain=48)")?,
+            ),
             "--count" => {
                 let text = args.next().ok_or("--count 뒤에 횟수가 없다")?;
                 options.count = Some(
@@ -292,6 +303,9 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Options, String>
     }
     if options.no_gamepad && options.command != Command::Run {
         return Err("--no-gamepad는 run에서만 쓴다".to_owned());
+    }
+    if !options.trials.is_empty() && options.command != Command::Run {
+        return Err("--trial은 run에서만 쓴다".to_owned());
     }
     Ok(options)
 }
@@ -975,6 +989,10 @@ fn run_script(options: &Options) -> Result<(), String> {
         println!("버티기 {shortened}개를 {max} s까지로 줄였다 (--hold-max, 시뮬레이션)");
     }
     print!("{}", script.describe());
+    let trials = Trials::parse(&options.trials, &script.joints, &settings)?;
+    if !trials.is_empty() {
+        println!("{}", trials.describe());
+    }
     let mut joints: Vec<&Joint> = script
         .joints
         .iter()
@@ -1040,6 +1058,7 @@ fn run_script(options: &Options) -> Result<(), String> {
             robot_toml: &robot_toml,
             collision,
             hold_max_s: options.hold_max,
+            trials: &trials,
         };
         let link = json!({ "sim": address });
         // 시뮬레이션은 메모리 표(EEPROM)를 흉내 내지 않아서, 토크를 켤 때 값 적용의 목표와 견주지 않는다
@@ -1067,6 +1086,7 @@ fn run_script(options: &Options) -> Result<(), String> {
         robot_toml: &robot_toml,
         collision,
         hold_max_s: None,
+        trials: &trials,
     };
     let link = record::run_info(port, BAUD_RATES[0].1);
     start_script(
@@ -1143,6 +1163,8 @@ struct Source<'a> {
     collision: Value,
     /// 줄인 버티기의 상한 [s] (--hold-max, 시뮬레이션에서만)
     hold_max_s: Option<f64>,
+    /// 이번 실행에만 바꿀 값 (--trial)
+    trials: &'a Trials,
 }
 
 /// --yes가 없으면 서보 상태와 게임패드만 보이고, 있으면 실행 루프를 세워 순서를 돌린다.
@@ -1160,6 +1182,16 @@ fn start_script<B: ServoBus + Send + 'static>(
         for id in joints.ids() {
             let state = joints.snapshot(id)?;
             println!("서보 {id}: {}", check::describe(&state));
+        }
+        for servo in &source.trials.servos {
+            let registers: Vec<Register> = servo.values.iter().map(|(r, _)| *r).collect();
+            let now = joints.read(servo.id, &registers)?;
+            let parts: Vec<String> = now
+                .iter()
+                .zip(&servo.values)
+                .map(|((register, old), (_, new))| format!("{} {old} → {new}", register.name))
+                .collect();
+            println!("시험 값 {}: {}", servo.joint, parts.join(", "));
         }
         if wants_pad {
             match Gamepad::find() {
@@ -1334,8 +1366,10 @@ impl RunConsole {
     }
 }
 
-/// 기록 칸: 모드, 그리고 관절마다 목표, 위치, 속도, 부하, 온도, 전압, 전류, 상태, 토크 스위치.
-const RUN_FIELDS: [&str; 9] = [
+/// 기록(samples.csv)의 서보마다 칸: 목표, 위치, 속도, 부하, 온도, 전압, 전류, 상태, 토크 스위치, 노린 자리. goal은
+/// 서보에서 읽은 목표(지난 박자에 쓴 것, 처짐 보정 포함)이고, target은 이 박자에 실행 루프가 노린 자리(처짐 보정을 뺀
+/// 목표, [`RunLoop::intended`])다: 처짐과 뒤처짐은 target으로 잰다 (0042)
+const RUN_FIELDS: [&str; 10] = [
     "goal",
     "position",
     "speed",
@@ -1345,6 +1379,7 @@ const RUN_FIELDS: [&str; 9] = [
     "current",
     "status",
     "torque",
+    "target",
 ];
 
 fn mode_code(mode: &Mode) -> i32 {
@@ -1359,7 +1394,7 @@ fn mode_code(mode: &Mode) -> i32 {
 
 fn run_row<B: ServoBus>(run: &RunLoop<B>) -> Vec<i32> {
     let mut row = vec![mode_code(run.mode())];
-    for (_, state) in run.states() {
+    for ((_, state), target) in run.states().iter().zip(run.intended()) {
         row.extend([
             state.goal_position,
             state.position,
@@ -1370,6 +1405,7 @@ fn run_row<B: ServoBus>(run: &RunLoop<B>) -> Vec<i32> {
             state.current,
             i32::from(state.status.0),
             state.torque_enable,
+            target.unwrap_or(state.goal_position),
         ]);
     }
     row
@@ -1580,9 +1616,21 @@ impl LoopStats {
 struct LoopJob {
     /// 시험 순서 (궤적의 계산 스레드는 이 스레드에서 띄웠다)
     runner: Runner,
+    /// 로봇 설정 (처짐 보정 이득은 시험 값을 넣었다)
     settings: Settings,
+    /// 토크를 켠 뒤 쓰고 끝나면 되돌릴 서보 값 (--trial)
+    trials: Trials,
     /// 실행 루프를 실시간 스레드로 돌린다 (코어 3, SCHED_FIFO 80)
     realtime: bool,
+}
+
+/// 실행 루프 스레드가 준비를 마치고(토크를 켜고 시험 값을 쓴 뒤) 넘기는 것.
+struct Ready {
+    thread: Option<LoopThread>,
+    /// 서보마다 게인과 가속 상한 (시험 값을 쓰기 전)
+    servo_values: Value,
+    /// 쓴 시험 값 (쓰기 전 값과 같이)
+    written: Value,
 }
 
 /// 실행 루프 스레드가 끝낸 모양.
@@ -1591,6 +1639,8 @@ struct LoopEnd {
     released: bool,
     mode: String,
     stats: LoopStats,
+    /// 시험 값을 되돌린 결과 (쓴 것이 없으면 없다)
+    restored: Option<Result<(), String>>,
 }
 
 fn micros_i32(us: u64) -> i32 {
@@ -1659,6 +1709,11 @@ fn drive_script<B: ServoBus + Send + 'static>(
         "realtime": match off {
             None => "실행 루프: 코어 3, SCHED_FIFO 80, 메모리 잠금".to_owned(),
             Some(why) => format!("끔: {why}"),
+        },
+        "trial": if source.trials.is_empty() {
+            Value::Null
+        } else {
+            json!({ "asked": source.trials.to_json() })
         },
     });
     record::write_json(&meta_path, &meta)?;
@@ -1751,9 +1806,14 @@ fn drive_script<B: ServoBus + Send + 'static>(
             return finish_failed(&meta_path, &mut meta, error);
         }
     };
+    let mut settings = source.settings.clone();
+    if let Some(gain) = source.trials.sag_gain {
+        settings.run_loop.sag_gain = gain;
+    }
     let job = LoopJob {
         runner,
-        settings: source.settings.clone(),
+        settings,
+        trials: source.trials.clone(),
         realtime: off.is_none(),
     };
     // 시작을 기다리는 동안 누른 Enter와 A는 버린다
@@ -1773,8 +1833,8 @@ fn drive_script<B: ServoBus + Send + 'static>(
         .stack_size(rt::PREFAULT_STACK + 1024 * 1024)
         .spawn(move || drive_loop(job, joints, &ready_tx, &record_tx, console, &loop_dropped))
         .map_err(|e| format!("실행 루프 스레드를 띄우지 못했다: {e}"))?;
-    let loop_thread = match ready_rx.recv() {
-        Ok(Ok(thread)) => thread,
+    let ready = match ready_rx.recv() {
+        Ok(Ok(ready)) => ready,
         Ok(Err(error)) => {
             let _ = runner.join();
             let _ = writer.join();
@@ -1789,9 +1849,14 @@ fn drive_script<B: ServoBus + Send + 'static>(
             return finish_failed(&meta_path, &mut meta, error);
         }
     };
+    let loop_thread = ready.thread;
     meta["loop_thread"] = loop_thread
         .as_ref()
         .map_or(Value::Null, LoopThread::to_json);
+    meta["servo_values"] = ready.servo_values;
+    if !source.trials.is_empty() {
+        meta["trial"]["written"] = ready.written;
+    }
     record::write_json(&meta_path, &meta)?;
     match (&loop_thread, off) {
         (Some(t), _) => println!(
@@ -1848,6 +1913,12 @@ fn drive_script<B: ServoBus + Send + 'static>(
     if let Err(error) = &written {
         meta["records_error"] = json!(error);
     }
+    if let Some(restored) = &end.restored {
+        meta["trial"]["restored"] = match restored {
+            Ok(()) => json!(true),
+            Err(error) => json!(error),
+        };
+    }
     meta["ended"] = json!(record::time_text(&Local::now()));
     record::write_json(&meta_path, &meta)?;
     let stats = end.stats;
@@ -1857,6 +1928,11 @@ fn drive_script<B: ServoBus + Send + 'static>(
     );
     if let Err(error) = written {
         println!("알림: 기록을 끝까지 쓰지 못했다: {error}");
+    }
+    match &end.restored {
+        Some(Ok(())) => println!("시험 값을 처음 값으로 되돌렸다"),
+        Some(Err(error)) => println!("알림: {error}"),
+        None => {}
     }
     if !end.released {
         println!(
@@ -1898,12 +1974,13 @@ fn write_records(rx: Receiver<Record>, mut log: Log) -> Result<(), String> {
     }
 }
 
-/// 실행 루프 스레드: 실시간 설정을 걸고, 토크를 켜고(실행 루프 시작), 준비됐다고 알린 뒤 박자마다 실행 루프와
-/// 시험 순서를 돌린다. 박자는 정한 시각까지 자는 방식이라 늦게 깬 만큼이 다음 박자로 쌓이지 않는다.
+/// 실행 루프 스레드: 실시간 설정을 걸고, 토크를 켜고(실행 루프 시작), 시험 값을 쓰고, 준비됐다고 알린 뒤 박자마다
+/// 실행 루프와 시험 순서를 돌린다. 박자는 정한 시각까지 자는 방식이라 늦게 깬 만큼이 다음 박자로 쌓이지 않는다.
+/// 순서가 끝나면(마쳤거나, 섰거나, 고장) 시험 값을 되돌린다.
 fn drive_loop<B: ServoBus>(
     job: LoopJob,
     joints: Joints<B>,
-    ready: &Sender<Result<Option<LoopThread>, String>>,
+    ready: &Sender<Result<Ready, String>>,
     records: &SyncSender<Record>,
     mut console: LoopConsole,
     dropped: &AtomicU64,
@@ -1924,12 +2001,29 @@ fn drive_loop<B: ServoBus>(
         .as_ref()
         .filter(|_| runner.script().uses_gripper());
     let mut run = RunLoop::start(joints, job.settings.run_loop, gripper).map_err(fail)?;
-    let _ = ready.send(Ok(thread));
-
     let mut names = runner.script().joints.clone();
     if gripper.is_some() {
         names.push(GRIPPER_NAME);
     }
+    // 시험 값은 토크를 켜고 지금 자리를 붙잡은 뒤에 쓴다: 켤 때 서보의 EEPROM 값을 로봇 설정과 견준다
+    let servos: Vec<(&str, u8)> = names
+        .iter()
+        .copied()
+        .zip(run.states().iter().map(|(id, _)| *id))
+        .collect();
+    let servo_values = trial::servo_values(&mut run, &servos);
+    let applied = job.trials.apply(&mut run).map_err(fail)?;
+    if !applied.is_empty() {
+        let text = format!("{}를 썼다", job.trials.describe());
+        console.say(&text);
+        push_event(records, dropped, 0.0, "start", text);
+    }
+    let _ = ready.send(Ok(Ready {
+        thread,
+        servo_values,
+        written: applied.to_json(),
+    }));
+
     let period_ns = u64::try_from(LOOP_PERIOD.as_nanos()).unwrap_or(u64::MAX);
     let period_us = period_ns / 1_000;
     let mut stats = LoopStats::default();
@@ -1963,9 +2057,11 @@ fn drive_loop<B: ServoBus>(
         }
         t
     };
+    let mut last_t;
     let status = loop {
         let label = runner.label();
         let now = tick(&mut run, &label, &mut stats);
+        last_t = now;
         let status = runner.tick(&mut run, &mut console, now);
         for event in runner.take_events() {
             push_event(records, dropped, now, &label, event);
@@ -1989,14 +2085,24 @@ fn drive_loop<B: ServoBus>(
             if matches!(run.mode(), Mode::Holding | Mode::Fault(_)) {
                 break;
             }
-            tick(&mut run, "settle", &mut stats);
+            last_t = tick(&mut run, "settle", &mut stats);
         }
+    }
+    // 시험 값을 되돌린다: 다음 실행이 물려받지 않고, 버틸 때 흔들려 세웠으면 처음 값으로 돌아간다
+    let restored = (!applied.is_empty()).then(|| applied.restore(&mut run));
+    if let Some(result) = &restored {
+        let text = match result {
+            Ok(()) => "시험 값을 처음 값으로 되돌렸다".to_owned(),
+            Err(error) => error.clone(),
+        };
+        push_event(records, dropped, last_t, "end", text);
     }
     Ok(LoopEnd {
         status,
         released: runner.released(),
         mode: format!("{:?}", run.mode()),
         stats,
+        restored,
     })
 }
 

@@ -525,6 +525,17 @@ impl<B: ServoBus> Joints<B> {
         self.write(id, reg::TORQUE_LIMIT, torque_limit)
     }
 
+    /// 서보 안 가속 상한(41, RAM, 100 step/s²)을 바꾼다: 시험 값(0042)과 그 되돌리기. 0은 서보의 최대(상한
+    /// 없음)다. 서보를 움직이지 않는다: 다음 목표부터 서보 안 프로파일이 이 값으로 붙는다. 토크를 다시 켜면 관절
+    /// 층의 상한으로 돌아간다 ([`Joints::enable`]).
+    pub fn set_acceleration(&mut self, id: u8, acceleration: i32) -> Result<(), String> {
+        let name = self.servo(id)?.name.clone();
+        if !(0..=254).contains(&acceleration) {
+            return Err(format!("{name}: 가속 상한 {acceleration}은 0~254 밖이다"));
+        }
+        self.write(id, reg::ACCELERATION, acceleration)
+    }
+
     /// 메모리 전체를 읽는다 (서보를 움직이지 않는다).
     pub fn dump(&mut self, id: u8) -> Result<Vec<u8>, String> {
         let name = self.servo(id)?.name.clone();
@@ -884,5 +895,16 @@ mod tests {
         assert!(refused.unwrap_err().contains("맨 서보에서만"));
         let mut bench = bench(FakeServo::new(20));
         bench.trial(20, &[(reg::OVERLOAD_TORQUE, 5)]).unwrap();
+        // 가속 상한은 토크가 켜진 채 바꾸고, 0(서보의 최대)부터 254까지 받는다
+        joints.set_acceleration(3, 0).unwrap();
+        assert_eq!(joints.snapshot(3).unwrap().acceleration, 0);
+        assert!(joints.snapshot(3).unwrap().torque_on());
+        assert!(
+            joints
+                .set_acceleration(3, 255)
+                .unwrap_err()
+                .contains("0~254")
+        );
+        assert!(joints.set_acceleration(3, -1).is_err());
     }
 }

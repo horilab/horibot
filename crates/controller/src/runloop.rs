@@ -27,6 +27,7 @@
 use std::collections::VecDeque;
 
 use horibot_servo::feetech::ServoBus;
+use horibot_servo::feetech::registers::{self as reg, Register};
 use rsruckig::prelude::*;
 
 use crate::joints::{Joints, MAX_FAILURES, Snapshot};
@@ -678,6 +679,57 @@ impl<B: ServoBus> RunLoop<B> {
     #[cfg(test)]
     pub(crate) fn joints_for_test(&mut self) -> &mut Joints<B> {
         &mut self.joints
+    }
+
+    /// 서보의 레지스터를 읽는다 (움직이지 않는다): 시험 값을 쓰기 전 값과 실행 기록의 서보 값.
+    pub fn read_servo(
+        &mut self,
+        id: u8,
+        registers: &[Register],
+    ) -> Result<Vec<(Register, i32)>, String> {
+        self.joints.read(id, registers)
+    }
+
+    /// 서보 하나의 게인(P, I, D)과 서보 안 가속 상한(41)을 바꾼다: 0042의 시험 값([`crate::trial`])과 그 되돌리기.
+    /// 게인은 잠근 채 쓰고(서보 전원을 끄면 처음 값으로 돌아간다, 0024), 가속 상한은 RAM이다. 다른 레지스터는 하나라도
+    /// 있으면 아무것도 쓰지 않는다. 받는 범위와 때(움직이지 않을 때)는 부르는 쪽이 본다.
+    pub fn set_servo_values(&mut self, id: u8, values: &[(Register, i32)]) -> Result<(), String> {
+        if let Some((register, _)) = values.iter().find(|(register, _)| {
+            ![reg::P_GAIN, reg::I_GAIN, reg::D_GAIN, reg::ACCELERATION].contains(register)
+        }) {
+            return Err(format!("{}은 실행 중에 바꾸지 않는다", register.name));
+        }
+        let gains: Vec<(Register, i32)> = values
+            .iter()
+            .copied()
+            .filter(|(register, _)| *register != reg::ACCELERATION)
+            .collect();
+        if !gains.is_empty() {
+            self.joints.trial(id, &gains)?;
+        }
+        for &(register, value) in values {
+            if register == reg::ACCELERATION {
+                self.joints.set_acceleration(id, value)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// 서보마다 실행 루프가 노리는 자리 (서보 값, [`RunLoop::states`]와 같은 순서): 팔 관절은 목표(처짐 보정을 뺀
+    /// 것), 그리퍼는 그 목표다. 실행 기록의 target 칸이다: goal 칸은 서보에서 읽은 목표라 처짐 보정이 들어 있고 한
+    /// 박자 앞의 값이다.
+    pub fn intended(&self) -> Vec<Option<i32>> {
+        self.states
+            .iter()
+            .map(|&(id, _)| {
+                let servo = self.joints.servo(id).ok()?;
+                let angle = match self.ids.iter().position(|known| *known == id) {
+                    Some(index) => *self.targets.get(index)?,
+                    None => self.gripper.as_ref().filter(|g| g.id == id)?.goal,
+                };
+                servo.raw_at(angle)
+            })
+            .collect()
     }
 
     /// 모든 서보(그리퍼 포함)의 토크를 끈다: 시험 순서의 끝에서 사람이 팔을 받친 뒤에 부른다 (팔에 힘이 없어진다,

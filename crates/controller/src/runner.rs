@@ -12,6 +12,7 @@
 //! pause = "위팔 끝에 추를 걸었으면"   # Enter를 기다리며 버틴다
 //! [[steps]]
 //! move = { j2 = 90.0 }      # 관절 각 [°]. 적지 않은 관절은 그 자리. "home"처럼 이름 붙은 자세도 된다
+//! speed_percent = 25        # 이 움직이기만의 빠르기 (move 단계에만. 적지 않으면 순서의 speed_percent)
 //! [[steps]]
 //! grip = 0.0                # 그리퍼를 이 열림 폭 [mm]으로. 가다 막혀 서면 잡은 것이다 (그리퍼를 같이 켠다)
 //! [[steps]]
@@ -93,6 +94,7 @@ struct StepFile {
     pause: Option<String>,
     #[serde(rename = "move")]
     move_to: Option<PoseFile>,
+    speed_percent: Option<f64>,
     hold_s: Option<f64>,
     grip: Option<f64>,
     release: Option<bool>,
@@ -104,8 +106,12 @@ struct StepFile {
 pub enum Step {
     /// 안내를 보이고 Enter를 기다린다 (그동안 버틴다)
     Pause(String),
-    /// 관절 이동: (순서의 관절 번호, 목표 [rad])
-    Move(Vec<(usize, f64)>),
+    /// 관절 이동: (순서의 관절 번호, 목표 [rad])와 실행 루프의 이동 한계에 곱하는 몫 (0~1. 단계에 적지 않으면 순서의
+    /// 빠르기)
+    Move {
+        targets: Vec<(usize, f64)>,
+        speed: f64,
+    },
     /// 버틴다 [s]
     Hold(f64),
     /// 그리퍼를 열림 폭 [mm]으로 움직이고 설 때까지 기다린다
@@ -129,7 +135,7 @@ pub struct Script {
     pub name: String,
     /// 켤 관절 (관절 번호 순, 실행 루프의 관절 순서와 같다)
     pub joints: Vec<&'static str>,
-    /// 실행 루프의 이동 한계에 곱하는 몫 (0~1)
+    /// 실행 루프의 이동 한계에 곱하는 몫 (0~1): 빠르기를 적지 않은 움직이기의 빠르기
     pub speed: f64,
     pub start: Option<Start>,
     pub steps: Vec<Step>,
@@ -294,11 +300,24 @@ impl Script {
                     problems.push(format!("{at}: hot_return은 한 단계에만 적는다"));
                 }
             }
+            if let Some(percent) = step.speed_percent {
+                if step.move_to.is_none() {
+                    problems.push(format!("{at}: speed_percent는 move 단계에만 적는다"));
+                } else if !(percent.is_finite() && percent > 0.0 && percent <= 100.0) {
+                    problems.push(format!(
+                        "{at}: speed_percent는 0보다 크고 100 이하다: {percent}"
+                    ));
+                }
+            }
             if let Some(text) = &step.pause {
                 steps.push(Step::Pause(text.clone()));
             } else if let Some(pose) = &step.move_to {
-                let found = resolve(pose, &joints, settings, &at, &mut problems);
-                steps.push(Step::Move(found));
+                let targets = resolve(pose, &joints, settings, &at, &mut problems);
+                let percent = step.speed_percent.unwrap_or(speed);
+                steps.push(Step::Move {
+                    targets,
+                    speed: percent / 100.0,
+                });
             } else if let Some(seconds) = step.hold_s {
                 if !(seconds.is_finite() && seconds > 0.0) {
                     problems.push(format!("{at}: hold_s는 0보다 크다: {seconds}"));
@@ -372,7 +391,7 @@ impl Script {
             {
                 departures.push((n, q));
             }
-            let Step::Move(targets) = step else {
+            let Step::Move { targets, .. } = step else {
                 continue;
             };
             left = true;
@@ -393,7 +412,7 @@ impl Script {
         }
         let mut returns = 0;
         if let Some(target) = self.hot_return
-            && let Some(Step::Move(targets)) = self.steps.get(target)
+            && let Some(Step::Move { targets, .. }) = self.steps.get(target)
         {
             for (n, from) in departures {
                 let to = self.moved(&from, targets)?;
@@ -483,19 +502,24 @@ impl Script {
         for (n, step) in self.steps.iter().enumerate() {
             let text = match step {
                 Step::Pause(text) => format!("멈춤: {text} (누르면 다음)"),
-                Step::Move(targets) => {
+                Step::Move { targets, speed } => {
                     let parts: Vec<String> = targets
                         .iter()
                         .map(|&(index, angle)| {
                             format!("{} {:.1}°", self.joints[index], angle.to_degrees())
                         })
                         .collect();
+                    let pace = if (speed - self.speed).abs() > 1e-9 {
+                        format!(" (속도 {:.0}%)", speed * 100.0)
+                    } else {
+                        String::new()
+                    };
                     let back = if self.hot_return == Some(n) {
                         " (뜨거우면 여기로 돌아온다)"
                     } else {
                         ""
                     };
-                    format!("움직이기: {}{back}", parts.join(", "))
+                    format!("움직이기: {}{pace}{back}", parts.join(", "))
                 }
                 Step::Hold(seconds) => {
                     format!("버티기: {seconds} s (온도가 알림 기준에 닿으면 일찍 끝낸다)")
@@ -558,7 +582,7 @@ pub struct Runner {
 impl Runner {
     /// 궤적을 맡긴 자리에서 계산한다 (시험과 시뮬레이션: 박자 수가 늘 같다). `period`는 실행 루프의 박자 길이 [s]다.
     pub fn new(script: Script, settings: &LoopSettings, period: f64) -> Self {
-        let motion = Self::motion(&script, settings);
+        let motion = MotionLimits::from_settings(settings, script.joints.len());
         Self::with_planner(script, settings, Planner::inline(motion, period))
     }
 
@@ -569,23 +593,12 @@ impl Runner {
         settings: &LoopSettings,
         period: f64,
     ) -> Result<Self, String> {
-        let motion = Self::motion(&script, settings);
+        let motion = MotionLimits::from_settings(settings, script.joints.len());
         Ok(Self::with_planner(
             script,
             settings,
             Planner::spawn(motion, period)?,
         ))
-    }
-
-    /// 실행 루프의 이동 한계에 순서의 빠르기를 곱한 값.
-    fn motion(script: &Script, settings: &LoopSettings) -> MotionLimits {
-        let s = script.speed;
-        MotionLimits::same(
-            script.joints.len(),
-            settings.max_speed * s,
-            settings.max_acceleration * s,
-            settings.max_jerk * s,
-        )
     }
 
     fn with_planner(script: Script, settings: &LoopSettings, planner: Planner) -> Self {
@@ -647,7 +660,7 @@ impl Runner {
             Some(step) => {
                 let kind = match step {
                     Step::Pause(_) => "pause",
-                    Step::Move(_) => "move",
+                    Step::Move { .. } => "move",
                     Step::Hold(_) => "hold",
                     Step::Grip(_) => "grip",
                     Step::Release => "release",
@@ -764,12 +777,12 @@ impl Runner {
                     }
                     self.next();
                 }
-                (Phase::Begin, Step::Move(targets)) => {
+                (Phase::Begin, Step::Move { targets, speed }) => {
                     let mut goal = run.targets().to_vec();
                     for &(index, angle) in &targets {
                         goal[index] = angle;
                     }
-                    if let Err(e) = self.planner.request(run.targets(), &goal) {
+                    if let Err(e) = self.planner.request(run.targets(), &goal, speed) {
                         let text = format!("[{}] 움직이지 못했다: {e}", self.label());
                         self.note(console, text.clone());
                         return Status::Stopped(text);
@@ -777,7 +790,7 @@ impl Runner {
                     self.goal = goal;
                     self.phase = Phase::Planning;
                 }
-                (Phase::Planning, Step::Move(_)) => {
+                (Phase::Planning, Step::Move { .. }) => {
                     if console.enter_pressed() {
                         let text = format!("[{}] 사람이 멈췄다", self.label());
                         self.note(console, text.clone());
@@ -805,7 +818,7 @@ impl Runner {
                         }
                     }
                 }
-                (Phase::Moving, Step::Move(_)) => {
+                (Phase::Moving, Step::Move { .. }) => {
                     if console.enter_pressed() {
                         run.stop();
                         let text = format!("[{}] 사람이 멈췄다", self.label());
@@ -1421,6 +1434,63 @@ mod tests {
         assert_eq!(moves, 2, "{:?}", keys.said);
     }
 
+    /// 움직이기마다 빠르기를 줄 수 있다 (0042의 떨림 재기: 한 순서에서 7.5°/s와 15°/s로 오간다). 적지 않은
+    /// 움직이기는 순서의 빠르기다.
+    #[test]
+    fn a_move_step_can_have_its_own_speed() {
+        let settings = settings();
+        let text = "name = \"t\"\njoints = [\"j3\"]\nspeed_percent = 50\n\
+                    [[steps]]\nmove = { j3 = 20.0 }\n\
+                    [[steps]]\nmove = { j3 = 0.0 }\nspeed_percent = 25\n";
+        let script = Script::parse(text, &settings).unwrap();
+        let speeds: Vec<f64> = script
+            .steps
+            .iter()
+            .filter_map(|step| match step {
+                Step::Move { speed, .. } => Some(*speed),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(speeds, [0.5, 0.25]);
+        let description = script.describe();
+        assert!(
+            description.contains("j3 0.0° (속도 25%)") && !description.contains("(속도 50%)"),
+            "{description}"
+        );
+        let mut run = run_loop(&settings);
+        let mut runner = Runner::new(script, &settings.run_loop, DT);
+        let mut keys = Keys::default();
+        let mut fastest = [0.0_f64; 2];
+        let mut last = 0.0;
+        let status = drive(&mut run, &mut runner, &mut keys, 5000, |run, _| {
+            let now = run.targets()[0];
+            let speed = (now - last).abs() / DT;
+            fastest[usize::from(now < last)] = fastest[usize::from(now < last)].max(speed);
+            last = now;
+        });
+        assert_eq!(status, Status::Done, "{:?}", keys.said);
+        // 오를 때는 한계(시험값 30°/s)의 50%, 내릴 때는 25%
+        let limit = settings.run_loop.max_speed;
+        assert!((fastest[0] - limit * 0.5).abs() < 1e-6, "{fastest:?}");
+        assert!((fastest[1] - limit * 0.25).abs() < 1e-6, "{fastest:?}");
+        // move 단계에만, 0보다 크고 100 이하
+        let parse = |steps: &str| {
+            Script::parse(
+                &format!("name = \"t\"\njoints = [\"j3\"]\n{steps}"),
+                &settings,
+            )
+        };
+        let error = parse("[[steps]]\nhold_s = 1\nspeed_percent = 50\n").unwrap_err();
+        assert!(error.contains("move 단계에만"), "{error}");
+        for wrong in ["0", "150"] {
+            let error = parse(&format!(
+                "[[steps]]\nmove = {{ j3 = 1.0 }}\nspeed_percent = {wrong}\n"
+            ))
+            .unwrap_err();
+            assert!(error.contains("0보다 크고 100 이하"), "{error}");
+        }
+    }
+
     #[test]
     fn hot_return_marks_one_move_step() {
         let settings = settings();
@@ -1451,7 +1521,13 @@ mod tests {
         let start = script.start.as_ref().unwrap();
         assert!((start.angles[0] - 20f64.to_radians()).abs() < 1e-12);
         assert!((start.tolerance - 8f64.to_radians()).abs() < 1e-12);
-        assert_eq!(script.steps[1], Step::Move(vec![(0, 20f64.to_radians())]));
+        assert_eq!(
+            script.steps[1],
+            Step::Move {
+                targets: vec![(0, 20f64.to_radians())],
+                speed: 1.0
+            }
+        );
         assert_eq!(script.steps[2], Step::Grip(30.0));
         assert!(script.uses_gripper());
         let description = script.describe();

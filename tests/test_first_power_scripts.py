@@ -1,7 +1,7 @@
 """처음 전원 순서(data/scripts/first-power/)의 자세가 지금 설계와 맞는지 본다 (docs/decisions/0034의 처음 전원 순서).
 
 순서를 읽고 부딪힘을 거르고 시뮬레이션에서 끝까지 돌리는 것은 컨트롤러 시험
-(crates/controller/tests/first_power_scripts.rs)이 본다. 여기서는 어깨 버티기의 자세가 설계의 IK 해(도구가 아래,
+(crates/controller/tests/scripts.rs)이 본다. 여기서는 어깨 버티기의 자세가 설계의 IK 해(도구가 아래,
 작업 갈래 앞위+, 로봇 앞 오른쪽 대각선)와 같은지 본다: 링크 길이나 도구가 바뀌면 자세를 다시 내야 한다.
 """
 

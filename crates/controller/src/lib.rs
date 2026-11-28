@@ -1,10 +1,11 @@
 //! 로봇 컨트롤러 (docs/decisions/0023-robot-controller.md, 0024-servo-bus.md).
 //!
 //! 로봇 설정(settings), 서보 준비의 값 적용(prepare)과 영점 재기(zero), 통신 시간 재기(bus_timing), 기록(record),
-//! 관절 층과 안전 검사(joints), 맨 서보 확인(check), 실행 루프(runloop)와 시험 순서(runner), 경로 계획(kinematics,
-//! plan), 부딪힘 검사(collision), 실행 루프 스레드의 실시간 설정과 실행 환경 점검(rt, system), 게임패드
-//! (gamepad)가 있다. 서보를 움직이는 명령은 joints만 낸다 (0009의 한곳 안전 검사). prepare와 zero는 EEPROM만
-//! 쓰고, bus_timing은 토크가 꺼진 서보에 읽은 값을 다시 쓰고 응답 지연만 잠근 채 바꿔서 서보를 움직이지 않는다.
+//! 관절 층과 안전 검사(joints), 맨 서보 확인(check), 실행 루프(runloop)와 시험 순서(runner), 시험 순서에서 서보
+//! 게인을 바꿔 보는 시험 값(trial), 경로 계획(kinematics, plan), 부딪힘 검사(collision), 실행 루프 스레드의 실시간
+//! 설정과 실행 환경 점검(rt, system), 게임패드(gamepad)가 있다. 서보를 움직이는 명령은 joints만 낸다 (0009의 한곳
+//! 안전 검사). prepare와 zero는 EEPROM만 쓰고, bus_timing은 토크가 꺼진 서보에 읽은 값을 다시 쓰고 응답 지연만
+//! 잠근 채 바꿔서 서보를 움직이지 않는다.
 
 pub mod bus_timing;
 pub mod check;
@@ -21,4 +22,5 @@ pub mod runner;
 pub mod settings;
 pub mod system;
 mod timing;
+pub mod trial;
 pub mod zero;

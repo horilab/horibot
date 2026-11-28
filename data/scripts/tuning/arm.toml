@@ -1,0 +1,118 @@
+# 떨림·처짐 재기 1: J1 ~ J3 왕복 (docs/decisions/0042의 재는 법)
+# 홈 자세 둘레에서 관절 하나씩 ±20°를 7.5°/s(실행 루프 한계의 25%)와 15°/s(50%)로 왕복하고, 끝마다 5초 버틴다
+# (J3만 가운데가 90°다: 아래 J3). 짐은 없다. J1은 중력이 걸리지 않고, J2와 J3는 중력이 크다. 한 관절이 오가는 동안
+# 다른 관절은 그 자리에서 버틴다.
+# 설정 하나(실행 명령의 --trial, crates/controller/src/trial.rs)에 이 순서를 한 번 돌리고, 기록을
+# tools/run_metrics.py로 본다 (떨림, 뒤처짐, 처짐, 헌팅, 넘침, 열과 부하). 2분 30초쯤 걸린다.
+# 준비: 팔 둘레 60 cm 안의 책상 위를 비운다. 움직이거나 버티는 동안 B(Enter)를 누르면 그 자리에 서고 순서를 끝낸다.
+# 버틸 때 팔이 흔들리면(헌팅) 바로 B를 누른다: 순서가 끝나며 시험 값을 처음 값으로 되돌린다.
+name = "떨림·처짐 재기: J1 ~ J3"
+joints = ["j1", "j2", "j3", "j4", "j5", "j6"]
+speed_percent = 50
+start = "rest"
+
+[[steps]]
+move = "rest_above" # 쉬는 자세는 J2만 세워 떠난다 (0037)
+[[steps]]
+move = "home"
+
+# J1 (홈 0°): 7.5°/s
+[[steps]]
+move = { j1 = 20.0 }
+speed_percent = 25
+[[steps]]
+hold_s = 5
+[[steps]]
+move = { j1 = -20.0 }
+speed_percent = 25
+[[steps]]
+hold_s = 5
+[[steps]]
+move = { j1 = 0.0 }
+speed_percent = 25
+# J1: 15°/s
+[[steps]]
+move = { j1 = 20.0 }
+speed_percent = 50
+[[steps]]
+hold_s = 5
+[[steps]]
+move = { j1 = -20.0 }
+speed_percent = 50
+[[steps]]
+hold_s = 5
+[[steps]]
+move = { j1 = 0.0 }
+speed_percent = 50
+
+# J2 (홈 15°): 7.5°/s
+[[steps]]
+move = { j2 = 35.0 }
+speed_percent = 25
+[[steps]]
+hold_s = 5
+[[steps]]
+move = { j2 = -5.0 }
+speed_percent = 25
+[[steps]]
+hold_s = 5
+[[steps]]
+move = { j2 = 15.0 }
+speed_percent = 25
+# J2: 15°/s
+[[steps]]
+move = { j2 = 35.0 }
+speed_percent = 50
+[[steps]]
+hold_s = 5
+[[steps]]
+move = { j2 = -5.0 }
+speed_percent = 50
+[[steps]]
+hold_s = 5
+[[steps]]
+move = { j2 = 15.0 }
+speed_percent = 50
+
+# J3: 가운데를 90°에 둔다. 홈(110°)에서 더 접으면(130°) 그리퍼가 위팔에 닿고, 90°는 아래팔이 거의 수평이라 J3에
+# 중력이 가장 크다
+[[steps]]
+move = { j3 = 90.0 }
+speed_percent = 50
+# J3: 7.5°/s
+[[steps]]
+move = { j3 = 110.0 }
+speed_percent = 25
+[[steps]]
+hold_s = 5
+[[steps]]
+move = { j3 = 70.0 }
+speed_percent = 25
+[[steps]]
+hold_s = 5
+[[steps]]
+move = { j3 = 90.0 }
+speed_percent = 25
+# J3: 15°/s
+[[steps]]
+move = { j3 = 110.0 }
+speed_percent = 50
+[[steps]]
+hold_s = 5
+[[steps]]
+move = { j3 = 70.0 }
+speed_percent = 50
+[[steps]]
+hold_s = 5
+[[steps]]
+move = { j3 = 90.0 }
+speed_percent = 50
+
+[[steps]]
+move = "rest_above"
+[[steps]]
+move = "rest"
+[[steps]]
+pause = "아래팔이 선반에 앉았으면 (다음에 토크를 끈다)"
+[[steps]]
+release = true

@@ -1,0 +1,49 @@
+# 떨림·처짐 재기 3: 짐을 든 처짐 (docs/decisions/0042의 재는 법)
+# 어깨 버티기(first-power/1-shoulder-hold.toml)의 가장 힘든 자세(반지름 30 cm, 짐 150 g)에서 15초 버티며 처진 양을
+# 본다. 처짐 보정(--trial sag_gain_per_s=…)과 서보 I 게인(--trial i_gain=…)을 견줄 때 쓴다. 자세는 어깨 버티기와
+# 같다 (같은지는 crates/controller/tests/scripts.rs가 본다). 기록은 tools/run_metrics.py로 본다.
+# 서보가 온도 알림 기준(45 °C)에 닿으면 버티기를 건너뛰고 홈 자세로 돌아가(hot_return) 짐을 빼고 쉬는 자세로 간다.
+# 준비: 팔 밑(앞 오른쪽)에 쿠션, 짐 150 g. 움직이거나 버티는 동안 B(Enter)를 누르면 그 자리에 서고 순서를 끝낸다.
+# 버틸 때 팔이 흔들리면(헌팅) 바로 B를 누른다: 순서가 끝나며 시험 값을 처음 값으로 되돌린다.
+name = "떨림·처짐 재기: 짐을 든 처짐"
+joints = ["j1", "j2", "j3", "j4", "j5", "j6"]
+speed_percent = 50
+start = "rest"
+
+[[steps]]
+move = "rest_above" # 쉬는 자세는 J2만 세워 떠난다 (0037)
+[[steps]]
+move = "home" # 짐을 쥐여 주는 자세: 도구가 아래를 본다
+[[steps]]
+grip = 50
+[[steps]]
+pause = "짐(150 g)을 손가락 사이에 대고 받쳤으면"
+[[steps]]
+grip = 0 # 짐에 막혀 서면 잡은 것이다
+[[steps]]
+pause = "짐을 쥐었고 쿠션이 팔 밑(앞 오른쪽)에 있으면 손을 떼고"
+
+[[steps]]
+move = { j1 = -60.31, j2 = 55.13, j3 = 29.39, j4 = 185.49, j5 = 90.0, j6 = -15.31 } # 30 cm: 가장 힘든 자세
+[[steps]]
+hold_s = 15
+
+[[steps]]
+move = "home"
+hot_return = true # 뜨거우면 버티기를 끝내고 여기로 와서 짐을 빼고 쉬는 자세로 간다
+[[steps]]
+pause = "짐을 받칠 준비가 됐으면 (다음에 그리퍼를 연다)"
+[[steps]]
+grip = 50
+[[steps]]
+pause = "짐을 뺐으면"
+[[steps]]
+grip = 0
+[[steps]]
+move = "rest_above"
+[[steps]]
+move = "rest"
+[[steps]]
+pause = "아래팔이 선반에 앉았으면 (다음에 토크를 끈다)"
+[[steps]]
+release = true
