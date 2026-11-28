@@ -65,12 +65,18 @@ pub fn make_loop_thread() -> Result<LoopThread, String> {
 
 /// 부른 스레드를 뒤에서 도는 스레드로 만든다: 코어 3을 피하고 가장 낮은 우선순위로 둔다. 못 해도 그대로 돈다.
 pub fn make_background_thread() {
+    avoid_loop_cpu();
+    let _ = rt::lower_priority(BACKGROUND_NICE);
+}
+
+/// 부른 스레드가 실행 루프의 코어(3)를 피하게 한다. 우선순위는 그대로 둔다 (경로 계획처럼 실행 루프가 결과를
+/// 기다리는 일). 못 해도 그대로 돈다.
+pub fn avoid_loop_cpu() {
     let cores = rt::affinity();
     let others: Vec<usize> = cores.iter().copied().filter(|&c| c != LOOP_CPU).collect();
     if others.len() < cores.len() && !others.is_empty() {
         let _ = rt::pin_to_cpus(&others);
     }
-    let _ = rt::lower_priority(BACKGROUND_NICE);
 }
 
 /// 자가 점검 하나.

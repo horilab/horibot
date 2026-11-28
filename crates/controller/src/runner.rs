@@ -29,8 +29,13 @@
 //! 목표를 잡고 있다). 움직이기는 목표에 닿아야 끝난다: 서보가 뜨거워 쉬느라 목표 전에 서면 순서를 끝낸다.
 //! 목표는 읽을 때 실행 루프와 같은 검사로 거른다 (소프트 한계와 같은 각은 받는다).
 //!
-//! 움직이기는 관절 공간의 곧은 길이다([`move_joints`]). 시작 자세를 적으면 토크를 켠 자리가 그 자세인지 먼저 본다:
-//! 순서가 지나는 길은 그 자세에서 시작한 길이라, 다른 자리에서 시작하면 미리 따져 본 길과 달라진다 (0034).
+//! 움직이기는 관절 공간의 곧은 길이다([`move_joints`]). 궤적은 [`Planner`]가 계산한다: 실행 명령에서는 따로 된
+//! 계산 스레드가 계산하고, 실행 루프는 결과가 올 때까지(한두 박자) 버틴다. 시작 자세를 적으면 토크를 켠 자리가 그
+//! 자세인지 먼저 본다: 순서가 지나는 길은 그 자세에서 시작한 길이라, 다른 자리에서 시작하면 미리 따져 본 길과
+//! 달라진다 (0034).
+//!
+//! 순서는 실행 루프가 온도와 전압을 판단할 수 있을 때(판단 창이 찬 뒤, 토크를 켜고 약 1초) 시작한다
+//! ([`RunLoop::settled`]). 그동안 팔은 토크를 켠 자리에서 버틴다.
 //!
 //! 실행 명령은 움직이기 전에 순서의 모든 움직이기를 부딪힘 검사로 거른다 ([`Script::check_collisions`], 0041):
 //! 지금 팔의 자세(읽은 관절 각)에서 시작해 단계마다 곧은 길을 검사하고, 막히면 어느 단계 어느 짝인지 알리고 시작하지
@@ -51,7 +56,9 @@ use serde::Deserialize;
 use crate::check::Console;
 use crate::collision::Model;
 use crate::joints::Servo;
-use crate::plan::{MotionLimits, move_joints};
+#[cfg(doc)]
+use crate::plan::move_joints;
+use crate::plan::{MotionLimits, Planner};
 use crate::runloop::{Grip, Mode, RunLoop};
 use crate::settings::{JOINT_NAMES, Joint, LoopSettings, Settings};
 
@@ -518,16 +525,21 @@ pub enum Status {
 enum Phase {
     Begin,
     Waiting,
+    /// 움직이기의 궤적을 계산하는 중 (팔은 버틴다)
+    Planning,
     Moving,
-    Holding { until: f64 },
-    Gripping { until: f64 },
+    Holding {
+        until: f64,
+    },
+    Gripping {
+        until: f64,
+    },
 }
 
 /// 시험 순서를 실행 루프에 건다. 박자마다 [`RunLoop::tick`] 뒤에 [`Runner::tick`]을 부른다.
 pub struct Runner {
     script: Script,
-    motion: MotionLimits,
-    period: f64,
+    planner: Planner,
     temperature_warn: f64,
     index: usize,
     phase: Phase,
@@ -544,18 +556,42 @@ pub struct Runner {
 }
 
 impl Runner {
+    /// 궤적을 맡긴 자리에서 계산한다 (시험과 시뮬레이션: 박자 수가 늘 같다). `period`는 실행 루프의 박자 길이 [s]다.
     pub fn new(script: Script, settings: &LoopSettings, period: f64) -> Self {
-        let n = script.joints.len();
-        let s = script.speed;
-        Self {
-            motion: MotionLimits::same(
-                n,
-                settings.max_speed * s,
-                settings.max_acceleration * s,
-                settings.max_jerk * s,
-            ),
+        let motion = Self::motion(&script, settings);
+        Self::with_planner(script, settings, Planner::inline(motion, period))
+    }
+
+    /// 궤적을 따로 된 계산 스레드에서 계산한다 (실행 명령). 실행 루프 스레드가 아닌 곳에서 부른다
+    /// ([`Planner::spawn`]).
+    pub fn with_planner_thread(
+        script: Script,
+        settings: &LoopSettings,
+        period: f64,
+    ) -> Result<Self, String> {
+        let motion = Self::motion(&script, settings);
+        Ok(Self::with_planner(
             script,
-            period,
+            settings,
+            Planner::spawn(motion, period)?,
+        ))
+    }
+
+    /// 실행 루프의 이동 한계에 순서의 빠르기를 곱한 값.
+    fn motion(script: &Script, settings: &LoopSettings) -> MotionLimits {
+        let s = script.speed;
+        MotionLimits::same(
+            script.joints.len(),
+            settings.max_speed * s,
+            settings.max_acceleration * s,
+            settings.max_jerk * s,
+        )
+    }
+
+    fn with_planner(script: Script, settings: &LoopSettings, planner: Planner) -> Self {
+        Self {
+            script,
+            planner,
             temperature_warn: settings.temperature_warn,
             index: 0,
             phase: Phase::Begin,
@@ -597,6 +633,11 @@ impl Runner {
     /// 순서가 모든 관절의 토크를 껐다 (끈 뒤에는 박자를 돌리지 않아 읽은 상태로는 알 수 없다).
     pub fn released(&self) -> bool {
         self.released
+    }
+
+    /// 돌리는 순서.
+    pub fn script(&self) -> &Script {
+        &self.script
     }
 
     /// 지금 단계 (기록의 step 칸): `3-hold`처럼 번호와 종류.
@@ -652,6 +693,11 @@ impl Runner {
             return Status::Stopped(text);
         }
         if !self.checked_start {
+            // 실행 루프가 온도와 전압을 판단할 수 있을 때까지(토크를 켜고 약 1초) 버티며 기다린다: 몇 박자만 읽은
+            // 값으로 시작할지 정하면 튀어 읽힌 값 하나에 흔들린다
+            if !run.settled() {
+                return Status::Running;
+            }
             self.checked_start = true;
             if let Some(start) = self.script.start.clone() {
                 // 실행 루프는 토크를 켠 자리(읽은 위치)를 목표로 붙잡고 시작한다
@@ -723,16 +769,32 @@ impl Runner {
                     for &(index, angle) in &targets {
                         goal[index] = angle;
                     }
-                    let submitted = move_joints(run.targets(), &goal, &self.motion, self.period)
-                        .and_then(|trajectory| {
-                            let seconds = trajectory.points.last().map_or(0.0, |point| point.0);
-                            run.submit(trajectory).map(|()| seconds)
-                        });
+                    if let Err(e) = self.planner.request(run.targets(), &goal) {
+                        let text = format!("[{}] 움직이지 못했다: {e}", self.label());
+                        self.note(console, text.clone());
+                        return Status::Stopped(text);
+                    }
+                    self.goal = goal;
+                    self.phase = Phase::Planning;
+                }
+                (Phase::Planning, Step::Move(_)) => {
+                    if console.enter_pressed() {
+                        let text = format!("[{}] 사람이 멈췄다", self.label());
+                        self.note(console, text.clone());
+                        return Status::Stopped(text);
+                    }
+                    // 계산하는 동안 실행 루프는 지금 목표를 붙잡고 있어, 궤적의 시작이 지금 목표 그대로다
+                    let Some(planned) = self.planner.poll() else {
+                        return Status::Running;
+                    };
+                    let submitted = planned.and_then(|trajectory| {
+                        let seconds = trajectory.points.last().map_or(0.0, |point| point.0);
+                        run.submit(trajectory).map(|()| seconds)
+                    });
                     match submitted {
                         Ok(seconds) => {
                             let text = format!("[{}] 움직인다 ({seconds:.1} s)", self.label());
                             self.note(console, text);
-                            self.goal = goal;
                             self.phase = Phase::Moving;
                             return Status::Running;
                         }
@@ -957,9 +1019,18 @@ mod tests {
     }
 
     fn run_loop(settings: &Settings) -> RunLoop<Bus<FakePort>> {
+        run_loop_reading(settings, |_| {})
+    }
+
+    /// `run_loop`처럼 세우되, 세우기 전에 가짜 서보를 바꾼다 (세울 때 처음 읽는 값을 정한다).
+    fn run_loop_reading(
+        settings: &Settings,
+        prepare: impl FnOnce(&mut FakeServo),
+    ) -> RunLoop<Bus<FakePort>> {
         let joint = settings.joint("j3").unwrap();
         let servo = Servo::from_joint(joint).unwrap();
-        let fake = programmed(FakeServo::with(3, joint.model_number, 2048), &servo);
+        let mut fake = programmed(FakeServo::with(3, joint.model_number, 2048), &servo);
+        prepare(&mut fake);
         let joints = Joints::open(
             open_fake_bus([fake]),
             vec![servo],
@@ -1116,8 +1187,9 @@ mod tests {
         let script = Script::parse(text, &settings).unwrap();
         let mut run = run_loop(&settings);
         let mut runner = Runner::new(script, &settings.run_loop, DT);
+        // 판단 창이 차는 100박자 뒤에 순서가 시작한다
         let mut keys = Keys {
-            stop_at: Some(30),
+            stop_at: Some(130),
             ..Default::default()
         };
         let status = drive(&mut run, &mut runner, &mut keys, 5000, |_, _| {});
@@ -1143,7 +1215,7 @@ mod tests {
         let mut run = run_loop(&settings);
         let mut runner = Runner::new(script, &settings.run_loop, DT);
         let mut keys = Keys {
-            stop_at: Some(50),
+            stop_at: Some(150),
             ..Default::default()
         };
         let status = drive(&mut run, &mut runner, &mut keys, 5000, |_, _| {});
@@ -1194,8 +1266,9 @@ mod tests {
         let mut runner = Runner::new(script, &settings.run_loop, DT);
         let mut keys = Keys::default();
         let hot = settings.run_loop.temperature_rest as i32 + 1;
+        // 움직이기는 판단 창이 찬 1초 뒤에 시작한다
         let status = drive(&mut run, &mut runner, &mut keys, 5000, |run, now| {
-            if now > 0.5 {
+            if now > 1.5 {
                 run.joints_for_test().wire().servos[0].set(reg::PRESENT_TEMPERATURE, hot);
             }
         });
@@ -1282,19 +1355,9 @@ mod tests {
                     [[steps]]\nhold_s = 600\n\
                     [[steps]]\nmove = { j3 = 5.0 }\nhot_return = true\n";
         let script = Script::parse(text, &settings).unwrap();
-        // 실행 루프를 세울 때 이미 뜨겁다 (세울 때 읽은 온도로 온도 기록을 채운다)
+        // 실행 루프를 세울 때부터 뜨겁다 (판단 창이 찬 뒤에 보고 시작하지 않는다)
         let warm = settings.run_loop.temperature_warn as i32;
-        let joint = settings.joint("j3").unwrap();
-        let servo = Servo::from_joint(joint).unwrap();
-        let mut fake = programmed(FakeServo::with(3, joint.model_number, 2048), &servo);
-        fake.set(reg::PRESENT_TEMPERATURE, warm);
-        let joints = Joints::open(
-            open_fake_bus([fake]),
-            vec![servo],
-            Caps::for_loop(&settings.run_loop),
-        )
-        .unwrap();
-        let mut run = RunLoop::start(joints, settings.run_loop, None).unwrap();
+        let mut run = run_loop_reading(&settings, |fake| fake.set(reg::PRESENT_TEMPERATURE, warm));
         let mut runner = Runner::new(script, &settings.run_loop, DT);
         let mut keys = Keys::default();
         let status = drive(&mut run, &mut runner, &mut keys, 2000, |_, _| {});
@@ -1303,6 +1366,59 @@ mod tests {
             "{status:?}"
         );
         assert!(run.targets()[0].abs() < 1e-9, "움직이지 않았다");
+    }
+
+    /// 토크를 켜며 처음 읽은 온도가 튀어도 순서는 시작한다 (2026-11-28 처음 전원: 처음 읽은 J6이 45°C로 튀어
+    /// 어깨 버티기가 시작하지 않았다). 실행 루프가 온도를 판단할 수 있을 때(판단 창이 찬 뒤)까지 움직이지 않는다.
+    #[test]
+    fn a_jumped_first_reading_does_not_keep_a_script_from_starting() {
+        let settings = settings();
+        let text = "name = \"t\"\njoints = [\"j3\"]\n\
+                    [[steps]]\nmove = { j3 = 20.0 }\n\
+                    [[steps]]\nhold_s = 1\n\
+                    [[steps]]\nmove = { j3 = 5.0 }\nhot_return = true\n";
+        let script = Script::parse(text, &settings).unwrap();
+        let jumped = settings.run_loop.temperature_rest as i32 + 20;
+        let mut run =
+            run_loop_reading(&settings, |fake| fake.set(reg::PRESENT_TEMPERATURE, jumped));
+        run.joints_for_test().wire().servos[0].set(reg::PRESENT_TEMPERATURE, 30);
+        let mut runner = Runner::new(script, &settings.run_loop, DT);
+        let mut keys = Keys::default();
+        let mut moved_unsettled = false;
+        let status = drive(&mut run, &mut runner, &mut keys, 5000, |run, _| {
+            moved_unsettled |= !run.settled() && run.targets()[0].abs() > 1e-9;
+        });
+        assert_eq!(status, Status::Done, "{:?}", keys.said);
+        assert!(!moved_unsettled, "판단 창이 차기 전에 움직였다");
+        assert!((run.targets()[0] - 5f64.to_radians()).abs() < 1e-9);
+    }
+
+    /// 계산 스레드로 궤적을 계산해도 순서가 같게 돈다: 결과가 올 때까지 팔은 버티고, 온 뒤에 움직인다.
+    #[test]
+    fn a_script_runs_with_the_planner_thread() {
+        let settings = settings();
+        let text = "name = \"t\"\njoints = [\"j3\"]\n\
+                    [[steps]]\nmove = { j3 = 20.0 }\n\
+                    [[steps]]\nmove = { j3 = -10.0 }\n";
+        let script = Script::parse(text, &settings).unwrap();
+        let mut run = run_loop(&settings);
+        let mut runner = Runner::with_planner_thread(script, &settings.run_loop, DT).unwrap();
+        let mut keys = Keys::default();
+        let mut peak = 0.0_f64;
+        // 가짜 박자는 실제 시간보다 훨씬 빨리 돌아, 계산을 기다리는 박자 수가 그때마다 다르다
+        let status = drive(&mut run, &mut runner, &mut keys, 1_000_000, |run, _| {
+            peak = peak.max(run.targets()[0]);
+            std::thread::yield_now();
+        });
+        assert_eq!(status, Status::Done, "{:?}", keys.said);
+        assert!((peak - 20f64.to_radians()).abs() < 1e-9, "{peak}");
+        assert!((run.targets()[0] - (-10f64).to_radians()).abs() < 1e-9);
+        let moves = keys
+            .said
+            .iter()
+            .filter(|line| line.contains("움직인다"))
+            .count();
+        assert_eq!(moves, 2, "{:?}", keys.said);
     }
 
     #[test]
@@ -1384,7 +1500,7 @@ mod tests {
         let mut run = run_loop(&settings);
         let mut runner = Runner::new(script, &settings.run_loop, DT);
         let mut keys = Keys::default();
-        let status = drive(&mut run, &mut runner, &mut keys, 100, |_, _| {});
+        let status = drive(&mut run, &mut runner, &mut keys, 300, |_, _| {});
         assert!(
             matches!(&status, Status::Stopped(text) if text.contains("시작 자세") && text.contains("j3 0.0°")),
             "{status:?}"

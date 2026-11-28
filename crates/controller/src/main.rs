@@ -1578,7 +1578,8 @@ impl LoopStats {
 
 /// 실행 루프 스레드에 넘기는 것.
 struct LoopJob {
-    script: Script,
+    /// 시험 순서 (궤적의 계산 스레드는 이 스레드에서 띄웠다)
+    runner: Runner,
     settings: Settings,
     /// 실행 루프를 실시간 스레드로 돌린다 (코어 3, SCHED_FIFO 80)
     realtime: bool,
@@ -1737,8 +1738,21 @@ fn drive_script<B: ServoBus + Send + 'static>(
     let (ready_tx, ready_rx) = mpsc::channel();
     let (line_tx, line_rx) = mpsc::sync_channel::<Line>(LINE_QUEUE);
     let dropped = Arc::new(AtomicU64::new(0));
-    let job = LoopJob {
+    // 궤적의 계산 스레드는 여기서 띄운다: 실행 루프 스레드에서 띄우면 그 실시간 설정(코어 3, SCHED_FIFO)을 물려받는다
+    let runner = match Runner::with_planner_thread(
         script,
+        &source.settings.run_loop,
+        LOOP_PERIOD.as_secs_f64(),
+    ) {
+        Ok(runner) => runner,
+        Err(error) => {
+            drop(record_tx);
+            let _ = writer.join();
+            return finish_failed(&meta_path, &mut meta, error);
+        }
+    };
+    let job = LoopJob {
+        runner,
         settings: source.settings.clone(),
         realtime: off.is_none(),
     };
@@ -1903,23 +1917,19 @@ fn drive_loop<B: ServoBus>(
     } else {
         None
     };
+    let mut runner = job.runner;
     let gripper = job
         .settings
         .gripper
         .as_ref()
-        .filter(|_| job.script.uses_gripper());
+        .filter(|_| runner.script().uses_gripper());
     let mut run = RunLoop::start(joints, job.settings.run_loop, gripper).map_err(fail)?;
     let _ = ready.send(Ok(thread));
 
-    let mut names = job.script.joints.clone();
+    let mut names = runner.script().joints.clone();
     if gripper.is_some() {
         names.push(GRIPPER_NAME);
     }
-    let mut runner = Runner::new(
-        job.script,
-        &job.settings.run_loop,
-        LOOP_PERIOD.as_secs_f64(),
-    );
     let period_ns = u64::try_from(LOOP_PERIOD.as_nanos()).unwrap_or(u64::MAX);
     let period_us = period_ns / 1_000;
     let mut stats = LoopStats::default();

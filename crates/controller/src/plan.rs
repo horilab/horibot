@@ -3,6 +3,8 @@
 //! 점 하나다. 실행 루프가 실행 전에 한계를 다시 본다 (0009).
 
 use std::f64::consts::{PI, TAU};
+use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
+use std::thread;
 
 use rsruckig::prelude::*;
 
@@ -116,6 +118,109 @@ pub fn move_joints(
         last.copy_from_slice(goal);
     }
     Ok(Trajectory { points })
+}
+
+/// 관절 이동을 계산하는 곳. 실행 루프는 계산한 궤적을 받기만 한다 (0032의 궤적 실행):
+///
+/// - 계산 스레드([`Planner::spawn`]): 실물의 실행 명령. 궤적은 박자마다 점 하나라 계산이 움직임 길이에 비례하는데,
+///   실행 루프 스레드는 그 계산을 기다리지 않는다 (2026-11-28 처음 전원: 34 ~ 43초짜리 움직임을 실행 루프 안에서
+///   계산해 다음 박자가 2.6 ~ 5.8 ms 늦게 깼다).
+/// - 그 자리에서([`Planner::inline`]): 시험과 시뮬레이션. 맡긴 박자에 결과가 나와 박자 수가 늘 같다.
+///
+/// 한 번에 하나만 맡는다: 결과를 받기 전에 다시 맡기면 거절한다.
+pub struct Planner {
+    work: Work,
+    /// 맡긴 계산의 결과를 아직 받지 않았다
+    pending: bool,
+}
+
+enum Work {
+    Inline {
+        limits: MotionLimits,
+        period: f64,
+        done: Option<Result<Trajectory, String>>,
+    },
+    Thread {
+        requests: Sender<(Vec<f64>, Vec<f64>)>,
+        results: Receiver<Result<Trajectory, String>>,
+    },
+}
+
+impl Planner {
+    /// 맡긴 자리에서 바로 계산한다.
+    pub fn inline(limits: MotionLimits, period: f64) -> Self {
+        Self {
+            work: Work::Inline {
+                limits,
+                period,
+                done: None,
+            },
+            pending: false,
+        }
+    }
+
+    /// 계산 스레드를 띄운다. 스레드는 실행 루프의 코어를 피하고, 이 값이 사라지면(맡길 줄이 닫히면) 끝난다. 실행
+    /// 루프 스레드가 아닌 곳에서 부른다: 새 스레드는 부른 스레드의 실시간 설정(코어, 우선순위)을 물려받는다.
+    pub fn spawn(limits: MotionLimits, period: f64) -> Result<Self, String> {
+        let (requests, jobs) = mpsc::channel::<(Vec<f64>, Vec<f64>)>();
+        let (done, results) = mpsc::channel();
+        thread::Builder::new()
+            .name("planner".to_owned())
+            .spawn(move || {
+                crate::system::avoid_loop_cpu();
+                for (start, goal) in jobs {
+                    if done
+                        .send(move_joints(&start, &goal, &limits, period))
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+            })
+            .map_err(|e| format!("계획 스레드를 띄우지 못했다: {e}"))?;
+        Ok(Self {
+            work: Work::Thread { requests, results },
+            pending: false,
+        })
+    }
+
+    /// `start`에서 `goal`까지의 관절 이동([`move_joints`])을 맡긴다.
+    pub fn request(&mut self, start: &[f64], goal: &[f64]) -> Result<(), String> {
+        if self.pending {
+            return Err("앞서 맡긴 계산의 결과를 아직 받지 않았다".to_owned());
+        }
+        match &mut self.work {
+            Work::Inline {
+                limits,
+                period,
+                done,
+            } => *done = Some(move_joints(start, goal, limits, *period)),
+            Work::Thread { requests, .. } => requests
+                .send((start.to_vec(), goal.to_vec()))
+                .map_err(|_| "계획 스레드가 멈췄다".to_owned())?,
+        }
+        self.pending = true;
+        Ok(())
+    }
+
+    /// 맡긴 계산이 끝났으면 그 결과. 기다리지 않는다.
+    pub fn poll(&mut self) -> Option<Result<Trajectory, String>> {
+        if !self.pending {
+            return None;
+        }
+        let result = match &mut self.work {
+            Work::Inline { done, .. } => done.take(),
+            Work::Thread { results, .. } => match results.try_recv() {
+                Ok(result) => Some(result),
+                Err(TryRecvError::Empty) => None,
+                Err(TryRecvError::Disconnected) => Some(Err("계획 스레드가 멈췄다".to_owned())),
+            },
+        };
+        if result.is_some() {
+            self.pending = false;
+        }
+        result
+    }
 }
 
 /// IK의 해 가운데 관절 한계 안이고 지금 관절 각에 가장 가까운 해. 한계가 ±π를 넘는 관절은 2π 차이 나는 각도
@@ -413,6 +518,42 @@ mod tests {
         // 1 rad를 1 rad/s로: 가속 구간이 있어 1초보다 조금 길다
         let duration = points.last().unwrap().0;
         assert!((1.0..2.0).contains(&duration), "{duration}");
+    }
+
+    /// 계산 스레드도 그 자리에서 계산한 것과 같은 궤적을 낸다. 결과를 받기 전에는 다시 맡지 않는다.
+    #[test]
+    fn the_planner_thread_gives_the_same_trajectory() {
+        let limits = MotionLimits::same(2, 1.0, 2.0, 10.0);
+        let (start, goal) = ([0.0, 0.5], [1.0, 0.0]);
+        let expected = move_joints(&start, &goal, &limits, PERIOD).unwrap();
+        let mut inline = Planner::inline(limits.clone(), PERIOD);
+        assert!(inline.poll().is_none(), "맡긴 것이 없다");
+        inline.request(&start, &goal).unwrap();
+        assert_eq!(inline.poll().unwrap().unwrap(), expected);
+        let mut planner = Planner::spawn(limits, PERIOD).unwrap();
+        let wait = |planner: &mut Planner| {
+            let started = std::time::Instant::now();
+            loop {
+                if let Some(result) = planner.poll() {
+                    return result;
+                }
+                assert!(
+                    started.elapsed().as_secs() < 10,
+                    "계획 스레드가 답하지 않는다"
+                );
+                thread::yield_now();
+            }
+        };
+        for _ in 0..2 {
+            planner.request(&start, &goal).unwrap();
+            assert!(planner.request(&start, &goal).is_err());
+            assert_eq!(wait(&mut planner).unwrap(), expected);
+            assert!(planner.poll().is_none());
+        }
+        // 맡을 수 없는 이동은 오류가 돌아온다
+        planner.request(&[0.0], &goal).unwrap();
+        let error = wait(&mut planner).unwrap_err();
+        assert!(error.contains("관절 수"), "{error}");
     }
 
     #[test]

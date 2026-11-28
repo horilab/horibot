@@ -12,8 +12,9 @@
 //! - 서보 보호 비트, 꺼진 토크(서보 전원이 꺼졌다 켜짐), 잇단 통신 실패는 고장이다: 새 목표를 쓰지 않고
 //!   (서보는 마지막 목표를 잡고 있다) 까닭을 남긴다. 사람이 [`RunLoop::resume`]으로 푼다.
 //! - 서보 온도가 쉬는 기준에 닿으면 정지해 버티고, 알림 기준 아래로 식을 때까지 새 궤적을 받지 않는다 (쉬는
-//!   자세가 정해지면 그리로 내린다, 0028). 알림 기준을 넘은 온도와 기준보다 낮은 전압은 알린다. 온도는 최근
-//!   [`TEMPERATURE_TICKS`]박자에 읽은 값의 가운데 값으로 본다 (움직이는 동안 한두 박자씩 튀어 읽힌다).
+//!   자세가 정해지면 그리로 내린다, 0028). 알림 기준을 넘은 온도와 기준보다 낮은 전압은 알린다. 온도와 전압은 최근
+//!   [`READING_TICKS`]박자에 읽은 값의 가운데 값으로 보고(한두 박자씩 튀어 읽힌다), 그 창이 다 찬 뒤에야 판단한다
+//!   ([`RunLoop::settled`]).
 //! - 처짐 보정: 붙잡고 있는 동안 서보가 읽은 위치와 목표의 차이를 쌓아 쓰는 목표를 고친다 (0012). 움직이는
 //!   동안에는 쌓은 값을 그대로 쓰고, 이득이 0이면 끈다.
 //! - 그리퍼 서보는 관절과 같은 박자로 읽고 쓴다. 명령은 열림 폭이고, 정한 빠르기로 그 폭까지 간다. 목표 폭에
@@ -47,12 +48,19 @@ const STEP_ALLOWANCE: f64 = 1.5;
 const SPEED_TOLERANCE: f64 = 1e-9;
 /// 그리퍼가 막혀 멈췄다고 보는 박자 수 (위치가 한 칸 안에서 그대로)
 const GRIP_STILL_TICKS: u32 = 3;
-/// 서보 온도는 최근 이만큼의 박자(100 Hz에서 약 1초)에 읽은 값의 가운데 값으로 본다. 서보가 움직이는 동안 온도만
-/// 한두 박자씩 튀어 읽힌다 (2026-11-18 실물 J5: 실제 35~38°C인데 많게는 76°C로, 움직인 박자의 약 3 %, 잇달아
-/// 많아야 3박자, 이만큼의 박자 안에 많아야 13번. 같은 박자의 위치, 전압, 전류, 상태 바이트는 멀쩡했다. 2026-11-13
-/// 맨 서보 확인 기록에도 움직이는 동안 34°C가 많게는 128°C로 읽힌 줄이 있다). 실제 온도는 몇 분에 걸쳐 오르므로,
-/// 오른 온도를 창의 반(약 0.5초)만큼 늦게 알아도 된다
-pub const TEMPERATURE_TICKS: usize = 101;
+/// 서보 온도와 전압은 최근 이만큼의 박자(100 Hz에서 약 1초)에 읽은 값의 가운데 값으로 보고, 창이 다 찬 뒤에야
+/// 판단한다. 둘 다 한두 박자씩 튀어 읽힌다:
+///
+/// - 온도: 2026-11-18 실물 J5는 실제 35~38°C인데 많게는 76°C로 읽혔다 (움직인 박자의 약 3 %, 잇달아 많아야 3박자,
+///   이만큼의 박자 안에 많아야 13번. 같은 박자의 위치, 전압, 전류, 상태 바이트는 멀쩡했다). 2026-11-13 맨 서보 확인
+///   기록에도 34°C가 많게는 128°C로 읽힌 줄이 있다. 2026-11-28 처음 전원(순서 셋, 서보 7개)에서는 버틸 때도 튀었고,
+///   잇달아 많아야 3박자, 이만큼의 박자 안에 많아야 13번이었다.
+/// - 전압: 2026-11-28 처음 전원에서 J4 ~ J6과 그리퍼(STS3215)가 12 V를 많게는 9.4 V로 읽었다 (잇달아 많아야 2박자,
+///   이만큼의 박자 안에 많아야 4번. 그 박자의 전류와 부하는 평소와 같았다). 가운데 값으로는 가장 낮아도 11.7 V였다.
+///
+/// 가운데 값이 틀리려면 창의 반 넘게(51번) 튀어야 한다. 실제 온도는 몇 분에 걸쳐 오르고 전압 알림은 오래 낮은
+/// 전원을 알리는 것이라, 창의 반(약 0.5초)만큼 늦게 알아도 된다. 읽은 값은 기록에 그대로 남는다.
+pub const READING_TICKS: usize = 101;
 
 /// 시간이 붙은 관절 궤적: 점마다 시작에서의 시각 [s]과 관절 각 [rad] (루프의 관절 순서).
 #[derive(Debug, Clone, PartialEq)]
@@ -147,6 +155,31 @@ struct Stop {
     dt: f64,
 }
 
+/// 서보 하나의 최근에 읽은 온도 [°C]와 전압 [0.1 V] (오래된 것부터 [`READING_TICKS`]개까지).
+struct Readings {
+    id: u8,
+    temperature: VecDeque<i32>,
+    voltage: VecDeque<i32>,
+}
+
+impl Readings {
+    fn push(&mut self, state: &Snapshot) {
+        for (window, value) in [
+            (&mut self.temperature, state.temperature),
+            (&mut self.voltage, state.voltage),
+        ] {
+            if window.len() == READING_TICKS {
+                window.pop_front();
+            }
+            window.push_back(value);
+        }
+    }
+
+    fn full(&self) -> bool {
+        self.temperature.len() == READING_TICKS
+    }
+}
+
 /// 실행 루프.
 pub struct RunLoop<B: ServoBus> {
     joints: Joints<B>,
@@ -160,10 +193,14 @@ pub struct RunLoop<B: ServoBus> {
     corrections: Vec<f64>,
     /// 마지막 박자에 읽은 상태
     states: Vec<(u8, Snapshot)>,
-    /// 서보마다 최근에 읽은 온도 [°C] (오래된 것부터 [`TEMPERATURE_TICKS`]개까지)
-    heat_history: Vec<(u8, VecDeque<i32>)>,
+    /// 서보마다 최근에 읽은 온도와 전압
+    readings: Vec<Readings>,
     /// 서보마다 판단에 쓰는 온도 [°C]: 최근 온도의 가운데 값 (읽은 상태와 같은 순서)
     temperatures: Vec<(u8, i32)>,
+    /// 서보마다 판단에 쓰는 전압 [0.1 V]: 최근 전압의 가운데 값 (읽은 상태와 같은 순서)
+    voltages: Vec<(u8, i32)>,
+    /// 모든 서보의 판단 창이 찼다 (온도와 전압을 판단한다)
+    settled: bool,
     playing: Option<Playing>,
     mode: Mode,
     /// 서보가 뜨거워 쉬는 까닭. 있으면 새 궤적을 받지 않는다
@@ -239,8 +276,10 @@ impl<B: ServoBus> RunLoop<B> {
             targets: Vec::new(),
             corrections: Vec::new(),
             states: Vec::new(),
-            heat_history: Vec::new(),
+            readings: Vec::new(),
             temperatures: Vec::new(),
+            voltages: Vec::new(),
+            settled: false,
             playing: None,
             mode: Mode::Holding,
             hot: None,
@@ -290,10 +329,19 @@ impl<B: ServoBus> RunLoop<B> {
         &self.states
     }
 
-    /// 서보마다 판단에 쓰는 온도 [°C] (읽은 상태와 같은 순서): 최근 [`TEMPERATURE_TICKS`]박자에 읽은 값의 가운데
-    /// 값이다. 한두 박자씩 튀어 읽힌 값으로는 알리거나 쉬지 않는다.
+    /// 서보마다 판단에 쓰는 온도 [°C] (읽은 상태와 같은 순서): 최근 [`READING_TICKS`]박자에 읽은 값의 가운데
+    /// 값이다. 한두 박자씩 튀어 읽힌 값으로는 알리거나 쉬지 않는다. 창이 차기 전에는 그때까지 읽은 값의 가운데
+    /// 값이고, 실행 루프는 그 값으로 판단하지 않는다 ([`RunLoop::settled`]).
     pub fn temperatures(&self) -> &[(u8, i32)] {
         &self.temperatures
+    }
+
+    /// 모든 서보의 판단 창([`READING_TICKS`]박자, 약 1초)이 다 차서 온도와 전압을 판단한다. 그 전에는 쉬지도
+    /// 알리지도 않는다: 몇 박자만 읽은 가운데 값은 튀어 읽힌 값 하나에 흔들린다 (2026-11-28 처음 전원: 토크를 켜며
+    /// 처음 읽은 J6이 45°C로 튀어, 그 값으로 창을 채우던 때 어깨 버티기가 시작하지 않았다). 시험 순서는 이것이
+    /// 참이 될 때까지 버티며 기다렸다가 시작한다.
+    pub fn settled(&self) -> bool {
+        self.settled
     }
 
     /// 가장 뜨거운 서보와 판단에 쓰는 그 온도 [°C].
@@ -335,32 +383,30 @@ impl<B: ServoBus> RunLoop<B> {
         Ok(())
     }
 
-    /// 지금 알릴 것: 쉬는 까닭, 조그를 세운 까닭, 알림 기준에 닿은 온도, 기준보다 낮은 전압.
+    /// 지금 알릴 것: 쉬는 까닭, 조그를 세운 까닭, 알림 기준에 닿은 온도, 기준보다 낮은 전압. 온도와 전압은 판단
+    /// 창이 찬 뒤에 가운데 값으로 본다 ([`RunLoop::settled`]).
     pub fn warnings(&self) -> Vec<String> {
         let mut found: Vec<String> = self.hot.iter().cloned().collect();
         if let Some(reason) = &self.jog_latch {
             found.push(format!("{reason} (조그 명령을 한 번 뗀 뒤에 다시 받는다)"));
         }
-        for (id, state) in &self.states {
-            let judged = self
-                .temperatures
-                .iter()
-                .find(|(known, _)| known == id)
-                .map(|&(_, temperature)| f64::from(temperature));
-            if let Some(temperature) = judged
-                && temperature >= self.settings.temperature_warn
-            {
+        if !self.settled {
+            return found;
+        }
+        for (&(id, temperature), &(_, voltage)) in self.temperatures.iter().zip(&self.voltages) {
+            let temperature = f64::from(temperature);
+            if temperature >= self.settings.temperature_warn {
                 found.push(format!(
                     "{}: 온도 {temperature}°C가 알림 기준 {}°C에 닿았다",
-                    self.name(*id),
+                    self.name(id),
                     self.settings.temperature_warn
                 ));
             }
-            let voltage = f64::from(state.voltage) / 10.0;
+            let voltage = f64::from(voltage) / 10.0;
             if voltage < self.settings.voltage_warn {
                 found.push(format!(
                     "{}: 전압 {voltage} V가 알림 기준 {} V보다 낮다",
-                    self.name(*id),
+                    self.name(id),
                     self.settings.voltage_warn
                 ));
             }
@@ -381,7 +427,7 @@ impl<B: ServoBus> RunLoop<B> {
             Ok(states) => {
                 self.missed = 0;
                 self.states = states;
-                self.remember_heat();
+                self.remember_readings();
             }
             Err(e) => {
                 // 이번 박자는 쓰지 않는다: 서보는 마지막 목표를 잡고 있다
@@ -697,7 +743,7 @@ impl<B: ServoBus> RunLoop<B> {
         self.corrections = corrections;
         self.targets = targets;
         self.states = states;
-        self.remember_heat();
+        self.remember_readings();
         self.playing = None;
         self.jog = None;
         self.mode = Mode::Holding;
@@ -807,30 +853,41 @@ impl<B: ServoBus> RunLoop<B> {
         }
     }
 
-    /// 새로 읽은 상태의 온도를 쌓고, 서보마다 판단에 쓸 온도(최근 값의 가운데 값)를 다시 낸다. 처음 본 서보는
-    /// 창을 첫 값으로 채운다: 시작하자마자 움직여도 몇 안 되는 값의 가운데가 튄 값이 되지 않는다 (첫 값은 루프가
-    /// 붙잡고 있을 때 읽는다).
-    fn remember_heat(&mut self) {
+    /// 새로 읽은 상태의 온도와 전압을 쌓고, 서보마다 판단에 쓸 값(최근 값의 가운데 값)을 다시 낸다. 창은 실제로
+    /// 읽은 값으로만 채운다: 첫 값 하나로 창을 채우면 그 값이 튀었을 때 창 전체가 튄 값이 된다.
+    fn remember_readings(&mut self) {
         let mut temperatures = Vec::with_capacity(self.states.len());
+        let mut voltages = Vec::with_capacity(self.states.len());
+        let mut settled = true;
         for (id, state) in &self.states {
-            let index = match self.heat_history.iter().position(|(known, _)| known == id) {
+            let index = match self.readings.iter().position(|known| known.id == *id) {
                 Some(index) => index,
                 None => {
-                    let first = VecDeque::from(vec![state.temperature; TEMPERATURE_TICKS]);
-                    self.heat_history.push((*id, first));
-                    self.heat_history.len() - 1
+                    self.readings.push(Readings {
+                        id: *id,
+                        temperature: VecDeque::with_capacity(READING_TICKS),
+                        voltage: VecDeque::with_capacity(READING_TICKS),
+                    });
+                    self.readings.len() - 1
                 }
             };
-            let history = &mut self.heat_history[index].1;
-            history.pop_front();
-            history.push_back(state.temperature);
-            temperatures.push((*id, median(history)));
+            let readings = &mut self.readings[index];
+            readings.push(state);
+            temperatures.push((*id, median(&readings.temperature)));
+            voltages.push((*id, median(&readings.voltage)));
+            settled &= readings.full();
         }
         self.temperatures = temperatures;
+        self.voltages = voltages;
+        self.settled = settled;
     }
 
     /// 가장 뜨거운 서보(판단에 쓰는 온도)가 쉬는 기준에 닿으면 정지해 쉬고, 알림 기준 아래로 식으면 쉬기를 푼다.
+    /// 판단 창이 차기 전에는 보지 않는다.
     fn watch_heat(&mut self) {
+        if !self.settled {
+            return;
+        }
         let Some((id, temperature)) = self.hottest() else {
             return;
         };
@@ -1300,6 +1357,18 @@ mod tests {
 
     /// J3과 J4 (둘 다 옛 시험의 J3 한계 -30°~118°, 영점 2048에서 0°)
     fn two_joints_with(settings: LoopSettings) -> RunLoop<Bus<FakePort>> {
+        two_joints_built(settings, |_| {})
+    }
+
+    /// 세우기 전에 가짜 서보마다 `prepare`를 부른다 (세울 때 처음 읽는 값을 정한다).
+    fn two_joints_reading(prepare: impl Fn(&mut FakeServo)) -> RunLoop<Bus<FakePort>> {
+        two_joints_built(SETTINGS, prepare)
+    }
+
+    fn two_joints_built(
+        settings: LoopSettings,
+        prepare: impl Fn(&mut FakeServo),
+    ) -> RunLoop<Bus<FakePort>> {
         let j3 = Settings::parse(TEST_J3)
             .unwrap()
             .joint("j3")
@@ -1317,11 +1386,11 @@ mod tests {
             });
             Servo::from_joint(&joint).unwrap()
         });
-        let bus = open_fake_bus(
-            servos
-                .iter()
-                .map(|servo| programmed(FakeServo::with(servo.id, 2825, 2048), servo)),
-        );
+        let bus = open_fake_bus(servos.iter().map(|servo| {
+            let mut fake = programmed(FakeServo::with(servo.id, 2825, 2048), servo);
+            prepare(&mut fake);
+            fake
+        }));
         RunLoop::start(
             Joints::open(bus, servos.to_vec(), Caps::for_loop(&settings)).unwrap(),
             settings,
@@ -1720,12 +1789,22 @@ mod tests {
         }
     }
 
+    /// 판단 창이 찰 때까지 박자를 돌린다 (세울 때 한 번 읽었다).
+    fn settle(run: &mut RunLoop<Bus<FakePort>>) {
+        for _ in 1..READING_TICKS {
+            assert!(!run.settled());
+            run.tick(DT);
+        }
+        assert!(run.settled());
+    }
+
     #[test]
     fn a_hot_servo_stops_the_arm_until_it_cools() {
         let mut run = two_joints();
+        settle(&mut run);
         run.submit(line([1.0, 0.5], 5.0)).unwrap();
         // 판단에 쓰는 온도는 최근 박자의 가운데 값이라, 바뀐 온도가 창의 반을 넘게 채운 박자에 바뀐다
-        let half = TEMPERATURE_TICKS / 2 + 1;
+        let half = READING_TICKS / 2 + 1;
         heat_for(&mut run, 1, 52, half - 1);
         assert!(run.warnings().is_empty(), "{:?}", run.warnings());
         heat_for(&mut run, 1, 52, 1);
@@ -1754,9 +1833,9 @@ mod tests {
         let message = run.submit(stay.clone()).unwrap_err();
         assert!(message.contains("뜨거워"), "{message}");
         // 알림 기준 아래로 식어야 다시 받는다
-        heat_for(&mut run, 1, 52, TEMPERATURE_TICKS);
+        heat_for(&mut run, 1, 52, READING_TICKS);
         assert!(run.submit(stay.clone()).is_err());
-        heat_for(&mut run, 1, 45, TEMPERATURE_TICKS);
+        heat_for(&mut run, 1, 45, READING_TICKS);
         assert!(run.warnings().is_empty());
         assert!(run.resting().is_none());
         run.submit(stay).unwrap();
@@ -1785,7 +1864,14 @@ mod tests {
     #[test]
     fn low_voltage_is_warned_but_does_not_stop() {
         let mut run = two_joints();
+        settle(&mut run);
+        // 전압도 최근 박자의 가운데 값이라, 낮은 전압이 창의 반을 넘게 채운 박자에 알린다
+        let half = READING_TICKS / 2 + 1;
         fake(&mut run, 0).set(reg::PRESENT_VOLTAGE, 105);
+        for _ in 1..half {
+            run.tick(DT);
+        }
+        assert!(run.warnings().is_empty(), "{:?}", run.warnings());
         run.tick(DT);
         let warnings = run.warnings();
         assert!(
@@ -1795,6 +1881,57 @@ mod tests {
             "{warnings:?}"
         );
         assert_eq!(run.mode(), &Mode::Holding);
+    }
+
+    #[test]
+    fn voltage_readings_that_dip_for_a_tick_or_two_are_not_warned() {
+        let mut run = two_joints();
+        settle(&mut run);
+        // 2026-11-28 처음 전원처럼: 12 V를 가끔 한두 박자 9.4 ~ 10.9 V로 읽는다 (1초 창 안에 많아야 4번)
+        for n in 0..600 {
+            let dipped = n % 37 == 0 || n % 101 < 2;
+            fake(&mut run, 1).set(reg::PRESENT_VOLTAGE, if dipped { 94 + n % 15 } else { 120 });
+            run.tick(DT);
+            assert!(run.warnings().is_empty(), "{n}: {:?}", run.warnings());
+        }
+    }
+
+    /// 세울 때 처음 읽은 값이 튀어도 그 값 하나로 쉬거나 알리지 않는다 (2026-11-28 처음 전원: 처음 읽은 J6이
+    /// 45°C로 튀어, 그 값으로 판단 창을 채우던 때 어깨 버티기가 시작하지 않았다).
+    #[test]
+    fn a_jumped_first_reading_does_not_decide_alone() {
+        let mut run = two_joints_reading(|servo| {
+            servo.set(reg::PRESENT_TEMPERATURE, 76);
+            servo.set(reg::PRESENT_VOLTAGE, 94);
+        });
+        for index in 0..2 {
+            fake(&mut run, index).set(reg::PRESENT_TEMPERATURE, 25);
+            fake(&mut run, index).set(reg::PRESENT_VOLTAGE, 120);
+        }
+        settle(&mut run);
+        assert!(run.warnings().is_empty(), "{:?}", run.warnings());
+        assert!(run.resting().is_none());
+        assert_eq!(run.hottest(), Some((4, 25)));
+        run.submit(line([0.1, 0.1], 1.0)).unwrap();
+    }
+
+    /// 판단 창이 차기 전에는 정말 뜨거워도 쉬지 않고, 차는 박자에 쉰다 (시험 순서는 그때까지 기다렸다 시작한다).
+    #[test]
+    fn heat_is_judged_once_the_window_is_full() {
+        let mut run = two_joints_reading(|servo| servo.set(reg::PRESENT_TEMPERATURE, 56));
+        for _ in 2..READING_TICKS {
+            run.tick(DT);
+            assert!(run.resting().is_none());
+            assert!(run.warnings().is_empty(), "{:?}", run.warnings());
+        }
+        run.tick(DT);
+        assert!(run.settled());
+        assert!(
+            run.resting()
+                .is_some_and(|reason| reason.contains("쉬는 기준 55°C")),
+            "{:?}",
+            run.resting()
+        );
     }
 
     #[test]
